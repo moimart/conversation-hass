@@ -38,6 +38,20 @@ class TestWakeWordDetection:
         assert conversation.state == "listening"
 
     @pytest.mark.asyncio
+    async def test_wake_word_fires_callback(self, conversation):
+        conversation.on_wake_word = AsyncMock()
+        await conversation.process_text("hey homie do something")
+        conversation.on_wake_word.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_wake_word_no_callback_if_in_followup(self, conversation):
+        conversation.on_wake_word = AsyncMock()
+        conversation._last_response_time = time.monotonic()  # in follow-up window
+        await conversation.process_text("hey homie do something")
+        # In follow-up window, text is accumulated directly — no wake word trigger
+        conversation.on_wake_word.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_extracts_text_after_wake_word(self, conversation):
         await conversation.process_text("hey homie turn on the lights")
         assert conversation._command_buffer == ["turn on the lights"]

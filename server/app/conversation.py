@@ -65,8 +65,9 @@ class ConversationManager:
         self._followup_window = 10.0  # seconds
         self._last_response_time = 0.0
 
-        # Callback for sending responses back to the audio client + UI
+        # Callbacks
         self.on_response: Callable[[str, bytes | None], Awaitable[None]] | None = None
+        self.on_wake_word: Callable[[], Awaitable[None]] | None = None
 
         self._http = httpx.AsyncClient(timeout=120.0)
 
@@ -99,6 +100,9 @@ class ConversationManager:
                 log.info(f"Wake word detected: '{text}'")
                 self._wake_detected = True
                 self.state = "listening"
+                # Notify listeners (chime + UI flash)
+                if self.on_wake_word:
+                    await self.on_wake_word()
                 # Capture any text after the wake word as part of the command
                 idx = text_lower.index(self.wake_word) + len(self.wake_word)
                 remainder = text[idx:].strip()

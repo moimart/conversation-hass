@@ -1,9 +1,13 @@
 """HAL — Main FastAPI server coordinating audio pipeline."""
 
 import asyncio
+import io
 import json
 import logging
+import math
 import os
+import struct
+import wave
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,12 +32,45 @@ mcp_client: MCPClient | None = None
 # Connected UI clients (for broadcasting transcription)
 ui_clients: set[WebSocket] = set()
 
+# Pre-generated wake word chime (created once at startup)
+_wake_chime: bytes | None = None
+
+
+def _generate_chime() -> bytes:
+    """Generate a short two-tone chime as WAV bytes."""
+    sample_rate = 22050
+    duration = 0.15  # seconds per tone
+    n_samples = int(sample_rate * duration)
+    freqs = [880, 1320]  # A5 → E6 ascending two-tone
+
+    samples = []
+    for freq in freqs:
+        for i in range(n_samples):
+            t = i / sample_rate
+            # Sine wave with a quick fade-in/out envelope
+            envelope = min(1.0, i / 200) * min(1.0, (n_samples - i) / 200)
+            sample = int(envelope * 12000 * math.sin(2 * math.pi * freq * t))
+            samples.append(struct.pack("<h", max(-32768, min(32767, sample))))
+
+    raw = b"".join(samples)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(raw)
+    return buf.getvalue()
+
 
 @app.on_event("startup")
 async def startup():
     global pipeline, conversation, tts_engine, mcp_client
 
     log.info("Initializing HAL voice server...")
+
+    # Generate wake word chime
+    _wake_chime = _generate_chime()
+    log.info(f"Wake chime generated ({len(_wake_chime)} bytes)")
 
     # MCP client for Home Assistant
     mcp_url = os.environ.get("MCP_SERVER_URL", "")
@@ -100,6 +137,18 @@ async def audio_endpoint(websocket: WebSocket):
     await websocket.accept()
     log.info("Audio client connected")
 
+    async def on_wake_word():
+        """Callback: play chime on RPi and flash the UI."""
+        try:
+            await broadcast_to_ui({"type": "wake"})
+            await websocket.send_json({"type": "wake"})
+            if _wake_chime:
+                await websocket.send_json({"type": "chime_start", "size": len(_wake_chime)})
+                await websocket.send_bytes(_wake_chime)
+                await websocket.send_json({"type": "chime_end"})
+        except Exception as e:
+            log.error(f"Error sending wake chime: {e}")
+
     async def on_response(text: str, audio_bytes: bytes | None):
         """Callback: send LLM response + TTS audio back to RPi."""
         try:
@@ -116,6 +165,7 @@ async def audio_endpoint(websocket: WebSocket):
             log.error(f"Error sending response: {e}")
 
     conversation.on_response = on_response
+    conversation.on_wake_word = on_wake_word
 
     try:
         while True:

@@ -69,6 +69,9 @@
             case "transcription":
                 handleTranscription(msg);
                 break;
+            case "wake":
+                handleWake();
+                break;
             case "response":
                 handleResponse(msg);
                 break;
@@ -127,6 +130,16 @@
 
         // Auto-scroll
         transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    function handleWake() {
+        // Flash the eye and show wake indicator
+        const eye = document.querySelector(".eye-container");
+        eye.classList.add("wake-flash");
+        setState("listening");
+
+        // Remove flash after animation completes
+        setTimeout(() => eye.classList.remove("wake-flash"), 800);
     }
 
     function handleResponse(msg) {

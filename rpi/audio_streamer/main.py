@@ -36,6 +36,10 @@ tts_buffer = bytearray()
 tts_receiving = False
 tts_playing = False
 
+# Chime playback state
+chime_buffer = bytearray()
+chime_receiving = False
+
 
 def find_audio_device() -> int | None:
     """Find the Anker Powerconf S330 or use default."""
@@ -140,18 +144,30 @@ async def audio_stream_handler():
 
                 async def receive_messages():
                     """Handle messages from AI server."""
-                    global tts_buffer, tts_receiving
+                    global tts_buffer, tts_receiving, chime_buffer, chime_receiving
 
                     async for message in ws:
                         if isinstance(message, bytes):
-                            # TTS audio data
-                            if tts_receiving:
+                            if chime_receiving:
+                                chime_buffer.extend(message)
+                            elif tts_receiving:
                                 tts_buffer.extend(message)
                         else:
                             msg = json.loads(message)
                             msg_type = msg.get("type")
 
-                            if msg_type == "tts_start":
+                            if msg_type == "chime_start":
+                                chime_receiving = True
+                                chime_buffer = bytearray()
+
+                            elif msg_type == "chime_end":
+                                chime_receiving = False
+                                if chime_buffer:
+                                    audio_data = bytes(chime_buffer)
+                                    chime_buffer = bytearray()
+                                    await play_tts_audio(audio_data)
+
+                            elif msg_type == "tts_start":
                                 tts_receiving = True
                                 tts_buffer = bytearray()
 
@@ -160,11 +176,10 @@ async def audio_stream_handler():
                                 if tts_buffer:
                                     audio_data = bytes(tts_buffer)
                                     tts_buffer = bytearray()
-                                    # Play audio and notify server when done
                                     await play_tts_audio(audio_data)
                                     await ws.send(json.dumps({"type": "tts_finished"}))
 
-                            elif msg_type in ("transcription", "response"):
+                            elif msg_type in ("transcription", "response", "wake"):
                                 # Forward to web UI clients
                                 await broadcast_to_ui(msg)
 
