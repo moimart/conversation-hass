@@ -7,7 +7,7 @@ services:
       - "8765:8765"
     environment:
       - MCP_SERVER_URL=${MCP_SERVER_URL}
-      - WAKE_WORD=${WAKE_WORD:-hey hal}
+      - WAKE_WORD=${WAKE_WORD-hey hal}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - WYOMING_TTS_HOST=${WYOMING_TTS_HOST}
