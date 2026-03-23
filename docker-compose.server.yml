@@ -17,6 +17,7 @@ services:
       - SAMPLE_RATE=${SAMPLE_RATE:-16000}
     volumes:
       - ./server/models:/app/models
+      - huggingface-cache:/root/.cache/huggingface
     deploy:
       resources:
         reservations:
@@ -26,3 +27,6 @@ services:
               capabilities: [gpu]
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+volumes:
+  huggingface-cache:
