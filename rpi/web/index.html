@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HAL</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <!-- Ambient background -->
+        <div class="ambient-grid"></div>
+
+        <!-- Main eye container -->
+        <div class="eye-container">
+            <div class="eye-outer-ring"></div>
+            <div class="eye-middle-ring"></div>
+            <div class="eye-glow"></div>
+            <div class="eye-core">
+                <div class="eye-iris"></div>
+                <div class="eye-pupil"></div>
+                <div class="eye-reflection"></div>
+            </div>
+            <div class="eye-scan-line"></div>
+        </div>
+
+        <!-- Status indicator -->
+        <div class="status-bar">
+            <div class="status-dot"></div>
+            <span class="status-text">IDLE</span>
+        </div>
+
+        <!-- Transcription display -->
+        <div class="transcript-container">
+            <div class="transcript-label">TRANSCRIPT</div>
+            <div class="transcript-scroll" id="transcript">
+                <div class="transcript-placeholder">Listening...</div>
+            </div>
+        </div>
+
+        <!-- Response display -->
+        <div class="response-container" id="response-container">
+            <div class="response-label">HAL</div>
+            <div class="response-text" id="response-text"></div>
+        </div>
+
+        <!-- Connection indicator -->
+        <div class="connection-indicator" id="connection">
+            <div class="conn-dot"></div>
+            <span>DISCONNECTED</span>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+services:
+  ai-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: hal-ai-server
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      - MCP_SERVER_URL=${MCP_SERVER_URL}
+      - WAKE_WORD=${WAKE_WORD:-hey hal}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - WYOMING_TTS_HOST=${WYOMING_TTS_HOST}
+      - WYOMING_TTS_PORT=${WYOMING_TTS_PORT:-10200}
+      - SAMPLE_RATE=${SAMPLE_RATE:-16000}
+    volumes:
+      - ./server/models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - hal-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hal-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - hal-net
+
+volumes:
+  ollama-data:
+
+networks:
+  hal-net:
+    driver: bridge

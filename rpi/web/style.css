@@ -1,0 +1,434 @@
+/* === HAL 9000 — Modern Voice Assistant UI === */
+
+:root {
+    --bg: #0a0a0c;
+    --surface: #111114;
+    --border: #1a1a20;
+    --text: #e8e8ec;
+    --text-dim: #6b6b78;
+    --accent: #ff2d2d;
+    --accent-glow: #ff4444;
+    --accent-deep: #991111;
+    --accent-warm: #ff6633;
+    --success: #22c55e;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#app {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+/* === Ambient Background === */
+.ambient-grid {
+    position: fixed;
+    inset: 0;
+    background-image:
+        radial-gradient(circle at 50% 40%, rgba(255, 45, 45, 0.03) 0%, transparent 60%),
+        linear-gradient(rgba(255, 255, 255, 0.01) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.01) 1px, transparent 1px);
+    background-size: 100% 100%, 60px 60px, 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* === Eye === */
+.eye-container {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    margin-bottom: 48px;
+    z-index: 1;
+}
+
+.eye-outer-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 45, 45, 0.15);
+    animation: ring-pulse 4s ease-in-out infinite;
+}
+
+.eye-middle-ring {
+    position: absolute;
+    inset: 15px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 45, 45, 0.1);
+    animation: ring-pulse 4s ease-in-out infinite 0.5s;
+}
+
+.eye-glow {
+    position: absolute;
+    inset: -40px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 45, 45, 0.08) 0%, transparent 70%);
+    animation: glow-breathe 4s ease-in-out infinite;
+    pointer-events: none;
+}
+
+.eye-core {
+    position: absolute;
+    inset: 30px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 45% 42%,
+        var(--accent-glow) 0%,
+        var(--accent) 30%,
+        var(--accent-deep) 70%,
+        #330808 100%
+    );
+    box-shadow:
+        0 0 40px rgba(255, 45, 45, 0.3),
+        0 0 80px rgba(255, 45, 45, 0.15),
+        inset 0 0 30px rgba(0, 0, 0, 0.3);
+    animation: core-pulse 4s ease-in-out infinite;
+}
+
+.eye-iris {
+    position: absolute;
+    inset: 20px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 45% 42%,
+        rgba(255, 100, 50, 0.4) 0%,
+        transparent 60%
+    );
+}
+
+.eye-pupil {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 30px;
+    height: 30px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle,
+        rgba(0, 0, 0, 0.8) 0%,
+        rgba(0, 0, 0, 0.4) 50%,
+        transparent 70%
+    );
+}
+
+.eye-reflection {
+    position: absolute;
+    top: 28%;
+    left: 35%;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.25);
+    filter: blur(2px);
+}
+
+.eye-scan-line {
+    position: absolute;
+    inset: 30px;
+    border-radius: 50%;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.eye-scan-line::after {
+    content: '';
+    position: absolute;
+    top: -100%;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: scan 2s linear infinite;
+}
+
+/* === Status Bar === */
+.status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 40px;
+    z-index: 1;
+}
+
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: background 0.3s, box-shadow 0.3s;
+}
+
+.status-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    transition: color 0.3s;
+}
+
+/* === Transcript === */
+.transcript-container {
+    width: min(600px, 90vw);
+    max-height: 180px;
+    z-index: 1;
+}
+
+.transcript-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    opacity: 0.6;
+}
+
+.transcript-scroll {
+    max-height: 150px;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.transcript-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.transcript-placeholder {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+    opacity: 0.4;
+}
+
+.transcript-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+    opacity: 0.7;
+    animation: fade-in 0.3s ease;
+}
+
+.transcript-line.partial {
+    color: var(--text-dim);
+    opacity: 0.5;
+}
+
+.transcript-line.latest {
+    opacity: 1;
+}
+
+/* === Response === */
+.response-container {
+    width: min(600px, 90vw);
+    margin-top: 32px;
+    z-index: 1;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.response-container.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.response-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    margin-bottom: 12px;
+    opacity: 0.8;
+}
+
+.response-text {
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: 300;
+    line-height: 1.7;
+    color: var(--text);
+}
+
+/* === Connection Indicator === */
+.connection-indicator {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    opacity: 0.5;
+    z-index: 10;
+}
+
+.conn-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+.connection-indicator.connected .conn-dot {
+    background: var(--success);
+}
+
+.connection-indicator.connected {
+    color: var(--success);
+    opacity: 0.4;
+}
+
+/* === State Modifiers === */
+
+/* Listening state */
+body.state-listening .eye-core {
+    box-shadow:
+        0 0 60px rgba(255, 45, 45, 0.5),
+        0 0 120px rgba(255, 45, 45, 0.2),
+        inset 0 0 30px rgba(0, 0, 0, 0.2);
+    animation: core-pulse 2s ease-in-out infinite;
+}
+
+body.state-listening .eye-glow {
+    animation: glow-breathe 2s ease-in-out infinite;
+}
+
+body.state-listening .eye-outer-ring {
+    border-color: rgba(255, 45, 45, 0.3);
+}
+
+body.state-listening .status-dot {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+}
+
+body.state-listening .status-text {
+    color: var(--accent);
+}
+
+/* Processing state */
+body.state-processing .eye-core {
+    animation: core-spin 1.5s linear infinite;
+}
+
+body.state-processing .eye-scan-line {
+    opacity: 1;
+}
+
+body.state-processing .eye-outer-ring {
+    animation: ring-spin 3s linear infinite;
+    border-color: rgba(255, 102, 51, 0.3);
+}
+
+body.state-processing .status-dot {
+    background: var(--accent-warm);
+    box-shadow: 0 0 8px var(--accent-warm);
+    animation: blink 0.8s ease-in-out infinite;
+}
+
+body.state-processing .status-text {
+    color: var(--accent-warm);
+}
+
+/* Speaking state */
+body.state-speaking .eye-core {
+    animation: speak-pulse 0.3s ease-in-out infinite alternate;
+}
+
+body.state-speaking .eye-glow {
+    animation: glow-breathe 1s ease-in-out infinite;
+    opacity: 1.2;
+}
+
+body.state-speaking .status-dot {
+    background: var(--accent-glow);
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+body.state-speaking .status-text {
+    color: var(--accent-glow);
+}
+
+/* === Animations === */
+@keyframes ring-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.03); opacity: 0.7; }
+}
+
+@keyframes glow-breathe {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.05); }
+}
+
+@keyframes core-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+}
+
+@keyframes core-spin {
+    0% { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(30deg); }
+}
+
+@keyframes ring-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes speak-pulse {
+    from { transform: scale(1); box-shadow: 0 0 40px rgba(255, 45, 45, 0.3), 0 0 80px rgba(255, 45, 45, 0.15), inset 0 0 30px rgba(0, 0, 0, 0.3); }
+    to { transform: scale(1.04); box-shadow: 0 0 60px rgba(255, 45, 45, 0.5), 0 0 100px rgba(255, 45, 45, 0.25), inset 0 0 20px rgba(0, 0, 0, 0.2); }
+}
+
+@keyframes scan {
+    from { top: -3px; }
+    to { top: 100%; }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* === Scrollbar === */
+::-webkit-scrollbar {
+    width: 2px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 1px;
+}

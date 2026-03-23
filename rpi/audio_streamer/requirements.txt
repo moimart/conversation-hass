@@ -1,0 +1,4 @@
+pyaudio==0.2.14
+websockets==14.1
+aiohttp==3.11.11
+numpy==1.26.4
