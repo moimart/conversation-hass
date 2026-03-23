@@ -28,33 +28,32 @@ def _resample_audio(samples: np.ndarray, from_rate: int, to_rate: int) -> np.nda
     if from_rate == to_rate:
         return samples
 
-    ratio = from_rate / to_rate
     float_samples = samples.astype(np.float32)
 
-    # Design a simple low-pass FIR filter (windowed sinc)
-    # Cutoff at the Nyquist of the target rate
-    cutoff = to_rate / (2.0 * from_rate)
-    filter_len = int(ratio) * 6 + 1  # Longer filter = better stopband
-    if filter_len % 2 == 0:
-        filter_len += 1
-    n = np.arange(filter_len)
-    mid = filter_len // 2
+    if from_rate > to_rate:
+        # Downsampling: apply anti-aliasing low-pass filter first
+        ratio = from_rate / to_rate
+        cutoff = to_rate / (2.0 * from_rate)
+        filter_len = int(ratio) * 6 + 1
+        if filter_len < 3:
+            filter_len = 3
+        if filter_len % 2 == 0:
+            filter_len += 1
+        n = np.arange(filter_len)
+        mid = filter_len // 2
 
-    # Sinc filter
-    sinc = np.sinc(2 * cutoff * (n - mid))
-    # Hamming window
-    window = 0.54 - 0.46 * np.cos(2 * np.pi * n / (filter_len - 1))
-    fir = sinc * window
-    fir /= fir.sum()
+        sinc = np.sinc(2 * cutoff * (n - mid))
+        window = 0.54 - 0.46 * np.cos(2 * np.pi * n / (filter_len - 1))
+        fir = sinc * window
+        fir /= fir.sum()
 
-    # Apply filter
-    filtered = np.convolve(float_samples, fir, mode="same")
+        float_samples = np.convolve(float_samples, fir, mode="same")
 
-    # Decimate
-    new_len = int(len(filtered) / ratio)
-    indices = (np.arange(new_len) * ratio).astype(np.int64)
-    indices = np.clip(indices, 0, len(filtered) - 1)
-    resampled = filtered[indices]
+    # Resample via linear interpolation
+    new_len = int(len(float_samples) * to_rate / from_rate)
+    x_old = np.linspace(0, 1, len(float_samples))
+    x_new = np.linspace(0, 1, new_len)
+    resampled = np.interp(x_new, x_old, float_samples)
 
     return resampled.astype(np.int16)
 
