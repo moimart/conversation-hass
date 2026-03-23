@@ -1,0 +1,25 @@
+services:
+  audio-streamer:
+    image: ghcr.io/moimart/conversation-hass/hal-rpi:latest
+    container_name: hal-audio-streamer
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    environment:
+      - AI_SERVER_HOST=${AI_SERVER_HOST}
+      - AUDIO_DEVICE=${AUDIO_DEVICE:-default}
+      - SAMPLE_RATE=${SAMPLE_RATE:-16000}
+      - CHANNELS=${CHANNELS:-1}
+      - CHUNK_SIZE=${CHUNK_SIZE:-4096}
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - audio
+    volumes:
+      - /run/dbus:/run/dbus:ro
+    networks:
+      - hal-net
+
+networks:
+  hal-net:
+    driver: bridge
