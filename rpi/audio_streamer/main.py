@@ -131,20 +131,29 @@ async def play_tts_audio(audio_data: bytes):
         tts_playing = False
 
 
-def wait_for_audio_device(device_index: int | None, rate: int) -> pyaudio.Stream:
+def get_device_channels(device_index: int | None) -> int:
+    """Get the number of input channels the device supports."""
+    if device_index is not None:
+        info = pa.get_device_info_by_index(device_index)
+        channels = int(info.get("maxInputChannels", 1))
+        return max(1, channels)
+    return CHANNELS
+
+
+def wait_for_audio_device(device_index: int | None, rate: int, channels: int) -> pyaudio.Stream:
     """Block until the audio input device is available, retrying every 5s."""
     global pa
     while True:
         try:
             stream = pa.open(
                 format=pyaudio.paInt16,
-                channels=CHANNELS,
+                channels=channels,
                 rate=rate,
                 input=True,
                 input_device_index=device_index,
                 frames_per_buffer=CHUNK_SIZE,
             )
-            log.info(f"Audio input opened at {rate} Hz")
+            log.info(f"Audio input opened at {rate} Hz, {channels}ch")
             return stream
         except Exception as e:
             log.warning(f"Audio device not ready: {e}. Retrying in 5s...")
@@ -163,14 +172,19 @@ async def audio_stream_handler():
 
     device_index = find_audio_device()
     device_rate = find_supported_sample_rate(device_index, SAMPLE_RATE)
+    device_channels = get_device_channels(device_index)
     needs_resample = device_rate != SAMPLE_RATE
+    needs_downmix = device_channels > 1
+    log.info(f"Device config: {device_rate} Hz, {device_channels}ch")
     if needs_resample:
         log.info(f"Will resample from {device_rate} Hz to {SAMPLE_RATE} Hz")
+    if needs_downmix:
+        log.info(f"Will downmix from {device_channels}ch to mono")
 
     # Wait until audio device is actually available before connecting
     log.info("Waiting for audio device...")
     loop = asyncio.get_event_loop()
-    stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate)
+    stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate, device_channels)
 
     uri = f"ws://{AI_SERVER_HOST}:8765/ws/audio"
 
@@ -194,15 +208,23 @@ async def audio_stream_handler():
                             None, stream.read, CHUNK_SIZE, False
                         )
 
-                        if needs_resample:
+                        if needs_downmix or needs_resample:
+                            samples = np.frombuffer(audio_data, dtype=np.int16)
+
+                            # Downmix stereo/multi-channel to mono
+                            if needs_downmix:
+                                samples = samples.reshape(-1, device_channels).mean(axis=1).astype(np.int16)
+
                             # Resample from device rate to target rate (16kHz)
-                            samples = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
-                            ratio = SAMPLE_RATE / device_rate
-                            new_len = int(len(samples) * ratio)
-                            indices = np.arange(new_len) / ratio
-                            indices = np.clip(indices.astype(np.int32), 0, len(samples) - 1)
-                            resampled = samples[indices].astype(np.int16)
-                            audio_data = resampled.tobytes()
+                            if needs_resample:
+                                float_samples = samples.astype(np.float32)
+                                ratio = SAMPLE_RATE / device_rate
+                                new_len = int(len(float_samples) * ratio)
+                                indices = np.arange(new_len) / ratio
+                                indices = np.clip(indices.astype(np.int32), 0, len(float_samples) - 1)
+                                samples = float_samples[indices].astype(np.int16)
+
+                            audio_data = samples.tobytes()
 
                         await ws.send(audio_data)
 
@@ -259,7 +281,7 @@ async def audio_stream_handler():
                 stream.close()
             except Exception:
                 pass
-            stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate)
+            stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate, device_channels)
         except Exception as e:
             log.error(f"Unexpected error: {e}. Reconnecting in 5s...")
             await asyncio.sleep(5)
@@ -268,7 +290,7 @@ async def audio_stream_handler():
                 stream.close()
             except Exception:
                 pass
-            stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate)
+            stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate, device_channels)
 
 
 async def broadcast_to_ui(msg: dict):
