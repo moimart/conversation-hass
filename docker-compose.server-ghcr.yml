@@ -1,0 +1,24 @@
+services:
+  ai-server:
+    image: ghcr.io/moimart/conversation-hass/hal-ai-server:latest
+    container_name: hal-ai-server
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      - MCP_SERVER_URL=${MCP_SERVER_URL}
+      - WAKE_WORD=${WAKE_WORD:-hey hal}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - WYOMING_TTS_HOST=${WYOMING_TTS_HOST}
+      - WYOMING_TTS_PORT=${WYOMING_TTS_PORT:-10200}
+      - SAMPLE_RATE=${SAMPLE_RATE:-16000}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
