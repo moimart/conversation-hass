@@ -367,19 +367,50 @@ body.state-processing .status-text {
     color: var(--accent-warm);
 }
 
-/* Speaking state */
+/* Speaking state — bright white center like the original HAL */
 body.state-speaking .eye-core {
+    background: radial-gradient(circle at 45% 42%,
+        rgba(255, 255, 255, 0.95) 0%,
+        rgba(255, 200, 180, 0.8) 20%,
+        var(--accent-glow) 45%,
+        var(--accent) 65%,
+        var(--accent-deep) 100%
+    );
+    box-shadow:
+        0 0 80px rgba(255, 255, 255, 0.4),
+        0 0 120px rgba(255, 45, 45, 0.4),
+        0 0 200px rgba(255, 45, 45, 0.2),
+        inset 0 0 20px rgba(255, 255, 255, 0.2);
     animation: speak-pulse 0.3s ease-in-out infinite alternate;
 }
 
+body.state-speaking .eye-pupil {
+    background: radial-gradient(circle,
+        rgba(255, 255, 255, 0.6) 0%,
+        rgba(255, 255, 255, 0.2) 40%,
+        transparent 70%
+    );
+}
+
+body.state-speaking .eye-reflection {
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.5);
+    filter: blur(3px);
+}
+
 body.state-speaking .eye-glow {
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, rgba(255, 45, 45, 0.08) 40%, transparent 70%);
     animation: glow-breathe 1s ease-in-out infinite;
-    opacity: 1.2;
+}
+
+body.state-speaking .eye-outer-ring {
+    border-color: rgba(255, 200, 180, 0.3);
 }
 
 body.state-speaking .status-dot {
-    background: var(--accent-glow);
-    box-shadow: 0 0 10px var(--accent-glow);
+    background: #fff;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
 }
 
 body.state-speaking .status-text {

@@ -283,6 +283,7 @@ async def audio_stream_handler():
                             elif msg_type == "tts_start":
                                 tts_receiving = True
                                 tts_buffer = bytearray()
+                                await broadcast_to_ui({"type": "state", "state": "speaking"})
 
                             elif msg_type == "tts_end":
                                 tts_receiving = False
@@ -290,6 +291,7 @@ async def audio_stream_handler():
                                     audio_data = bytes(tts_buffer)
                                     tts_buffer = bytearray()
                                     await play_tts_audio(audio_data)
+                                await broadcast_to_ui({"type": "state", "state": "idle"})
                                     await ws.send(json.dumps({"type": "tts_finished"}))
 
                             elif msg_type in ("transcription", "response", "wake"):
