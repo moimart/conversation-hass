@@ -3,8 +3,10 @@
 Connects to an existing Wyoming-compatible TTS service (e.g., whisper-tts)
 over TCP and streams back synthesized audio.
 
-Wyoming protocol: each message is a JSON header line (newline-terminated)
-optionally followed by `payload_length` bytes of binary data.
+Wyoming protocol framing:
+  - Each event: 4-byte big-endian header length + JSON header + optional payload
+  - The JSON header contains "type", "data", and optionally "payload_length"
+  - If "payload_length" > 0, that many bytes of binary data follow the header
 """
 
 import asyncio
@@ -71,7 +73,7 @@ class TTSEngine:
             channels = self._channels
 
             while True:
-                event = await self._recv_event(reader)
+                event, payload = await self._recv_event(reader)
                 if event is None:
                     break
 
@@ -85,7 +87,6 @@ class TTSEngine:
                     log.debug(f"TTS audio: {sample_rate}Hz, {sample_width * 8}bit, {channels}ch")
 
                 elif event_type == "audio-chunk":
-                    payload = event.get("_payload", b"")
                     if payload:
                         audio_chunks.append(payload)
 
@@ -125,53 +126,44 @@ class TTSEngine:
 
     @staticmethod
     async def _send_event(writer: asyncio.StreamWriter, event: dict, payload: bytes | None = None):
-        """Send a Wyoming protocol event."""
+        """Send a Wyoming protocol event (length-prefixed)."""
         if payload:
             event["payload_length"] = len(payload)
-        line = json.dumps(event) + "\n"
-        writer.write(line.encode("utf-8"))
+
+        header_bytes = json.dumps(event).encode("utf-8")
+        header_len = struct.pack(">I", len(header_bytes))
+
+        writer.write(header_len + header_bytes)
         if payload:
             writer.write(payload)
         await writer.drain()
 
     @staticmethod
-    async def _recv_event(reader: asyncio.StreamReader) -> dict | None:
-        """Receive a Wyoming protocol event."""
+    async def _recv_event(reader: asyncio.StreamReader) -> tuple[dict | None, bytes | None]:
+        """Receive a Wyoming protocol event (length-prefixed)."""
         try:
-            line = await asyncio.wait_for(reader.readline(), timeout=30.0)
-        except asyncio.TimeoutError:
-            log.warning("Wyoming TTS response timeout")
-            return None
+            # Read 4-byte header length
+            len_bytes = await asyncio.wait_for(reader.readexactly(4), timeout=30.0)
+        except (asyncio.TimeoutError, asyncio.IncompleteReadError):
+            return None, None
 
-        if not line:
-            return None
+        header_len = struct.unpack(">I", len_bytes)[0]
 
-        raw = line.decode("utf-8").strip()
-        if not raw:
-            return None
+        if header_len == 0 or header_len > 1_000_000:
+            log.warning(f"Invalid Wyoming header length: {header_len}")
+            return None, None
 
-        # Wyoming v2 uses length-prefixed JSON: first 5 bytes are the
-        # JSON header length as a string, but most implementations just
-        # send newline-delimited JSON.  Handle both gracefully.
-        try:
-            event = json.loads(raw)
-        except json.JSONDecodeError:
-            # Try to extract the first JSON object if there's trailing data
-            decoder = json.JSONDecoder()
-            try:
-                event, idx = decoder.raw_decode(raw)
-                log.debug(f"Parsed partial JSON, ignored {len(raw) - idx} trailing bytes")
-            except json.JSONDecodeError as e:
-                log.warning(f"Cannot parse Wyoming event: {e} — raw: {raw[:200]}")
-                return None
+        # Read JSON header
+        header_bytes = await reader.readexactly(header_len)
+        event = json.loads(header_bytes.decode("utf-8"))
 
         # Read binary payload if present
+        payload = None
         payload_length = event.get("payload_length", 0)
         if payload_length > 0:
             payload = await reader.readexactly(payload_length)
-            event["_payload"] = payload
 
-        return event
+        return event, payload
 
     @staticmethod
     def _wrap_wav(raw_audio: bytes, sample_rate: int, sample_width: int, channels: int) -> bytes:
