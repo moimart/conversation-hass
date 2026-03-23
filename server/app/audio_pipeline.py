@@ -45,7 +45,7 @@ class AudioPipeline:
         self._vad_model = load_silero_vad(onnx=True)
 
         log.info("Loading transcription model...")
-        self.transcriber = StreamingTranscriber(model_size="large-v3")
+        self.transcriber = StreamingTranscriber(model_size="large-v3-turbo")
         await self.transcriber.initialize()
 
         log.info("Initializing speaker filter...")

@@ -43,7 +43,7 @@ class StreamingTranscriber:
         """Synchronous transcription — runs in a thread pool."""
         segments, info = self.model.transcribe(
             audio,
-            beam_size=5,
+            beam_size=1,
             language="en",
             vad_filter=True,
             vad_parameters=dict(
