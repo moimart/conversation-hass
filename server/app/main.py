@@ -98,12 +98,14 @@ async def startup():
     await pipeline.initialize()
 
     # Conversation manager
+    system_prompt = os.environ.get("SYSTEM_PROMPT", "")
     conversation = ConversationManager(
         wake_word=os.environ.get("WAKE_WORD", "hey hal"),
         ollama_host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
         ollama_model=os.environ.get("OLLAMA_MODEL", "llama3.2"),
         mcp_client=mcp_client,
         tts_engine=tts_engine,
+        system_prompt=system_prompt,
     )
 
     log.info("HAL voice server ready.")

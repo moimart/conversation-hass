@@ -17,7 +17,7 @@ from .tts import TTSEngine
 
 log = logging.getLogger("hal.conversation")
 
-SYSTEM_PROMPT_TEMPLATE = """You are HAL, a helpful voice assistant for a smart home. \
+DEFAULT_SYSTEM_PROMPT = """You are HAL, a helpful voice assistant for a smart home. \
 You speak naturally and concisely, like a person in a conversation. \
 Keep responses brief — 1-2 sentences max — because they will be spoken aloud.
 
@@ -25,7 +25,9 @@ You have access to tools that control a Home Assistant smart home. \
 When the user asks you to do something with the home (lights, climate, media, etc.), \
 use the appropriate tool. When the request is conversational, just respond naturally.
 
-If you're unsure which entity the user means, ask for clarification.
+If you're unsure which entity the user means, ask for clarification."""
+
+TOOL_SUFFIX = """
 
 Available tools:
 {tool_descriptions}"""
@@ -41,9 +43,11 @@ class ConversationManager:
         ollama_model: str,
         mcp_client: MCPClient,
         tts_engine: TTSEngine,
+        system_prompt: str = "",
     ):
         self.wake_word = wake_word.lower().strip()
         self.ollama_host = ollama_host.rstrip("/")
+        self._system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.ollama_model = ollama_model
         self.mcp = mcp_client
         self.tts_engine = tts_engine
@@ -72,8 +76,11 @@ class ConversationManager:
         self._http = httpx.AsyncClient(timeout=120.0)
 
     def _build_system_prompt(self) -> str:
-        tool_desc = self.mcp.get_tool_descriptions_text() or "(no tools available)"
-        return SYSTEM_PROMPT_TEMPLATE.format(tool_descriptions=tool_desc)
+        tool_desc = self.mcp.get_tool_descriptions_text()
+        prompt = self._system_prompt
+        if tool_desc:
+            prompt += TOOL_SUFFIX.format(tool_descriptions=tool_desc)
+        return prompt
 
     @property
     def in_conversation(self) -> bool:

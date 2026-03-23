@@ -15,6 +15,7 @@ services:
       - WYOMING_TTS_HOST=${WYOMING_TTS_HOST}
       - WYOMING_TTS_PORT=${WYOMING_TTS_PORT:-10200}
       - SAMPLE_RATE=${SAMPLE_RATE:-16000}
+      - SYSTEM_PROMPT=${SYSTEM_PROMPT:-}
     volumes:
       - ./server/models:/app/models
       - huggingface-cache:/root/.cache/huggingface
