@@ -224,7 +224,8 @@ class ConversationManager:
             "stream": False,
             "options": {
                 "temperature": 0.7,
-                "num_predict": 256,
+                "num_predict": 512,
+                "num_ctx": 8192,
             },
         }
 
