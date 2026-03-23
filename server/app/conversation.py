@@ -181,9 +181,10 @@ class ConversationManager:
 
             # Check if the LLM wants to call a tool
             tool_calls = response.get("message", {}).get("tool_calls")
+            assistant_text = response.get("message", {}).get("content", "")
+            log.info(f"Ollama response: tool_calls={bool(tool_calls)}, text={assistant_text[:100] if assistant_text else '(empty)'}")
             if not tool_calls:
                 # No tool call — final text response
-                assistant_text = response.get("message", {}).get("content", "")
                 self.history.append({"role": "assistant", "content": assistant_text})
                 return assistant_text
 
@@ -226,6 +227,7 @@ class ConversationManager:
         tools = self.mcp.tools_for_llm
         if tools:
             payload["tools"] = tools
+            log.info(f"Sending {len(tools)} tools to Ollama")
 
         try:
             resp = await self._http.post(
