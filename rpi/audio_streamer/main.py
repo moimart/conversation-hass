@@ -48,9 +48,36 @@ def find_audio_device() -> int | None:
         name = info.get("name", "").lower()
         if "anker" in name or "powerconf" in name:
             log.info(f"Found Anker device: {info['name']} (index {i})")
+            log.info(f"  Default sample rate: {info.get('defaultSampleRate')}")
+            log.info(f"  Max input channels: {info.get('maxInputChannels')}")
             return i
     log.info("Anker device not found, using default input")
     return None
+
+
+def find_supported_sample_rate(device_index: int | None, desired_rate: int) -> int:
+    """Find a sample rate the device supports, preferring the desired rate."""
+    candidates = [desired_rate, 48000, 44100, 32000, 16000, 8000]
+    for rate in candidates:
+        try:
+            supported = pa.is_format_supported(
+                rate,
+                input_device=device_index,
+                input_channels=CHANNELS,
+                input_format=pyaudio.paInt16,
+            )
+            if supported:
+                log.info(f"Device supports {rate} Hz")
+                return rate
+        except ValueError:
+            continue
+    # Fallback: use device default
+    if device_index is not None:
+        info = pa.get_device_info_by_index(device_index)
+        default_rate = int(info.get("defaultSampleRate", 44100))
+        log.info(f"Falling back to device default: {default_rate} Hz")
+        return default_rate
+    return 44100
 
 
 def find_output_device() -> int | None:
@@ -109,6 +136,11 @@ async def audio_stream_handler():
     global tts_buffer, tts_receiving
 
     device_index = find_audio_device()
+    device_rate = find_supported_sample_rate(device_index, SAMPLE_RATE)
+    needs_resample = device_rate != SAMPLE_RATE
+    if needs_resample:
+        log.info(f"Will resample from {device_rate} Hz to {SAMPLE_RATE} Hz")
+
     uri = f"ws://{AI_SERVER_HOST}:8765/ws/audio"
 
     while True:
@@ -117,11 +149,11 @@ async def audio_stream_handler():
             async with websockets.connect(uri, max_size=16 * 1024 * 1024) as ws:
                 log.info("Connected to AI server")
 
-                # Open audio input stream
+                # Open audio input stream at the device's supported rate
                 stream = pa.open(
                     format=pyaudio.paInt16,
                     channels=CHANNELS,
-                    rate=SAMPLE_RATE,
+                    rate=device_rate,
                     input=True,
                     input_device_index=device_index,
                     frames_per_buffer=CHUNK_SIZE,
@@ -140,6 +172,17 @@ async def audio_stream_handler():
                         audio_data = await loop.run_in_executor(
                             None, stream.read, CHUNK_SIZE, False
                         )
+
+                        if needs_resample:
+                            # Resample from device rate to target rate (16kHz)
+                            samples = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
+                            ratio = SAMPLE_RATE / device_rate
+                            new_len = int(len(samples) * ratio)
+                            indices = np.arange(new_len) / ratio
+                            indices = np.clip(indices.astype(np.int32), 0, len(samples) - 1)
+                            resampled = samples[indices].astype(np.int16)
+                            audio_data = resampled.tobytes()
+
                         await ws.send(audio_data)
 
                 async def receive_messages():
