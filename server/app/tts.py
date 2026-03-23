@@ -1,12 +1,12 @@
 """Text-to-speech via Wyoming protocol.
 
-Connects to an existing Wyoming-compatible TTS service (e.g., whisper-tts)
-over TCP and streams back synthesized audio.
+Connects to an existing Wyoming-compatible TTS service over TCP and
+streams back synthesized audio.
 
-Wyoming protocol framing:
-  - Each event: 4-byte big-endian header length + JSON header + optional payload
-  - The JSON header contains "type", "data", and optionally "payload_length"
-  - If "payload_length" > 0, that many bytes of binary data follow the header
+Supports both Wyoming framing variants:
+  - Newline-delimited JSON (original wyoming / rhasspy)
+  - Binary length-prefixed (4-byte big-endian header length)
+Auto-detects which variant the server uses on first response.
 """
 
 import asyncio
@@ -57,14 +57,14 @@ class TTSEngine:
             return None
 
         try:
-            # Send synthesize event
+            # Send synthesize event using newline-delimited JSON
             synth_event = {
                 "type": "synthesize",
                 "data": {
                     "text": text,
                 },
             }
-            await self._send_event(writer, synth_event)
+            await self._send_event_newline(writer, synth_event)
 
             # Collect audio chunks
             audio_chunks: list[bytes] = []
@@ -73,11 +73,12 @@ class TTSEngine:
             channels = self._channels
 
             while True:
-                event, payload = await self._recv_event(reader)
+                event, payload = await self._recv_event_auto(reader)
                 if event is None:
                     break
 
                 event_type = event.get("type", "")
+                log.debug(f"Wyoming event: {event_type}")
 
                 if event_type == "audio-start":
                     data = event.get("data", {})
@@ -125,45 +126,75 @@ class TTSEngine:
             return None
 
     @staticmethod
-    async def _send_event(writer: asyncio.StreamWriter, event: dict, payload: bytes | None = None):
-        """Send a Wyoming protocol event (length-prefixed)."""
+    async def _send_event_newline(writer: asyncio.StreamWriter, event: dict, payload: bytes | None = None):
+        """Send a Wyoming event using newline-delimited JSON."""
         if payload:
             event["payload_length"] = len(payload)
-
-        header_bytes = json.dumps(event).encode("utf-8")
-        header_len = struct.pack(">I", len(header_bytes))
-
-        writer.write(header_len + header_bytes)
+        line = json.dumps(event) + "\n"
+        writer.write(line.encode("utf-8"))
         if payload:
             writer.write(payload)
         await writer.drain()
 
     @staticmethod
-    async def _recv_event(reader: asyncio.StreamReader) -> tuple[dict | None, bytes | None]:
-        """Receive a Wyoming protocol event (length-prefixed)."""
+    async def _recv_event_auto(reader: asyncio.StreamReader) -> tuple[dict | None, bytes | None]:
+        """
+        Receive a Wyoming event, auto-detecting the framing format.
+
+        Peeks at the first byte:
+        - If it's '{' (0x7b), it's newline-delimited JSON
+        - Otherwise, treat first 4 bytes as a big-endian length prefix
+        """
         try:
-            # Read 4-byte header length
-            len_bytes = await asyncio.wait_for(reader.readexactly(4), timeout=30.0)
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError):
+            peek = await asyncio.wait_for(reader.read(1), timeout=30.0)
+        except asyncio.TimeoutError:
+            log.warning("Wyoming TTS response timeout")
             return None, None
 
-        header_len = struct.unpack(">I", len_bytes)[0]
-
-        if header_len == 0 or header_len > 1_000_000:
-            log.warning(f"Invalid Wyoming header length: {header_len}")
+        if not peek:
             return None, None
 
-        # Read JSON header
-        header_bytes = await reader.readexactly(header_len)
-        event = json.loads(header_bytes.decode("utf-8"))
+        first_byte = peek[0]
 
-        # Read binary payload if present
-        payload = None
-        payload_length = event.get("payload_length", 0)
-        if payload_length > 0:
-            payload = await reader.readexactly(payload_length)
+        if first_byte == 0x7b:  # '{' — newline-delimited JSON
+            # Read the rest of the line
+            rest = await reader.readline()
+            raw = (peek + rest).decode("utf-8").strip()
+            if not raw:
+                return None, None
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError as e:
+                log.warning(f"Cannot parse Wyoming event: {e}")
+                return None, None
 
-        return event, payload
+            # Read payload if present
+            payload = None
+            payload_length = event.get("payload_length", 0)
+            if payload_length > 0:
+                payload = await reader.readexactly(payload_length)
+
+            return event, payload
+
+        else:
+            # Binary length-prefixed: first byte is part of the 4-byte length
+            remaining = await reader.readexactly(3)
+            len_bytes = peek + remaining
+            header_len = struct.unpack(">I", len_bytes)[0]
+
+            if header_len == 0 or header_len > 1_000_000:
+                log.warning(f"Invalid Wyoming header length: {header_len}")
+                return None, None
+
+            header_bytes = await reader.readexactly(header_len)
+            event = json.loads(header_bytes.decode("utf-8"))
+
+            payload = None
+            payload_length = event.get("payload_length", 0)
+            if payload_length > 0:
+                payload = await reader.readexactly(payload_length)
+
+            return event, payload
 
     @staticmethod
     def _wrap_wav(raw_audio: bytes, sample_rate: int, sample_width: int, channels: int) -> bytes:
