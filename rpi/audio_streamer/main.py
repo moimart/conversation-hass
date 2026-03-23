@@ -292,7 +292,7 @@ async def audio_stream_handler():
                                     tts_buffer = bytearray()
                                     await play_tts_audio(audio_data)
                                 await broadcast_to_ui({"type": "state", "state": "idle"})
-                                    await ws.send(json.dumps({"type": "tts_finished"}))
+                                await ws.send(json.dumps({"type": "tts_finished"}))
 
                             elif msg_type in ("transcription", "response", "wake"):
                                 # Forward to web UI clients
