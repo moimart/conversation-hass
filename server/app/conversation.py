@@ -27,10 +27,6 @@ use the appropriate tool. When the request is conversational, just respond natur
 
 If you're unsure which entity the user means, ask for clarification."""
 
-TOOL_SUFFIX = """
-
-Available tools:
-{tool_descriptions}"""
 
 
 class ConversationManager:
@@ -76,11 +72,7 @@ class ConversationManager:
         self._http = httpx.AsyncClient(timeout=120.0)
 
     def _build_system_prompt(self) -> str:
-        tool_desc = self.mcp.get_tool_descriptions_text()
-        prompt = self._system_prompt
-        if tool_desc:
-            prompt += TOOL_SUFFIX.format(tool_descriptions=tool_desc)
-        return prompt
+        return self._system_prompt
 
     @property
     def in_conversation(self) -> bool:
