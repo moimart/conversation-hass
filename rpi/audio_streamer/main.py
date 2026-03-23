@@ -17,6 +17,48 @@ from aiohttp import web
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 log = logging.getLogger("hal.rpi")
 
+
+def _resample_audio(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
+    """
+    Resample int16 audio with proper anti-aliasing.
+
+    Uses a simple FIR low-pass filter before decimation to prevent
+    aliasing artifacts that degrade speech recognition accuracy.
+    """
+    if from_rate == to_rate:
+        return samples
+
+    ratio = from_rate / to_rate
+    float_samples = samples.astype(np.float32)
+
+    # Design a simple low-pass FIR filter (windowed sinc)
+    # Cutoff at the Nyquist of the target rate
+    cutoff = to_rate / (2.0 * from_rate)
+    filter_len = int(ratio) * 6 + 1  # Longer filter = better stopband
+    if filter_len % 2 == 0:
+        filter_len += 1
+    n = np.arange(filter_len)
+    mid = filter_len // 2
+
+    # Sinc filter
+    sinc = np.sinc(2 * cutoff * (n - mid))
+    # Hamming window
+    window = 0.54 - 0.46 * np.cos(2 * np.pi * n / (filter_len - 1))
+    fir = sinc * window
+    fir /= fir.sum()
+
+    # Apply filter
+    filtered = np.convolve(float_samples, fir, mode="same")
+
+    # Decimate
+    new_len = int(len(filtered) / ratio)
+    indices = (np.arange(new_len) * ratio).astype(np.int64)
+    indices = np.clip(indices, 0, len(filtered) - 1)
+    resampled = filtered[indices]
+
+    return resampled.astype(np.int16)
+
+
 # Configuration
 AI_SERVER_HOST = os.environ.get("AI_SERVER_HOST", "192.168.1.100")
 AUDIO_DEVICE = os.environ.get("AUDIO_DEVICE", "default")
@@ -119,20 +161,10 @@ async def play_tts_audio(audio_data: bytes):
                 samples = samples.reshape(-1, wav_channels)
                 resampled_channels = []
                 for ch in range(wav_channels):
-                    ch_samples = samples[:, ch].astype(np.float32)
-                    ratio = play_rate / wav_rate
-                    new_len = int(len(ch_samples) * ratio)
-                    indices = np.arange(new_len) / ratio
-                    indices = np.clip(indices.astype(np.int32), 0, len(ch_samples) - 1)
-                    resampled_channels.append(ch_samples[indices].astype(np.int16))
+                    resampled_channels.append(_resample_audio(samples[:, ch], wav_rate, play_rate))
                 frames = np.column_stack(resampled_channels).tobytes()
             else:
-                samples = samples.astype(np.float32)
-                ratio = play_rate / wav_rate
-                new_len = int(len(samples) * ratio)
-                indices = np.arange(new_len) / ratio
-                indices = np.clip(indices.astype(np.int32), 0, len(samples) - 1)
-                frames = samples[indices].astype(np.int16).tobytes()
+                frames = _resample_audio(samples, wav_rate, play_rate).tobytes()
             log.info(f"Resampled TTS audio from {wav_rate}Hz to {play_rate}Hz")
 
         stream = pa.open(
@@ -242,14 +274,9 @@ async def audio_stream_handler():
                             if needs_downmix:
                                 samples = samples.reshape(-1, device_channels).mean(axis=1).astype(np.int16)
 
-                            # Resample from device rate to target rate (16kHz)
+                            # Resample with anti-aliasing filter
                             if needs_resample:
-                                float_samples = samples.astype(np.float32)
-                                ratio = SAMPLE_RATE / device_rate
-                                new_len = int(len(float_samples) * ratio)
-                                indices = np.arange(new_len) / ratio
-                                indices = np.clip(indices.astype(np.int32), 0, len(float_samples) - 1)
-                                samples = float_samples[indices].astype(np.int16)
+                                samples = _resample_audio(samples, device_rate, SAMPLE_RATE)
 
                             audio_data = samples.tobytes()
 
