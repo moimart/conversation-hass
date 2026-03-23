@@ -133,6 +133,7 @@ async def play_tts_audio(audio_data: bytes):
 
 def wait_for_audio_device(device_index: int | None, rate: int) -> pyaudio.Stream:
     """Block until the audio input device is available, retrying every 5s."""
+    global pa
     while True:
         try:
             stream = pa.open(
@@ -148,7 +149,6 @@ def wait_for_audio_device(device_index: int | None, rate: int) -> pyaudio.Stream
         except Exception as e:
             log.warning(f"Audio device not ready: {e}. Retrying in 5s...")
             # Re-initialize PyAudio to pick up hotplugged devices
-            global pa
             pa.terminate()
             import time
             time.sleep(5)
