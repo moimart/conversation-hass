@@ -53,7 +53,7 @@ class ConversationManager:
 
         # Conversation history for context
         self.history: list[dict] = []
-        self.max_history = 20
+        self.max_history = 100
 
         # Text buffer accumulated after wake word
         self._command_buffer: list[str] = []
@@ -225,7 +225,7 @@ class ConversationManager:
             "options": {
                 "temperature": 0.7,
                 "num_predict": 512,
-                "num_ctx": 8192,
+                "num_ctx": 32768,
             },
         }
 
