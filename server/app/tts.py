@@ -131,6 +131,7 @@ class TTSEngine:
         if payload:
             event["payload_length"] = len(payload)
         line = json.dumps(event) + "\n"
+        log.info(f"Wyoming send: {line.strip()}")
         writer.write(line.encode("utf-8"))
         if payload:
             writer.write(payload)
@@ -155,17 +156,18 @@ class TTSEngine:
             return None, None
 
         first_byte = peek[0]
+        log.debug(f"Wyoming recv first byte: 0x{first_byte:02x} ({chr(first_byte) if 32 <= first_byte < 127 else '?'})")
 
         if first_byte == 0x7b:  # '{' — newline-delimited JSON
             # Read the rest of the line
             rest = await reader.readline()
-            raw = (peek + rest).decode("utf-8").strip()
+            raw = (peek + rest).decode("utf-8", errors="replace").strip()
             if not raw:
                 return None, None
             try:
                 event = json.loads(raw)
             except json.JSONDecodeError as e:
-                log.warning(f"Cannot parse Wyoming event: {e}")
+                log.warning(f"Cannot parse Wyoming event: {e} — raw ({len(raw)} bytes): {raw[:300]}")
                 return None, None
 
             # Read payload if present
