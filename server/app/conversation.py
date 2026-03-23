@@ -41,7 +41,7 @@ class ConversationManager:
         tts_engine: TTSEngine,
         system_prompt: str = "",
     ):
-        self.wake_word = wake_word.lower().strip()
+        self.wake_word = wake_word.lower().strip() if wake_word else ""
         self.ollama_host = ollama_host.rstrip("/")
         self._system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.ollama_model = ollama_model
@@ -75,8 +75,15 @@ class ConversationManager:
         return self._system_prompt
 
     @property
+    def always_on(self) -> bool:
+        """Whether the assistant processes all speech (no wake word configured)."""
+        return not self.wake_word
+
+    @property
     def in_conversation(self) -> bool:
         """Whether we're in an active conversation (wake word or follow-up window)."""
+        if self.always_on:
+            return True
         if self._wake_detected:
             return True
         if self._last_response_time > 0:
@@ -92,6 +99,12 @@ class ConversationManager:
         """
         self._last_text_time = time.monotonic()
         text_lower = text.lower().strip()
+
+        if self.always_on:
+            # No wake word — process every line
+            self._command_buffer.append(text)
+            self.state = "listening"
+            return
 
         if not self.in_conversation:
             # Look for wake word to start a conversation
