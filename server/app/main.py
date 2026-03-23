@@ -98,7 +98,14 @@ async def startup():
     await pipeline.initialize()
 
     # Conversation manager
-    system_prompt = os.environ.get("SYSTEM_PROMPT", "")
+    system_prompt = ""
+    prompt_file = os.environ.get("SYSTEM_PROMPT_FILE", "/app/system_prompt.txt")
+    if os.path.isfile(prompt_file):
+        with open(prompt_file, "r") as f:
+            system_prompt = f.read().strip()
+        log.info(f"Loaded system prompt from {prompt_file} ({len(system_prompt)} chars)")
+    else:
+        log.info("No system prompt file found, using default")
     conversation = ConversationManager(
         wake_word=os.environ.get("WAKE_WORD", "hey hal"),
         ollama_host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
