@@ -73,9 +73,6 @@ pa = pyaudio.PyAudio()
 # Connected web UI clients
 ui_clients: set[web.WebSocketResponse] = set()
 
-# Active input stream (needs to be released for output on same device)
-active_input_stream: pyaudio.Stream | None = None
-
 # TTS playback state
 tts_buffer = bytearray()
 tts_receiving = False
@@ -100,19 +97,27 @@ def find_audio_device() -> int | None:
     return None
 
 
-def find_supported_sample_rate(device_index: int | None, desired_rate: int) -> int:
+def find_supported_sample_rate(device_index: int | None, desired_rate: int, for_output: bool = False) -> int:
     """Find a sample rate the device supports, preferring the desired rate."""
     candidates = [desired_rate, 48000, 44100, 32000, 16000, 8000]
     for rate in candidates:
         try:
-            supported = pa.is_format_supported(
-                rate,
-                input_device=device_index,
-                input_channels=CHANNELS,
-                input_format=pyaudio.paInt16,
-            )
+            if for_output:
+                supported = pa.is_format_supported(
+                    rate,
+                    output_device=device_index,
+                    output_channels=CHANNELS,
+                    output_format=pyaudio.paInt16,
+                )
+            else:
+                supported = pa.is_format_supported(
+                    rate,
+                    input_device=device_index,
+                    input_channels=CHANNELS,
+                    input_format=pyaudio.paInt16,
+                )
             if supported:
-                log.info(f"Device supports {rate} Hz")
+                log.info(f"Device supports {rate} Hz ({'output' if for_output else 'input'})")
                 return rate
         except ValueError:
             continue
@@ -139,17 +144,8 @@ def find_output_device() -> int | None:
 
 async def play_tts_audio(audio_data: bytes):
     """Play TTS WAV audio through the speaker, resampling if needed."""
-    global tts_playing, active_input_stream
+    global tts_playing
     tts_playing = True
-
-    # Release the input stream so ALSA can open the device for output
-    if active_input_stream is not None:
-        try:
-            active_input_stream.stop_stream()
-            active_input_stream.close()
-        except Exception:
-            pass
-        active_input_stream = None
 
     try:
         # Parse WAV data
@@ -162,10 +158,10 @@ async def play_tts_audio(audio_data: bytes):
 
         output_device = find_output_device()
 
-        # The Anker supports 48kHz — use that for output
-        play_rate = 48000
+        # Probe output-specific sample rate support
+        play_rate = find_supported_sample_rate(output_device, wav_rate, for_output=True)
 
-        # Resample if the WAV rate doesn't match
+        # Resample if the device doesn't support the WAV rate
         if play_rate != wav_rate:
             samples = np.frombuffer(frames, dtype=np.int16)
             if wav_channels > 1:
@@ -238,7 +234,7 @@ def wait_for_audio_device(device_index: int | None, rate: int, channels: int) ->
 
 async def audio_stream_handler():
     """Main loop: capture audio and stream to AI server."""
-    global tts_buffer, tts_receiving, active_input_stream
+    global tts_buffer, tts_receiving
 
     device_index = find_audio_device()
     device_rate = find_supported_sample_rate(device_index, SAMPLE_RATE)
@@ -255,7 +251,6 @@ async def audio_stream_handler():
     log.info("Waiting for audio device...")
     loop = asyncio.get_event_loop()
     stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate, device_channels)
-    active_input_stream = stream
 
     uri = f"ws://{AI_SERVER_HOST}:8765/ws/audio"
 
@@ -267,8 +262,6 @@ async def audio_stream_handler():
 
                 async def send_audio():
                     """Continuously capture and send audio."""
-                    global active_input_stream
-                    nonlocal stream
                     loop = asyncio.get_event_loop()
                     while True:
                         if tts_playing:
@@ -276,22 +269,10 @@ async def audio_stream_handler():
                             await asyncio.sleep(0.1)
                             continue
 
-                        # Re-open input stream if it was closed for TTS playback
-                        if active_input_stream is None:
-                            stream = await loop.run_in_executor(
-                                None, wait_for_audio_device, device_index, device_rate, device_channels
-                            )
-                            active_input_stream = stream
-
                         # Read audio in a thread to avoid blocking
-                        try:
-                            audio_data = await loop.run_in_executor(
-                                None, stream.read, CHUNK_SIZE, False
-                            )
-                        except Exception:
-                            # Stream was closed, will reopen on next iteration
-                            await asyncio.sleep(0.1)
-                            continue
+                        audio_data = await loop.run_in_executor(
+                            None, stream.read, CHUNK_SIZE, False
+                        )
 
                         if needs_downmix or needs_resample:
                             samples = np.frombuffer(audio_data, dtype=np.int16)
