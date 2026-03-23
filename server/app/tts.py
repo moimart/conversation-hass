@@ -146,7 +146,24 @@ class TTSEngine:
         if not line:
             return None
 
-        event = json.loads(line.decode("utf-8").strip())
+        raw = line.decode("utf-8").strip()
+        if not raw:
+            return None
+
+        # Wyoming v2 uses length-prefixed JSON: first 5 bytes are the
+        # JSON header length as a string, but most implementations just
+        # send newline-delimited JSON.  Handle both gracefully.
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            # Try to extract the first JSON object if there's trailing data
+            decoder = json.JSONDecoder()
+            try:
+                event, idx = decoder.raw_decode(raw)
+                log.debug(f"Parsed partial JSON, ignored {len(raw) - idx} trailing bytes")
+            except json.JSONDecodeError as e:
+                log.warning(f"Cannot parse Wyoming event: {e} — raw: {raw[:200]}")
+                return None
 
         # Read binary payload if present
         payload_length = event.get("payload_length", 0)
