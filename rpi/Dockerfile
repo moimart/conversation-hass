@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     portaudio19-dev \
     libasound2-dev \
     alsa-utils \
+    pulseaudio-utils \
+    libpulse0 \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 

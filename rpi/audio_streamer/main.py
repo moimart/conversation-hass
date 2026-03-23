@@ -131,6 +131,32 @@ async def play_tts_audio(audio_data: bytes):
         tts_playing = False
 
 
+def wait_for_audio_device(device_index: int | None, rate: int) -> pyaudio.Stream:
+    """Block until the audio input device is available, retrying every 5s."""
+    while True:
+        try:
+            stream = pa.open(
+                format=pyaudio.paInt16,
+                channels=CHANNELS,
+                rate=rate,
+                input=True,
+                input_device_index=device_index,
+                frames_per_buffer=CHUNK_SIZE,
+            )
+            log.info(f"Audio input opened at {rate} Hz")
+            return stream
+        except Exception as e:
+            log.warning(f"Audio device not ready: {e}. Retrying in 5s...")
+            # Re-initialize PyAudio to pick up hotplugged devices
+            global pa
+            pa.terminate()
+            import time
+            time.sleep(5)
+            pa = pyaudio.PyAudio()
+            # Re-scan for device
+            device_index = find_audio_device()
+
+
 async def audio_stream_handler():
     """Main loop: capture audio and stream to AI server."""
     global tts_buffer, tts_receiving
@@ -141,6 +167,11 @@ async def audio_stream_handler():
     if needs_resample:
         log.info(f"Will resample from {device_rate} Hz to {SAMPLE_RATE} Hz")
 
+    # Wait until audio device is actually available before connecting
+    log.info("Waiting for audio device...")
+    loop = asyncio.get_event_loop()
+    stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate)
+
     uri = f"ws://{AI_SERVER_HOST}:8765/ws/audio"
 
     while True:
@@ -148,16 +179,6 @@ async def audio_stream_handler():
             log.info(f"Connecting to AI server at {uri}...")
             async with websockets.connect(uri, max_size=16 * 1024 * 1024) as ws:
                 log.info("Connected to AI server")
-
-                # Open audio input stream at the device's supported rate
-                stream = pa.open(
-                    format=pyaudio.paInt16,
-                    channels=CHANNELS,
-                    rate=device_rate,
-                    input=True,
-                    input_device_index=device_index,
-                    frames_per_buffer=CHUNK_SIZE,
-                )
 
                 async def send_audio():
                     """Continuously capture and send audio."""
@@ -232,9 +253,22 @@ async def audio_stream_handler():
         except (websockets.ConnectionClosed, ConnectionRefusedError, OSError) as e:
             log.warning(f"Connection lost: {e}. Reconnecting in 5s...")
             await asyncio.sleep(5)
+            # Re-open audio device in case it was the source of the error
+            try:
+                stream.stop_stream()
+                stream.close()
+            except Exception:
+                pass
+            stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate)
         except Exception as e:
             log.error(f"Unexpected error: {e}. Reconnecting in 5s...")
             await asyncio.sleep(5)
+            try:
+                stream.stop_stream()
+                stream.close()
+            except Exception:
+                pass
+            stream = await loop.run_in_executor(None, wait_for_audio_device, device_index, device_rate)
 
 
 async def broadcast_to_ui(msg: dict):
