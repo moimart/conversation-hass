@@ -41,13 +41,8 @@ class AudioPipeline:
     async def initialize(self):
         """Load models."""
         log.info("Loading VAD model...")
-        import torch
-        self._vad_model, self._vad_utils = torch.hub.load(
-            repo_or_dir="snakers4/silero-vad",
-            model="silero_vad",
-            force_reload=False,
-            onnx=True,
-        )
+        from silero_vad import load_silero_vad
+        self._vad_model = load_silero_vad(onnx=True)
 
         log.info("Loading transcription model...")
         self.transcriber = StreamingTranscriber(model_size="base")

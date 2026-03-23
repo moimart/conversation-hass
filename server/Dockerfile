@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 # System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
-    gcc g++ \
+    gcc g++ git \
     libsndfile1 ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 

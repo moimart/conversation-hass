@@ -74,16 +74,17 @@ async def startup():
 
     # MCP client for Home Assistant
     mcp_url = os.environ.get("MCP_SERVER_URL", "")
+    mcp_client = MCPClient(server_url=mcp_url)
     if mcp_url:
-        mcp_client = MCPClient(server_url=mcp_url)
         try:
             await mcp_client.connect()
         except Exception as e:
             log.error(f"Failed to connect to MCP server: {e}")
             log.warning("HAL will run without Home Assistant integration")
+            # Reset to a clean unconnected client
+            mcp_client = MCPClient(server_url="")
     else:
         log.warning("MCP_SERVER_URL not set — Home Assistant integration disabled")
-        mcp_client = MCPClient(server_url="")
 
     # Wyoming TTS
     tts_host = os.environ.get("WYOMING_TTS_HOST", "localhost")
