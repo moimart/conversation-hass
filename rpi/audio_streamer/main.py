@@ -93,7 +93,7 @@ def find_output_device() -> int | None:
 
 
 async def play_tts_audio(audio_data: bytes):
-    """Play TTS WAV audio through the speaker."""
+    """Play TTS WAV audio through the speaker, resampling if needed."""
     global tts_playing
     tts_playing = True
 
@@ -101,17 +101,44 @@ async def play_tts_audio(audio_data: bytes):
         # Parse WAV data
         buf = io.BytesIO(audio_data)
         with wave.open(buf, "rb") as wf:
-            out_rate = wf.getframerate()
-            out_channels = wf.getnchannels()
-            out_width = wf.getsampwidth()
+            wav_rate = wf.getframerate()
+            wav_channels = wf.getnchannels()
+            wav_width = wf.getsampwidth()
             frames = wf.readframes(wf.getnframes())
 
         output_device = find_output_device()
 
+        # Find a playback rate the device supports
+        play_rate = find_supported_sample_rate(output_device, wav_rate)
+
+        # Resample if the device doesn't support the WAV rate
+        if play_rate != wav_rate:
+            samples = np.frombuffer(frames, dtype=np.int16)
+            # Handle multi-channel
+            if wav_channels > 1:
+                samples = samples.reshape(-1, wav_channels)
+                resampled_channels = []
+                for ch in range(wav_channels):
+                    ch_samples = samples[:, ch].astype(np.float32)
+                    ratio = play_rate / wav_rate
+                    new_len = int(len(ch_samples) * ratio)
+                    indices = np.arange(new_len) / ratio
+                    indices = np.clip(indices.astype(np.int32), 0, len(ch_samples) - 1)
+                    resampled_channels.append(ch_samples[indices].astype(np.int16))
+                frames = np.column_stack(resampled_channels).tobytes()
+            else:
+                samples = samples.astype(np.float32)
+                ratio = play_rate / wav_rate
+                new_len = int(len(samples) * ratio)
+                indices = np.arange(new_len) / ratio
+                indices = np.clip(indices.astype(np.int32), 0, len(samples) - 1)
+                frames = samples[indices].astype(np.int16).tobytes()
+            log.info(f"Resampled TTS audio from {wav_rate}Hz to {play_rate}Hz")
+
         stream = pa.open(
-            format=pa.get_format_from_width(out_width),
-            channels=out_channels,
-            rate=out_rate,
+            format=pa.get_format_from_width(wav_width),
+            channels=wav_channels,
+            rate=play_rate,
             output=True,
             output_device_index=output_device,
         )
