@@ -18,12 +18,50 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelna
 log = logging.getLogger("hal.rpi")
 
 
+def _design_lowpass_fir(cutoff: float, num_taps: int = 63) -> np.ndarray:
+    """Design a windowed-sinc low-pass FIR filter with Kaiser window."""
+    if num_taps % 2 == 0:
+        num_taps += 1
+    n = np.arange(num_taps)
+    mid = num_taps // 2
+
+    # Sinc function
+    sinc = np.sinc(2 * cutoff * (n - mid))
+    # Kaiser window (beta=5 gives ~44dB stopband attenuation)
+    beta = 5.0
+    window = np.i0(beta * np.sqrt(1 - ((n - mid) / mid) ** 2)) / np.i0(beta)
+    fir = sinc * window
+    fir /= fir.sum()
+    return fir
+
+
+# Pre-compute filters for common sample rate conversions
+_fir_cache: dict[tuple[int, int], np.ndarray] = {}
+
+
+def _get_downsample_filter(from_rate: int, to_rate: int) -> np.ndarray:
+    """Get or create a cached anti-aliasing FIR filter for downsampling."""
+    key = (from_rate, to_rate)
+    if key not in _fir_cache:
+        ratio = from_rate / to_rate
+        cutoff = to_rate / (2.0 * from_rate)  # Nyquist of target rate
+        # More taps = sharper cutoff. 64*ratio gives excellent stopband rejection.
+        num_taps = int(ratio * 64) + 1
+        if num_taps < 31:
+            num_taps = 31
+        _fir_cache[key] = _design_lowpass_fir(cutoff, num_taps)
+        log.info(f"Designed {num_taps}-tap FIR filter for {from_rate}→{to_rate} Hz")
+    return _fir_cache[key]
+
+
 def _resample_audio(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
     """
     Resample int16 audio with proper anti-aliasing.
 
-    Uses a simple FIR low-pass filter before decimation to prevent
-    aliasing artifacts that degrade speech recognition accuracy.
+    For downsampling: applies a Kaiser-windowed sinc low-pass FIR filter
+    then decimates. For integer ratios (e.g. 48k→16k = 3:1), uses exact
+    decimation for zero interpolation error.
+    For upsampling: uses linear interpolation (no aliasing risk).
     """
     if from_rate == to_rate:
         return samples
@@ -31,29 +69,28 @@ def _resample_audio(samples: np.ndarray, from_rate: int, to_rate: int) -> np.nda
     float_samples = samples.astype(np.float32)
 
     if from_rate > to_rate:
-        # Downsampling: apply anti-aliasing low-pass filter first
+        # Downsampling: filter then decimate
+        fir = _get_downsample_filter(from_rate, to_rate)
+        filtered = np.convolve(float_samples, fir, mode="same")
+
+        # Check for integer ratio (e.g. 48000/16000 = 3)
         ratio = from_rate / to_rate
-        cutoff = to_rate / (2.0 * from_rate)
-        filter_len = int(ratio) * 6 + 1
-        if filter_len < 3:
-            filter_len = 3
-        if filter_len % 2 == 0:
-            filter_len += 1
-        n = np.arange(filter_len)
-        mid = filter_len // 2
-
-        sinc = np.sinc(2 * cutoff * (n - mid))
-        window = 0.54 - 0.46 * np.cos(2 * np.pi * n / (filter_len - 1))
-        fir = sinc * window
-        fir /= fir.sum()
-
-        float_samples = np.convolve(float_samples, fir, mode="same")
-
-    # Resample via linear interpolation
-    new_len = int(len(float_samples) * to_rate / from_rate)
-    x_old = np.linspace(0, 1, len(float_samples))
-    x_new = np.linspace(0, 1, new_len)
-    resampled = np.interp(x_new, x_old, float_samples)
+        int_ratio = round(ratio)
+        if abs(ratio - int_ratio) < 0.001:
+            # Exact decimation — no interpolation artifacts
+            resampled = filtered[::int_ratio]
+        else:
+            # Non-integer ratio — use interpolation
+            new_len = int(len(filtered) * to_rate / from_rate)
+            x_old = np.linspace(0, 1, len(filtered))
+            x_new = np.linspace(0, 1, new_len)
+            resampled = np.interp(x_new, x_old, filtered)
+    else:
+        # Upsampling: linear interpolation (no aliasing risk)
+        new_len = int(len(float_samples) * to_rate / from_rate)
+        x_old = np.linspace(0, 1, len(float_samples))
+        x_new = np.linspace(0, 1, new_len)
+        resampled = np.interp(x_new, x_old, float_samples)
 
     return resampled.astype(np.int16)
 
