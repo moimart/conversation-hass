@@ -19,7 +19,8 @@ class AudioPipeline:
     """Processes raw audio: VAD → transcription → speaker filtering."""
 
     def __init__(self, sample_rate: int = 16000, stt_engine: str = "whisper", stt_model: str = ""):
-        self.sample_rate = sample_rate
+        self.sample_rate = sample_rate  # incoming audio rate (may be 48kHz)
+        self._target_rate = 16000       # rate expected by VAD and STT
         self._stt_engine = stt_engine
         self._stt_model = stt_model
         self.transcriber: BaseTranscriber | None = None
@@ -55,6 +56,14 @@ class AudioPipeline:
 
         log.info("Audio pipeline ready.")
 
+    def _to_16k_float(self, audio_bytes: bytes) -> np.ndarray:
+        """Convert raw PCM bytes to 16kHz float32 using librosa for resampling."""
+        audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        if self.sample_rate != self._target_rate:
+            import librosa
+            audio = librosa.resample(audio, orig_sr=self.sample_rate, target_sr=self._target_rate)
+        return audio
+
     def set_ai_speaking(self, speaking: bool):
         """Mark whether the AI is currently speaking (for echo suppression)."""
         self._ai_speaking = speaking
@@ -76,9 +85,16 @@ class AudioPipeline:
         audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
         audio_float = audio_int16.astype(np.float32) / 32768.0
 
-        # Run VAD
+        # Resample to 16kHz for VAD if incoming rate differs
+        if self.sample_rate != self._target_rate:
+            import librosa
+            vad_audio = librosa.resample(audio_float, orig_sr=self.sample_rate, target_sr=self._target_rate)
+        else:
+            vad_audio = audio_float
+
+        # Run VAD on 16kHz audio
         import torch
-        chunk_tensor = torch.from_numpy(audio_float)
+        chunk_tensor = torch.from_numpy(vad_audio)
 
         # Silero VAD expects chunks of specific sizes (512 for 16kHz)
         vad_chunk_size = 512
@@ -87,7 +103,7 @@ class AudioPipeline:
             segment = chunk_tensor[i : i + vad_chunk_size]
             if len(segment) < vad_chunk_size:
                 segment = torch.nn.functional.pad(segment, (0, vad_chunk_size - len(segment)))
-            confidence = self._vad_model(segment, self.sample_rate).item()
+            confidence = self._vad_model(segment, self._target_rate).item()
             if confidence > 0.5:
                 is_speech = True
                 break
@@ -104,7 +120,7 @@ class AudioPipeline:
             # Emit partial transcriptions periodically
             if now - self._last_partial_time >= self._partial_interval and len(self._partial_buffer) > 0:
                 self._last_partial_time = now
-                partial_audio = np.frombuffer(bytes(self._partial_buffer), dtype=np.int16).astype(np.float32) / 32768.0
+                partial_audio = self._to_16k_float(bytes(self._partial_buffer))
                 text = await self.transcriber.transcribe(partial_audio)
                 if text and text.strip():
                     return {"text": text.strip(), "is_partial": True, "speaker": "human"}
@@ -118,7 +134,7 @@ class AudioPipeline:
                     self._speech_active = False
 
                     if len(self._audio_buffer) > 0:
-                        full_audio = np.frombuffer(bytes(self._audio_buffer), dtype=np.int16).astype(np.float32) / 32768.0
+                        full_audio = self._to_16k_float(bytes(self._audio_buffer))
                         text = await self.transcriber.transcribe(full_audio)
 
                         self._audio_buffer.clear()
@@ -127,7 +143,7 @@ class AudioPipeline:
 
                         if text and text.strip():
                             # Speaker identification
-                            speaker = self.speaker_filter.identify(full_audio, self.sample_rate)
+                            speaker = self.speaker_filter.identify(full_audio, self._target_rate)
                             self.silence_detected = True
                             return {"text": text.strip(), "is_partial": False, "speaker": speaker}
 

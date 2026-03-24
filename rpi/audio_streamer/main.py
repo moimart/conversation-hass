@@ -275,11 +275,8 @@ async def audio_stream_handler():
     device_index = find_audio_device()
     device_rate = find_supported_sample_rate(device_index, SAMPLE_RATE)
     device_channels = get_device_channels(device_index)
-    needs_resample = device_rate != SAMPLE_RATE
     needs_downmix = device_channels > 1
-    log.info(f"Device config: {device_rate} Hz, {device_channels}ch")
-    if needs_resample:
-        log.info(f"Will resample from {device_rate} Hz to {SAMPLE_RATE} Hz")
+    log.info(f"Device config: {device_rate} Hz, {device_channels}ch (sending raw to server)")
     if needs_downmix:
         log.info(f"Will downmix from {device_channels}ch to mono")
 
@@ -310,17 +307,9 @@ async def audio_stream_handler():
                             None, stream.read, CHUNK_SIZE, False
                         )
 
-                        if needs_downmix or needs_resample:
+                        if needs_downmix:
                             samples = np.frombuffer(audio_data, dtype=np.int16)
-
-                            # Downmix stereo/multi-channel to mono
-                            if needs_downmix:
-                                samples = samples.reshape(-1, device_channels).mean(axis=1).astype(np.int16)
-
-                            # Resample with anti-aliasing filter
-                            if needs_resample:
-                                samples = _resample_audio(samples, device_rate, SAMPLE_RATE)
-
+                            samples = samples.reshape(-1, device_channels).mean(axis=1).astype(np.int16)
                             audio_data = samples.tobytes()
 
                         await ws.send(audio_data)
