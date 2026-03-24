@@ -25,9 +25,10 @@ log = logging.getLogger("hal.tts")
 class TTSEngine:
     """Wyoming protocol TTS client."""
 
-    def __init__(self, host: str = "localhost", port: int = 10200):
+    def __init__(self, host: str = "localhost", port: int = 10200, voice: str = ""):
         self.host = host
         self.port = port
+        self.voice = voice.strip() if voice else ""
         self._sample_rate = 22050
         self._sample_width = 2
         self._channels = 1
@@ -61,7 +62,10 @@ class TTSEngine:
 
         try:
             # Send synthesize event
-            await self._send_event(writer, "synthesize", {"text": text})
+            synth_data = {"text": text}
+            if self.voice:
+                synth_data["voice"] = {"name": self.voice}
+            await self._send_event(writer, "synthesize", synth_data)
 
             # Collect audio chunks
             audio_chunks: list[bytes] = []

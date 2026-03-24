@@ -89,7 +89,8 @@ async def startup():
     # Wyoming TTS
     tts_host = os.environ.get("WYOMING_TTS_HOST", "localhost")
     tts_port = int(os.environ.get("WYOMING_TTS_PORT", "10200"))
-    tts_engine = TTSEngine(host=tts_host, port=tts_port)
+    tts_voice = os.environ.get("WYOMING_TTS_VOICE", "")
+    tts_engine = TTSEngine(host=tts_host, port=tts_port, voice=tts_voice)
     await tts_engine.initialize()
 
     # Audio pipeline (VAD + transcription + speaker filter)
