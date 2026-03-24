@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Python dependencies
+# Python dependencies — pre-install build deps needed by NeMo for metadata generation
+RUN pip3 install --no-cache-dir numpy==1.26.4 setuptools wheel Cython typing_extensions
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 

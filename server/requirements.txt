@@ -10,5 +10,4 @@ resemblyzer==0.1.3
 librosa==0.10.2
 soundfile==0.12.1
 mcp>=1.0.0
-# Optional: uncomment for Nemotron/NeMo ASR (STT_ENGINE=nemotron)
-# nemo_toolkit[asr]>=2.0.0
+nemo_toolkit[asr]>=2.0.0
