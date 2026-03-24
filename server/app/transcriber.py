@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import threading
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 
@@ -9,11 +10,16 @@ import numpy as np
 
 log = logging.getLogger("hal.transcriber")
 
-_executor = ThreadPoolExecutor(max_workers=1)
+# Use 2 workers so a timed-out task doesn't permanently block the pool
+_executor = ThreadPoolExecutor(max_workers=2)
 
 
 class BaseTranscriber(ABC):
     """Abstract base for STT engines."""
+
+    def __init__(self):
+        # Serialize transcription calls — GPU models can't handle concurrent access
+        self._lock = threading.Lock()
 
     @abstractmethod
     async def initialize(self):
@@ -23,6 +29,16 @@ class BaseTranscriber(ABC):
     def _transcribe_sync(self, audio: np.ndarray) -> str:
         pass
 
+    def _transcribe_locked(self, audio: np.ndarray) -> str:
+        """Thread-safe wrapper that serializes GPU access."""
+        if not self._lock.acquire(timeout=10.0):
+            log.warning("Transcription lock timeout, skipping segment")
+            return ""
+        try:
+            return self._transcribe_sync(audio)
+        finally:
+            self._lock.release()
+
     async def transcribe(self, audio: np.ndarray) -> str:
         """Transcribe a numpy float32 audio array with timeout."""
         if len(audio) < 1600:  # Less than 0.1s at 16kHz
@@ -31,7 +47,7 @@ class BaseTranscriber(ABC):
         loop = asyncio.get_event_loop()
         try:
             text = await asyncio.wait_for(
-                loop.run_in_executor(_executor, self._transcribe_sync, audio),
+                loop.run_in_executor(_executor, self._transcribe_locked, audio),
                 timeout=15.0,
             )
             return text
@@ -47,6 +63,7 @@ class WhisperTranscriber(BaseTranscriber):
     """faster-whisper STT engine."""
 
     def __init__(self, model_size: str = "large-v3-turbo"):
+        super().__init__()
         self.model_size = model_size
         self.model = None
 
@@ -100,6 +117,7 @@ class NemotronTranscriber(BaseTranscriber):
     """NVIDIA Nemotron Speech ASR engine (via NeMo toolkit)."""
 
     def __init__(self, model_name: str = "nvidia/parakeet-tdt-0.6b-v2"):
+        super().__init__()
         self.model_name = model_name
         self.model = None
 
@@ -119,7 +137,7 @@ class NemotronTranscriber(BaseTranscriber):
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
 
-        results = self.model.transcribe([audio], batch_size=1)
+        results = self.model.transcribe([audio], batch_size=1, verbose=False)
 
         # Results can be a list of strings or a list of Hypothesis objects
         if not results:
