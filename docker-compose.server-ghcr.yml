@@ -13,6 +13,8 @@ services:
       - WYOMING_TTS_HOST=${WYOMING_TTS_HOST}
       - WYOMING_TTS_PORT=${WYOMING_TTS_PORT:-10200}
       - SAMPLE_RATE=${SAMPLE_RATE:-16000}
+      - STT_ENGINE=${STT_ENGINE:-whisper}
+      - STT_MODEL=${STT_MODEL:-}
     volumes:
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro
       - huggingface-cache:/root/.cache/huggingface

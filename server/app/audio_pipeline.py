@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 
-from .transcriber import StreamingTranscriber
+from .transcriber import BaseTranscriber, create_transcriber
 from .speaker_filter import SpeakerFilter
 
 log = logging.getLogger("hal.pipeline")
@@ -18,9 +18,11 @@ SILENCE_THRESHOLD = 1.5
 class AudioPipeline:
     """Processes raw audio: VAD → transcription → speaker filtering."""
 
-    def __init__(self, sample_rate: int = 16000):
+    def __init__(self, sample_rate: int = 16000, stt_engine: str = "whisper", stt_model: str = ""):
         self.sample_rate = sample_rate
-        self.transcriber: StreamingTranscriber | None = None
+        self._stt_engine = stt_engine
+        self._stt_model = stt_model
+        self.transcriber: BaseTranscriber | None = None
         self.speaker_filter: SpeakerFilter | None = None
 
         # VAD state
@@ -45,7 +47,7 @@ class AudioPipeline:
         self._vad_model = load_silero_vad(onnx=True)
 
         log.info("Loading transcription model...")
-        self.transcriber = StreamingTranscriber(model_size="large-v3-turbo")
+        self.transcriber = create_transcriber(self._stt_engine, self._stt_model)
         await self.transcriber.initialize()
 
         log.info("Initializing speaker filter...")

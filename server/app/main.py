@@ -94,7 +94,9 @@ async def startup():
 
     # Audio pipeline (VAD + transcription + speaker filter)
     sample_rate = int(os.environ.get("SAMPLE_RATE", "16000"))
-    pipeline = AudioPipeline(sample_rate=sample_rate)
+    stt_engine = os.environ.get("STT_ENGINE", "whisper")
+    stt_model = os.environ.get("STT_MODEL", "")
+    pipeline = AudioPipeline(sample_rate=sample_rate, stt_engine=stt_engine, stt_model=stt_model)
     await pipeline.initialize()
 
     # Conversation manager
