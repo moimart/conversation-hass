@@ -15,10 +15,16 @@ log = logging.getLogger("hal.memory")
 class MemoryClient:
     """Client for the Shodh Memory REST API."""
 
-    def __init__(self, base_url: str = "http://localhost:3030", user_id: str = "hal-default"):
+    def __init__(self, base_url: str = "http://localhost:3030", user_id: str = "hal-default", api_key: str = ""):
         self.base_url = base_url.rstrip("/")
         self.user_id = user_id
-        self._http = httpx.AsyncClient(timeout=10.0)
+        headers = {}
+        if api_key:
+            headers["X-API-Key"] = api_key
+        else:
+            # Shodh default dev key
+            headers["X-API-Key"] = "sk-shodh-dev-key"
+        self._http = httpx.AsyncClient(timeout=10.0, headers=headers)
         self._available = False
 
     async def initialize(self):

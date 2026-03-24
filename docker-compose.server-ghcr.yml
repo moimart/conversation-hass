@@ -18,6 +18,7 @@ services:
       - STT_MODEL=${STT_MODEL:-}
       - MEMORY_URL=${MEMORY_URL:-http://shodh-memory:3030}
       - MEMORY_USER_ID=${MEMORY_USER_ID:-hal-default}
+      - MEMORY_API_KEY=${MEMORY_API_KEY:-sk-shodh-dev-key}
     volumes:
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro
       - huggingface-cache:/root/.cache/huggingface

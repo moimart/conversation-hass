@@ -98,7 +98,8 @@ async def startup():
     # Long-term memory (Shodh)
     memory_url = os.environ.get("MEMORY_URL", "http://shodh-memory:3030")
     memory_user = os.environ.get("MEMORY_USER_ID", "hal-default")
-    memory_client = MemoryClient(base_url=memory_url, user_id=memory_user)
+    memory_api_key = os.environ.get("MEMORY_API_KEY", "")
+    memory_client = MemoryClient(base_url=memory_url, user_id=memory_user, api_key=memory_api_key)
     await memory_client.initialize()
 
     # Audio pipeline (VAD + transcription + speaker filter)
