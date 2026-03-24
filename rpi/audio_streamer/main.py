@@ -118,6 +118,9 @@ tts_playing = False
 chime_buffer = bytearray()
 chime_receiving = False
 
+# Volume level (0.0 - 1.0)
+tts_volume = 0.7
+
 
 def find_audio_device() -> int | None:
     """Find the Anker Powerconf S330 or use default."""
@@ -209,6 +212,12 @@ async def play_tts_audio(audio_data: bytes):
             else:
                 frames = _resample_audio(samples, wav_rate, play_rate).tobytes()
             log.info(f"Resampled TTS audio from {wav_rate}Hz to {play_rate}Hz")
+
+        # Apply volume
+        if tts_volume < 0.99:
+            samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32)
+            samples *= tts_volume
+            frames = np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
 
         stream = pa.open(
             format=pa.get_format_from_width(wav_width),
@@ -406,6 +415,10 @@ async def websocket_handler(request):
                 data = json.loads(msg.data)
                 if data.get("type") == "ping":
                     await ws.send_json({"type": "pong"})
+                elif data.get("type") == "volume":
+                    global tts_volume
+                    tts_volume = max(0.0, min(1.0, float(data.get("level", 0.7))))
+                    log.info(f"Volume set to {tts_volume:.0%}")
     finally:
         ui_clients.discard(ws)
         log.info(f"Web UI client disconnected (total: {len(ui_clients)})")

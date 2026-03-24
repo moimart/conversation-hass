@@ -174,6 +174,49 @@
         }
     }
 
+    // --- Volume Control ---
+    let volume = 0.7;
+    const volFill = document.getElementById("vol-fill");
+    const volTrack = document.getElementById("vol-track");
+    const volDown = document.getElementById("vol-down");
+    const volUp = document.getElementById("vol-up");
+
+    function setVolume(v) {
+        volume = Math.max(0, Math.min(1, v));
+        volFill.style.width = (volume * 100) + "%";
+        // Send volume to RPi
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "volume", level: volume }));
+        }
+    }
+
+    volDown.addEventListener("click", () => setVolume(volume - 0.1));
+    volUp.addEventListener("click", () => setVolume(volume + 0.1));
+
+    // Touch/click drag on the bar
+    function handleVolDrag(e) {
+        const rect = volTrack.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        setVolume(pct);
+    }
+
+    volTrack.addEventListener("mousedown", (e) => {
+        handleVolDrag(e);
+        const onMove = (ev) => handleVolDrag(ev);
+        const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+    });
+
+    volTrack.addEventListener("touchstart", (e) => {
+        handleVolDrag(e);
+        const onMove = (ev) => { ev.preventDefault(); handleVolDrag(ev); };
+        const onEnd = () => { document.removeEventListener("touchmove", onMove); document.removeEventListener("touchend", onEnd); };
+        document.addEventListener("touchmove", onMove, { passive: false });
+        document.addEventListener("touchend", onEnd);
+    });
+
     // --- Keepalive ---
     setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -182,6 +225,7 @@
     }, 30000);
 
     // --- Init ---
+    setVolume(0.7);
     setState("idle");
     connect();
 })();
