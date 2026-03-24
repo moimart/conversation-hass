@@ -36,19 +36,26 @@ No cloud services. No subscriptions. All processing stays on your network.
 │  │                              │              │  │  │  (or always-on mode)   │  │    │  │
 │  └──────────────────────────────┘              │  │  │  Command accumulation  │  │    │  │
 │                                                │  │  │  Follow-up window      │  │    │  │
-│                                                │  │  └───┬──────────────┬─────┘  │    │  │
-│                                                │  │      │              │        │    │  │
-│                                                │  │  ┌───▼───┐   ┌─────▼──────┐ │    │  │
-│                                                │  │  │Ollama │   │ Wyoming    │ │    │  │
-│                                                │  │  │LLM    │   │ TTS        │ │    │  │
-│                                                │  │  │(tool  │   │            │ │    │  │
-│                                                │  │  │calling│   │            │ │    │  │
-│                                                │  │  └───┬───┘   └────────────┘ │    │  │
+│                                                │  │  └─┬────────────┬───┬─────┘  │    │  │
+│                                                │  │    │            │   │        │    │  │
+│                                                │  │  ┌─▼─────┐ ┌───▼───▼────┐   │    │  │
+│                                                │  │  │Ollama │ │ Wyoming    │   │    │  │
+│                                                │  │  │LLM    │ │ TTS        │   │    │  │
+│                                                │  │  │(tool  │ └────────────┘   │    │  │
+│                                                │  │  │calling│                  │    │  │
+│                                                │  │  └───┬───┘                  │    │  │
 │                                                │  │      │ MCP tool calls       │    │  │
 │                                                │  │  ┌───▼──────────────────┐   │    │  │
 │                                                │  │  │ MCP Client           │   │    │  │
 │                                                │  │  │ (Home Assistant)     │───┼────┼──► HA MCP Server
 │                                                │  │  └──────────────────────┘   │    │  │
+│                                                │  └──────────────────────────────┘    │  │
+│                                                │                                      │  │
+│                                                │  ┌──────────────────────────────┐    │  │
+│                                                │  │  Shodh Memory (:3030)        │    │  │
+│                                                │  │  Long-term conversational    │    │  │
+│                                                │  │  memory with Hebbian learning│    │  │
+│                                                │  │  recall ◄──► remember        │    │  │
 │                                                │  └──────────────────────────────┘    │  │
 │                                                └──────────────────────────────────────┘  │
 │                                                                                         │
@@ -74,9 +81,11 @@ No cloud services. No subscriptions. All processing stays on your network.
 
 5. **LLM with MCP tool calling** — The user's command is sent to Ollama (32k context window) with MCP tool definitions discovered from your Home Assistant MCP server at startup (88+ tools). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. If the command is conversational, the LLM simply responds naturally. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
 
-6. **Local TTS** — The response is synthesized via a Wyoming-protocol TTS service and streamed back to the Raspberry Pi for playback through the speaker (resampled to the device's native 48kHz).
+6. **Long-term memory** — Before each LLM call, relevant memories are recalled from [Shodh Memory](https://www.shodh-memory.com/) and injected into the prompt as context. After each exchange, the conversation is stored as a new memory. Shodh uses Hebbian learning (connections that fire together wire together) and natural decay, so frequently referenced facts strengthen over time while irrelevant ones fade — like biological memory.
 
-7. **Web UI** — A modern HAL 9000-inspired interface with metallic bezel ring, animated red eye (bright white-hot center when speaking), live transcription, AI responses, and assistant state indicators.
+7. **Local TTS** — The response is synthesized via a Wyoming-protocol TTS service and streamed back to the Raspberry Pi for playback through the speaker (resampled to the device's native 48kHz).
+
+8. **Web UI** — A modern HAL 9000-inspired interface with metallic bezel ring, animated red eye (bright white-hot center when speaking), live transcription, AI responses, and assistant state indicators.
 
 ## Speech-to-Text Engines
 
@@ -141,9 +150,11 @@ docker compose -f docker-compose.server.yml up --build -d
 docker compose -f docker-compose.server-ghcr.yml up -d
 ```
 
-This starts `hal-ai-server` — FastAPI WebSocket server on port **8765**. Ollama must already be running on the host.
+This starts two containers:
+- `hal-ai-server` — FastAPI WebSocket server on port **8765**
+- `hal-shodh-memory` — Long-term memory service on port **3030**
 
-STT models are cached in a Docker volume (`huggingface-cache`) so they're only downloaded once.
+Ollama must already be running on the host. STT models are cached in a Docker volume (`huggingface-cache`) so they're only downloaded once. Shodh Memory data persists in the `shodh-data` volume.
 
 ### 3. Start the Raspberry Pi
 
@@ -191,6 +202,7 @@ conversation-hass/
 │       ├── transcriber.py             # WhisperTranscriber + NemotronTranscriber
 │       ├── speaker_filter.py          # Voice embedding comparison (resemblyzer)
 │       ├── conversation.py            # Wake word / always-on, MCP tool-calling, 32k context
+│       ├── memory.py                  # Shodh Memory client (remember/recall)
 │       ├── mcp_client.py              # MCP client (Streamable HTTP transport)
 │       └── tts.py                     # Wyoming protocol TTS client
 │
@@ -225,6 +237,9 @@ conversation-hass/
 | `STT_MODEL` | (auto) | STT model name/size. Defaults: whisper=`large-v3-turbo`, nemotron=`nvidia/parakeet-tdt-0.6b-v2` |
 | `WYOMING_TTS_HOST` | — | Hostname/IP of Wyoming TTS service |
 | `WYOMING_TTS_PORT` | `10200` | Port of Wyoming TTS service |
+| `WYOMING_TTS_VOICE` | (server default) | TTS voice name. Empty = server default |
+| `MEMORY_URL` | `http://shodh-memory:3030` | Shodh Memory service URL |
+| `MEMORY_USER_ID` | `hal-default` | User ID for memory isolation (multi-user support) |
 | `AUDIO_DEVICE` | `default` | ALSA audio device (auto-detects USB speakerphones) |
 | `SAMPLE_RATE` | `16000` | Target audio sample rate in Hz (device is auto-probed) |
 | `CHANNELS` | `1` | Target audio channels (device channels auto-detected, downmixed) |
@@ -253,7 +268,7 @@ All 92 tests run without GPU, ML models, or external services — dependencies a
 |---|---|---|
 | `/ws/audio` | WebSocket | Main audio channel. Receives PCM audio, sends transcription JSON + TTS binary |
 | `/ws/ui` | WebSocket | UI channel. Receives live transcription and state updates |
-| `/health` | HTTP GET | Health check: pipeline, MCP, and TTS status |
+| `/health` | HTTP GET | Health check: pipeline, MCP, TTS, and memory status |
 
 ### WebSocket Message Types
 
