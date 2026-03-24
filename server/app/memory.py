@@ -23,7 +23,7 @@ class MemoryClient:
             headers["X-API-Key"] = api_key
         else:
             # Shodh default dev key
-            headers["X-API-Key"] = "sk-shodh-dev-key"
+            headers["X-API-Key"] = "sk-shodh-dev-default"
         self._http = httpx.AsyncClient(timeout=10.0, headers=headers)
         self._available = False
 
