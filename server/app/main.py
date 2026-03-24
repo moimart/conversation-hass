@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .audio_pipeline import AudioPipeline
 from .conversation import ConversationManager
 from .mcp_client import MCPClient
+from .memory import MemoryClient
 from .tts import TTSEngine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
@@ -28,6 +29,7 @@ pipeline: AudioPipeline | None = None
 conversation: ConversationManager | None = None
 tts_engine: TTSEngine | None = None
 mcp_client: MCPClient | None = None
+memory_client: MemoryClient | None = None
 
 # Connected UI clients (for broadcasting transcription)
 ui_clients: set[WebSocket] = set()
@@ -64,7 +66,7 @@ def _generate_chime() -> bytes:
 
 @app.on_event("startup")
 async def startup():
-    global pipeline, conversation, tts_engine, mcp_client
+    global pipeline, conversation, tts_engine, mcp_client, memory_client
 
     log.info("Initializing HAL voice server...")
 
@@ -93,6 +95,12 @@ async def startup():
     tts_engine = TTSEngine(host=tts_host, port=tts_port, voice=tts_voice)
     await tts_engine.initialize()
 
+    # Long-term memory (Shodh)
+    memory_url = os.environ.get("MEMORY_URL", "http://shodh-memory:3030")
+    memory_user = os.environ.get("MEMORY_USER_ID", "hal-default")
+    memory_client = MemoryClient(base_url=memory_url, user_id=memory_user)
+    await memory_client.initialize()
+
     # Audio pipeline (VAD + transcription + speaker filter)
     sample_rate = int(os.environ.get("SAMPLE_RATE", "16000"))
     stt_engine = os.environ.get("STT_ENGINE", "whisper")
@@ -115,6 +123,7 @@ async def startup():
         ollama_model=os.environ.get("OLLAMA_MODEL", "llama3.2"),
         mcp_client=mcp_client,
         tts_engine=tts_engine,
+        memory_client=memory_client,
         system_prompt=system_prompt,
     )
 
@@ -257,4 +266,5 @@ async def health():
         "pipeline_ready": pipeline is not None,
         "mcp_connected": mcp_client is not None and len(mcp_client.tool_names) > 0,
         "tts_available": tts_engine is not None,
+        "memory_available": memory_client is not None and memory_client.available,
     }

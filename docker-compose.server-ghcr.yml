@@ -16,6 +16,8 @@ services:
       - SAMPLE_RATE=${SAMPLE_RATE:-16000}
       - STT_ENGINE=${STT_ENGINE:-whisper}
       - STT_MODEL=${STT_MODEL:-}
+      - MEMORY_URL=${MEMORY_URL:-http://shodh-memory:3030}
+      - MEMORY_USER_ID=${MEMORY_USER_ID:-hal-default}
     volumes:
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro
       - huggingface-cache:/root/.cache/huggingface
@@ -28,6 +30,18 @@ services:
               capabilities: [gpu]
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - shodh-memory
+
+  shodh-memory:
+    image: varunshodh/shodh-memory:latest
+    container_name: hal-shodh-memory
+    restart: unless-stopped
+    ports:
+      - "3030:3030"
+    volumes:
+      - shodh-data:/data
 
 volumes:
   huggingface-cache:
+  shodh-data:

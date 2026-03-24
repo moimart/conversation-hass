@@ -13,6 +13,7 @@ from typing import Callable, Awaitable
 import httpx
 
 from .mcp_client import MCPClient
+from .memory import MemoryClient
 from .tts import TTSEngine
 
 log = logging.getLogger("hal.conversation")
@@ -39,6 +40,7 @@ class ConversationManager:
         ollama_model: str,
         mcp_client: MCPClient,
         tts_engine: TTSEngine,
+        memory_client: MemoryClient | None = None,
         system_prompt: str = "",
     ):
         self.wake_word = wake_word.lower().strip() if wake_word else ""
@@ -47,6 +49,7 @@ class ConversationManager:
         self.ollama_model = ollama_model
         self.mcp = mcp_client
         self.tts_engine = tts_engine
+        self.memory = memory_client
 
         # State: idle, listening, processing, speaking
         self.state = "idle"
@@ -148,6 +151,11 @@ class ConversationManager:
         try:
             response_text = await self._run_llm_with_tools(full_text)
 
+            # Store conversation exchange in long-term memory
+            if self.memory and self.memory.available:
+                memory_text = f"User said: {full_text}\nHAL responded: {response_text}"
+                await self.memory.remember(memory_text, memory_type="conversation")
+
             # Synthesize speech
             self.state = "speaking"
             audio_bytes = await self.tts_engine.synthesize(response_text)
@@ -178,7 +186,15 @@ class ConversationManager:
         if len(self.history) > self.max_history:
             self.history = self.history[-self.max_history:]
 
-        messages = [{"role": "system", "content": self._build_system_prompt()}] + self.history
+        # Recall relevant memories and inject into system prompt
+        system_prompt = self._build_system_prompt()
+        if self.memory and self.memory.available:
+            memories = await self.memory.recall(user_text, limit=5)
+            if memories:
+                memory_block = self.memory.format_memories_for_prompt(memories)
+                system_prompt = system_prompt + "\n\n" + memory_block
+
+        messages = [{"role": "system", "content": system_prompt}] + self.history
 
         # Tool-calling loop (max 5 rounds to prevent infinite loops)
         for _ in range(5):
