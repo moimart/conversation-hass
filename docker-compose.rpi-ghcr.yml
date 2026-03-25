@@ -17,7 +17,6 @@ services:
       - /dev/input:/dev/input
     group_add:
       - audio
-      - input
     volumes:
       - /run/dbus:/run/dbus:ro
       - /run/user/1000/pulse:/run/user/1000/pulse:ro
