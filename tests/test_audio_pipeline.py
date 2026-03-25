@@ -27,7 +27,6 @@ class TestPipelineInit:
         assert p.sample_rate == 16000
         assert p._ai_speaking is False
         assert p._speech_active is False
-        assert p.silence_detected is False
 
     def test_custom_sample_rate(self):
         p = AudioPipeline(sample_rate=44100)
@@ -110,7 +109,7 @@ class TestProcessChunk:
         assert result["text"] == "hello world"
         assert result["is_partial"] is False
         assert result["speaker"] == "human"
-        assert p.silence_detected is True
+        assert result["silence_after"] is True
 
     @pytest.mark.asyncio
     async def test_brief_silence_doesnt_finalize(self):
@@ -133,7 +132,6 @@ class TestProcessChunk:
         result = await p.process_chunk(make_silence_bytes(0.1))
 
         assert result is None
-        assert p.silence_detected is False
 
     @pytest.mark.asyncio
     async def test_empty_transcription_returns_none(self):

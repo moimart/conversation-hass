@@ -30,7 +30,6 @@ class AudioPipeline:
         self._vad_model = None
         self._speech_active = False
         self._silence_start: float | None = None
-        self.silence_detected = False
 
         # Echo suppression: when AI is speaking, suppress transcription
         self._ai_speaking = False
@@ -113,7 +112,6 @@ class AudioPipeline:
         if is_speech:
             self._speech_active = True
             self._silence_start = None
-            self.silence_detected = False
             self._audio_buffer.extend(audio_bytes)
             self._partial_buffer.extend(audio_bytes)
 
@@ -144,7 +142,6 @@ class AudioPipeline:
                         if text and text.strip():
                             # Speaker identification
                             speaker = self.speaker_filter.identify(full_audio, self._target_rate)
-                            self.silence_detected = True
-                            return {"text": text.strip(), "is_partial": False, "speaker": speaker}
+                            return {"text": text.strip(), "is_partial": False, "speaker": speaker, "silence_after": True}
 
         return None
