@@ -449,11 +449,58 @@ async def start_web_server():
     log.info(f"Web UI available at http://0.0.0.0:{WEB_PORT}")
 
 
+async def hid_volume_listener():
+    """Listen for physical volume buttons on USB speakerphone via evdev."""
+    global tts_volume
+
+    try:
+        import evdev
+        from evdev import ecodes
+    except ImportError:
+        log.info("evdev not available, hardware volume buttons disabled")
+        return
+
+    while True:
+        try:
+            devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
+            anker_dev = None
+            for dev in devices:
+                name = dev.name.lower()
+                if "anker" in name or "powerconf" in name:
+                    anker_dev = dev
+                    log.info(f"HID volume listener: {dev.name} ({dev.path})")
+                    break
+                else:
+                    dev.close()
+
+            if anker_dev is None:
+                await asyncio.sleep(10)
+                continue
+
+            async for event in anker_dev.async_read_loop():
+                if event.type == ecodes.EV_KEY and event.value == 1:
+                    if event.code == 115:  # KEY_VOLUMEUP
+                        tts_volume = min(1.0, tts_volume + 0.1)
+                        log.info(f"Hardware vol up: {tts_volume:.0%}")
+                        await broadcast_to_ui({"type": "volume_sync", "level": tts_volume})
+                    elif event.code == 114:  # KEY_VOLUMEDOWN
+                        tts_volume = max(0.0, tts_volume - 0.1)
+                        log.info(f"Hardware vol down: {tts_volume:.0%}")
+                        await broadcast_to_ui({"type": "volume_sync", "level": tts_volume})
+
+        except Exception as e:
+            log.warning(f"HID volume listener error: {e}. Retrying in 10s...")
+            await asyncio.sleep(10)
+
+
 async def main():
     """Start all services."""
     log.info("Starting HAL RPi audio streamer...")
     await start_web_server()
-    await audio_stream_handler()
+    await asyncio.gather(
+        audio_stream_handler(),
+        hid_volume_listener(),
+    )
 
 
 if __name__ == "__main__":
