@@ -462,39 +462,47 @@ async def hid_mute_listener():
 
     while True:
         try:
-            # Find the Anker input device
-            devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-            anker_dev = None
-            for dev in devices:
+            # List ALL input devices for debugging
+            all_paths = evdev.list_devices()
+            log.info(f"All input devices: {all_paths}")
+            anker_devs = []
+            for path in all_paths:
+                dev = evdev.InputDevice(path)
+                log.info(f"  {path}: {dev.name} (phys={dev.phys})")
                 name = dev.name.lower()
                 if "anker" in name or "powerconf" in name:
-                    anker_dev = dev
-                    log.info(f"Found HID device: {dev.name} ({dev.path})")
-                    break
+                    anker_devs.append(dev)
+                else:
+                    dev.close()
 
-            if anker_dev is None:
+            if not anker_devs:
                 log.info("No Anker HID device found, retrying in 10s...")
                 await asyncio.sleep(10)
                 continue
 
-            # Log device capabilities
-            caps = anker_dev.capabilities(verbose=True)
-            for cap_type, events in caps.items():
-                log.info(f"HID capability {cap_type}: {events}")
+            # Listen on ALL matching Anker devices (some have multiple nodes)
+            for anker_dev in anker_devs:
+                log.info(f"Monitoring HID device: {anker_dev.name} ({anker_dev.path})")
+                caps = anker_dev.capabilities(verbose=True)
+                for cap_type, events in caps.items():
+                    log.info(f"  {cap_type}: {events}")
 
-            # Read ALL events for debugging
-            async for event in anker_dev.async_read_loop():
-                if event.type != ecodes.EV_SYN:  # skip sync events
-                    code_name = ecodes.bytype.get(event.type, {}).get(event.code, event.code)
-                    log.info(f"HID event: type={event.type} code={event.code} ({code_name}) value={event.value}")
+            async def read_device(dev):
+                """Read events from a single device."""
+                log.info(f"Starting event reader for {dev.path}")
+                async for event in dev.async_read_loop():
+                    if event.type != ecodes.EV_SYN:
+                        code_name = ecodes.bytype.get(event.type, {}).get(event.code, event.code)
+                        log.info(f"HID [{dev.path}]: type={event.type} code={event.code} ({code_name}) value={event.value}")
 
-                # KEY_MUTE (113) or KEY_MICMUTE (248) or any key press
-                if event.type == ecodes.EV_KEY and event.value == 1:
-                    if event.code in (ecodes.KEY_MUTE, ecodes.KEY_MICMUTE, 248):
-                        mic_muted = not mic_muted
-                        log.info(f"Hardware mute button: {'muted' if mic_muted else 'unmuted'}")
-                        # Sync to all UI clients
-                        await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
+                    if event.type == ecodes.EV_KEY and event.value == 1:
+                        if event.code in (113, 248):  # KEY_MUTE or KEY_MICMUTE
+                            mic_muted = not mic_muted
+                            log.info(f"Hardware mute button: {'muted' if mic_muted else 'unmuted'}")
+                            await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
+
+            # Monitor all Anker devices concurrently
+            await asyncio.gather(*[read_device(dev) for dev in anker_devs])
 
         except Exception as e:
             log.warning(f"HID listener error: {e}. Retrying in 10s...")
