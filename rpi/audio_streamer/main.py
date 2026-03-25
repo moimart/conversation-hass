@@ -513,19 +513,52 @@ async def hid_mute_listener():
             async def poll_alsa_mute():
                 """Poll ALSA capture mute state to detect hardware mute."""
                 last_state = None
-                log.info("Starting ALSA mute poller")
+                # Find the correct ALSA card number for the Anker
+                card_num = "0"
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "arecord", "-l",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, _ = await proc.communicate()
+                    for line in stdout.decode().split("\n"):
+                        if "anker" in line.lower() or "powerconf" in line.lower():
+                            # "card 2: ..." -> extract "2"
+                            card_num = line.split(":")[0].split()[-1]
+                            log.info(f"ALSA mute poller using card {card_num}")
+                            break
+                except Exception:
+                    pass
+
+                log.info(f"Starting ALSA mute poller on card {card_num}")
+
+                # First, dump all controls to find the right one
+                proc = await asyncio.create_subprocess_exec(
+                    "amixer", "-c", card_num, "contents",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await proc.communicate()
+                log.info(f"ALSA controls for card {card_num}:\n{stdout.decode()[:2000]}")
+
                 while True:
                     try:
                         proc = await asyncio.create_subprocess_exec(
-                            "amixer", "-c", "0", "get", "Mic", "capture",
+                            "amixer", "-c", card_num, "contents",
                             stdout=asyncio.subprocess.PIPE,
                             stderr=asyncio.subprocess.PIPE,
                         )
                         stdout, _ = await proc.communicate()
                         output = stdout.decode("utf-8", errors="replace")
 
-                        # Look for [on] or [off] in the output
-                        is_muted = "[off]" in output
+                        # Look for Capture Switch or Mic Capture Switch
+                        is_muted = False
+                        for line in output.split("\n"):
+                            if "Capture Switch" in line or "Mic Capture" in line:
+                                if "values=off" in line:
+                                    is_muted = True
+                                    break
 
                         if is_muted != last_state:
                             last_state = is_muted
@@ -533,26 +566,7 @@ async def hid_mute_listener():
                             log.info(f"ALSA mute state changed: {'muted' if mic_muted else 'unmuted'}")
                             await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
                     except Exception as e:
-                        # Try alternative mixer names
-                        try:
-                            proc = await asyncio.create_subprocess_exec(
-                                "amixer", "-c", "0", "contents",
-                                stdout=asyncio.subprocess.PIPE,
-                                stderr=asyncio.subprocess.PIPE,
-                            )
-                            stdout, _ = await proc.communicate()
-                            output = stdout.decode("utf-8", errors="replace")
-
-                            # Look for Capture Switch with values=off
-                            is_muted = "values=off" in output and "Capture Switch" in output
-
-                            if is_muted != last_state:
-                                last_state = is_muted
-                                mic_muted = is_muted
-                                log.info(f"ALSA mute state changed (contents): {'muted' if mic_muted else 'unmuted'}")
-                                await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
-                        except Exception as e2:
-                            log.debug(f"ALSA mute poll error: {e2}")
+                        log.debug(f"ALSA mute poll error: {e}")
                     await asyncio.sleep(0.5)
 
             # Run event readers and ALSA mute poller concurrently
