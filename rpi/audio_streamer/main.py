@@ -477,10 +477,19 @@ async def hid_mute_listener():
                 await asyncio.sleep(10)
                 continue
 
-            # Read events
+            # Log device capabilities
+            caps = anker_dev.capabilities(verbose=True)
+            for cap_type, events in caps.items():
+                log.info(f"HID capability {cap_type}: {events}")
+
+            # Read ALL events for debugging
             async for event in anker_dev.async_read_loop():
-                # KEY_MUTE (113) or KEY_MICMUTE (248)
-                if event.type == ecodes.EV_KEY and event.value == 1:  # key press
+                if event.type != ecodes.EV_SYN:  # skip sync events
+                    code_name = ecodes.bytype.get(event.type, {}).get(event.code, event.code)
+                    log.info(f"HID event: type={event.type} code={event.code} ({code_name}) value={event.value}")
+
+                # KEY_MUTE (113) or KEY_MICMUTE (248) or any key press
+                if event.type == ecodes.EV_KEY and event.value == 1:
                     if event.code in (ecodes.KEY_MUTE, ecodes.KEY_MICMUTE, 248):
                         mic_muted = not mic_muted
                         log.info(f"Hardware mute button: {'muted' if mic_muted else 'unmuted'}")
