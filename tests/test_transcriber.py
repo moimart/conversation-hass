@@ -5,13 +5,13 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from server.app.transcriber import StreamingTranscriber
+from server.app.transcriber import WhisperTranscriber as StreamingTranscriber
 
 
 class TestTranscriberInit:
     def test_default_model_size(self):
         t = StreamingTranscriber()
-        assert t.model_size == "base"
+        assert t.model_size == "large-v3-turbo"
         assert t.model is None
 
     def test_custom_model_size(self):
@@ -42,8 +42,10 @@ class TestTranscribe:
 
         seg1 = MagicMock()
         seg1.text = "hello"
+        seg1.no_speech_prob = 0.1
         seg2 = MagicMock()
         seg2.text = "world"
+        seg2.no_speech_prob = 0.1
 
         mock_model = MagicMock()
         mock_model.transcribe.return_value = (iter([seg1, seg2]), MagicMock())
@@ -55,7 +57,7 @@ class TestTranscribe:
         assert result == "hello world"
         mock_model.transcribe.assert_called_once()
         call_kwargs = mock_model.transcribe.call_args
-        assert call_kwargs.kwargs["beam_size"] == 5
+        assert call_kwargs.kwargs["beam_size"] == 1
         assert call_kwargs.kwargs["language"] == "en"
         assert call_kwargs.kwargs["vad_filter"] is True
 
@@ -75,6 +77,7 @@ class TestTranscribe:
         t = StreamingTranscriber()
         seg = MagicMock()
         seg.text = "  hello  "
+        seg.no_speech_prob = 0.1
         mock_model = MagicMock()
         mock_model.transcribe.return_value = (iter([seg]), MagicMock())
         t.model = mock_model

@@ -285,21 +285,30 @@ class TestChatCompletion:
 
 
 class TestSystemPrompt:
-    def test_includes_tool_descriptions(self, conversation):
+    def test_returns_system_prompt(self, conversation):
         prompt = conversation._build_system_prompt()
-        assert "ha_call_service" in prompt
-        assert "ha_get_state" in prompt
         assert "HAL" in prompt
 
-    def test_no_tools(self, mock_tts):
-        from server.app.mcp_client import MCPClient
-        empty_mcp = MCPClient(server_url="http://x")
+    def test_custom_prompt(self, mock_mcp_client, mock_tts):
         cm = ConversationManager(
             wake_word="hey homie",
             ollama_host="http://x",
             ollama_model="m",
-            mcp_client=empty_mcp,
+            mcp_client=mock_mcp_client,
             tts_engine=mock_tts,
+            system_prompt="You are Jarvis.",
         )
         prompt = cm._build_system_prompt()
-        assert "(no tools available)" in prompt
+        assert prompt == "You are Jarvis."
+
+    def test_default_prompt_when_empty(self, mock_mcp_client, mock_tts):
+        cm = ConversationManager(
+            wake_word="hey homie",
+            ollama_host="http://x",
+            ollama_model="m",
+            mcp_client=mock_mcp_client,
+            tts_engine=mock_tts,
+            system_prompt="",
+        )
+        prompt = cm._build_system_prompt()
+        assert "HAL" in prompt
