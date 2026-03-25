@@ -16,7 +16,6 @@ services:
       - PULSE_SERVER=unix:/run/user/1000/pulse/native
     devices:
       - /dev/snd:/dev/snd
-      - /dev/input:/dev/input
     group_add:
       - audio
     volumes:
