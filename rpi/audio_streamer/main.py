@@ -407,10 +407,15 @@ async def broadcast_to_ui(msg: dict):
 
 async def websocket_handler(request):
     """Handle web UI WebSocket connections."""
+    global tts_volume, mic_muted
+
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     ui_clients.add(ws)
     log.info(f"Web UI client connected (total: {len(ui_clients)})")
+
+    # Send current mute state to newly connected client
+    await ws.send_json({"type": "mute_sync", "muted": mic_muted})
 
     try:
         async for msg in ws:
@@ -419,11 +424,9 @@ async def websocket_handler(request):
                 if data.get("type") == "ping":
                     await ws.send_json({"type": "pong"})
                 elif data.get("type") == "volume":
-                    global tts_volume
                     tts_volume = max(0.0, min(1.0, float(data.get("level", 0.7))))
                     log.info(f"Volume set to {tts_volume:.0%}")
                 elif data.get("type") == "mute":
-                    global mic_muted
                     mic_muted = bool(data.get("muted", False))
                     log.info(f"Mic {'muted' if mic_muted else 'unmuted'}")
     finally:
