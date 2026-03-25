@@ -510,32 +510,54 @@ async def hid_mute_listener():
                             log.info(f"Hardware vol down: {tts_volume:.0%}")
                             await broadcast_to_ui({"type": "volume_sync", "level": tts_volume})
 
-            async def poll_mute_led(dev):
-                """Poll LED_MUTE state to detect hardware mute toggle."""
-                LED_MUTE = 7
+            async def poll_alsa_mute():
+                """Poll ALSA capture mute state to detect hardware mute."""
                 last_state = None
-                log.info(f"Starting LED mute poller for {dev.path}")
-                poll_count = 0
+                log.info("Starting ALSA mute poller")
                 while True:
                     try:
-                        active_leds = dev.leds()  # returns list of active LED codes
-                        is_muted = LED_MUTE in active_leds
-                        poll_count += 1
-                        # Log first few polls and every state change
-                        if poll_count <= 3:
-                            log.info(f"LED poll #{poll_count}: active_leds={active_leds}, muted={is_muted}")
+                        proc = await asyncio.create_subprocess_exec(
+                            "amixer", "-c", "0", "get", "Mic", "capture",
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        )
+                        stdout, _ = await proc.communicate()
+                        output = stdout.decode("utf-8", errors="replace")
+
+                        # Look for [on] or [off] in the output
+                        is_muted = "[off]" in output
+
                         if is_muted != last_state:
                             last_state = is_muted
                             mic_muted = is_muted
-                            log.info(f"LED mute state changed: {'muted' if mic_muted else 'unmuted'} (active_leds={active_leds})")
+                            log.info(f"ALSA mute state changed: {'muted' if mic_muted else 'unmuted'}")
                             await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
                     except Exception as e:
-                        log.warning(f"LED poll error: {e}")
-                    await asyncio.sleep(0.3)
+                        # Try alternative mixer names
+                        try:
+                            proc = await asyncio.create_subprocess_exec(
+                                "amixer", "-c", "0", "contents",
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE,
+                            )
+                            stdout, _ = await proc.communicate()
+                            output = stdout.decode("utf-8", errors="replace")
 
-            # Run event readers and LED poller concurrently
+                            # Look for Capture Switch with values=off
+                            is_muted = "values=off" in output and "Capture Switch" in output
+
+                            if is_muted != last_state:
+                                last_state = is_muted
+                                mic_muted = is_muted
+                                log.info(f"ALSA mute state changed (contents): {'muted' if mic_muted else 'unmuted'}")
+                                await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
+                        except Exception as e2:
+                            log.debug(f"ALSA mute poll error: {e2}")
+                    await asyncio.sleep(0.5)
+
+            # Run event readers and ALSA mute poller concurrently
             tasks = [read_device(dev) for dev in anker_devs]
-            tasks.append(poll_mute_led(anker_devs[0]))
+            tasks.append(poll_alsa_mute())
             await asyncio.gather(*tasks)
 
         except Exception as e:
