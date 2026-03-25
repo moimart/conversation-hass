@@ -85,6 +85,11 @@
                 muteIconOn.style.display = muted ? "none" : "";
                 muteIconOff.style.display = muted ? "" : "none";
                 break;
+            case "volume_sync":
+                // Hardware volume button pressed — sync UI
+                volume = Math.max(0, Math.min(1, msg.level));
+                volFill.style.width = (volume * 100) + "%";
+                break;
             case "pong":
                 break;
             default:

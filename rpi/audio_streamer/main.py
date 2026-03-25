@@ -489,6 +489,7 @@ async def hid_mute_listener():
 
             async def read_device(dev):
                 """Read key events from a device."""
+                global tts_volume
                 log.info(f"Starting event reader for {dev.path}")
                 async for event in dev.async_read_loop():
                     if event.type != ecodes.EV_SYN:
@@ -500,6 +501,14 @@ async def hid_mute_listener():
                             mic_muted = not mic_muted
                             log.info(f"Hardware mute button: {'muted' if mic_muted else 'unmuted'}")
                             await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
+                        elif event.code == 115:  # KEY_VOLUMEUP
+                            tts_volume = min(1.0, tts_volume + 0.1)
+                            log.info(f"Hardware vol up: {tts_volume:.0%}")
+                            await broadcast_to_ui({"type": "volume_sync", "level": tts_volume})
+                        elif event.code == 114:  # KEY_VOLUMEDOWN
+                            tts_volume = max(0.0, tts_volume - 0.1)
+                            log.info(f"Hardware vol down: {tts_volume:.0%}")
+                            await broadcast_to_ui({"type": "volume_sync", "level": tts_volume})
 
             async def poll_mute_led(dev):
                 """Poll LED_MUTE state to detect hardware mute toggle.
