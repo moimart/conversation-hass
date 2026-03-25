@@ -511,25 +511,26 @@ async def hid_mute_listener():
                             await broadcast_to_ui({"type": "volume_sync", "level": tts_volume})
 
             async def poll_mute_led(dev):
-                """Poll LED_MUTE state to detect hardware mute toggle.
-
-                The Anker S330 handles mute internally but sets LED_MUTE (7)
-                when the mic is muted. We poll this to sync with the UI.
-                """
+                """Poll LED_MUTE state to detect hardware mute toggle."""
                 LED_MUTE = 7
                 last_state = None
                 log.info(f"Starting LED mute poller for {dev.path}")
+                poll_count = 0
                 while True:
                     try:
-                        leds = dev.leds(verbose=True)
-                        is_muted = any(code == LED_MUTE or name == "LED_MUTE" for name, code in leds)
+                        active_leds = dev.leds()  # returns list of active LED codes
+                        is_muted = LED_MUTE in active_leds
+                        poll_count += 1
+                        # Log first few polls and every state change
+                        if poll_count <= 3:
+                            log.info(f"LED poll #{poll_count}: active_leds={active_leds}, muted={is_muted}")
                         if is_muted != last_state:
                             last_state = is_muted
                             mic_muted = is_muted
-                            log.info(f"LED mute state changed: {'muted' if mic_muted else 'unmuted'}")
+                            log.info(f"LED mute state changed: {'muted' if mic_muted else 'unmuted'} (active_leds={active_leds})")
                             await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
                     except Exception as e:
-                        log.debug(f"LED poll error: {e}")
+                        log.warning(f"LED poll error: {e}")
                     await asyncio.sleep(0.3)
 
             # Run event readers and LED poller concurrently
