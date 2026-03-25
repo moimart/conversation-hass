@@ -488,7 +488,7 @@ async def hid_mute_listener():
                     log.info(f"  {cap_type}: {events}")
 
             async def read_device(dev):
-                """Read events from a single device."""
+                """Read key events from a device."""
                 log.info(f"Starting event reader for {dev.path}")
                 async for event in dev.async_read_loop():
                     if event.type != ecodes.EV_SYN:
@@ -501,8 +501,32 @@ async def hid_mute_listener():
                             log.info(f"Hardware mute button: {'muted' if mic_muted else 'unmuted'}")
                             await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
 
-            # Monitor all Anker devices concurrently
-            await asyncio.gather(*[read_device(dev) for dev in anker_devs])
+            async def poll_mute_led(dev):
+                """Poll LED_MUTE state to detect hardware mute toggle.
+
+                The Anker S330 handles mute internally but sets LED_MUTE (7)
+                when the mic is muted. We poll this to sync with the UI.
+                """
+                LED_MUTE = 7
+                last_state = None
+                log.info(f"Starting LED mute poller for {dev.path}")
+                while True:
+                    try:
+                        leds = dev.leds(verbose=True)
+                        is_muted = any(code == LED_MUTE or name == "LED_MUTE" for name, code in leds)
+                        if is_muted != last_state:
+                            last_state = is_muted
+                            mic_muted = is_muted
+                            log.info(f"LED mute state changed: {'muted' if mic_muted else 'unmuted'}")
+                            await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
+                    except Exception as e:
+                        log.debug(f"LED poll error: {e}")
+                    await asyncio.sleep(0.3)
+
+            # Run event readers and LED poller concurrently
+            tasks = [read_device(dev) for dev in anker_devs]
+            tasks.append(poll_mute_led(anker_devs[0]))
+            await asyncio.gather(*tasks)
 
         except Exception as e:
             log.warning(f"HID listener error: {e}. Retrying in 10s...")
