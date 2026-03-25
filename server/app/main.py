@@ -66,7 +66,7 @@ def _generate_chime() -> bytes:
 
 @app.on_event("startup")
 async def startup():
-    global pipeline, conversation, tts_engine, mcp_client, memory_client
+    global pipeline, conversation, tts_engine, mcp_client, memory_client, _wake_chime
 
     log.info("Initializing HAL voice server...")
 
