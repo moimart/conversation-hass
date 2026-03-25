@@ -478,6 +478,7 @@ async def hid_volume_listener():
                 continue
 
             async def read_device(dev):
+                global tts_volume
                 log.info(f"Listening for volume events on {dev.path}")
                 async for event in dev.async_read_loop():
                     if event.type != ecodes.EV_SYN:
