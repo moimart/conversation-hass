@@ -383,6 +383,12 @@ body {
     pointer-events: none;
 }
 
+.mute-btn.muted {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(255, 45, 45, 0.1);
+}
+
 /* === Connection Indicator === */
 .connection-indicator {
     position: fixed;

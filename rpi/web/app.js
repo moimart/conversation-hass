@@ -78,6 +78,13 @@
             case "state":
                 setState(msg.state);
                 break;
+            case "mute_sync":
+                // Hardware mute button pressed — sync UI
+                muted = !!msg.muted;
+                muteBtn.classList.toggle("muted", muted);
+                muteIconOn.style.display = muted ? "none" : "";
+                muteIconOff.style.display = muted ? "" : "none";
+                break;
             case "pong":
                 break;
             default:
@@ -173,6 +180,24 @@
             statusText.textContent = labels[state];
         }
     }
+
+    // --- Mute Control ---
+    let muted = false;
+    const muteBtn = document.getElementById("mute-btn");
+    const muteIconOn = document.getElementById("mute-icon-on");
+    const muteIconOff = document.getElementById("mute-icon-off");
+
+    function setMuted(m) {
+        muted = m;
+        muteBtn.classList.toggle("muted", muted);
+        muteIconOn.style.display = muted ? "none" : "";
+        muteIconOff.style.display = muted ? "" : "none";
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "mute", muted: muted }));
+        }
+    }
+
+    muteBtn.addEventListener("click", () => setMuted(!muted));
 
     // --- Volume Control ---
     let volume = 0.7;

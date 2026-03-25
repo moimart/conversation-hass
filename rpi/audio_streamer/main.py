@@ -121,6 +121,9 @@ chime_receiving = False
 # Volume level (0.0 - 1.0)
 tts_volume = 0.7
 
+# Mute state
+mic_muted = False
+
 
 def find_audio_device() -> int | None:
     """Find the Anker Powerconf S330 or use default."""
@@ -306,8 +309,8 @@ async def audio_stream_handler():
                     """Continuously capture and send audio."""
                     loop = asyncio.get_event_loop()
                     while True:
-                        if tts_playing:
-                            # Don't capture while playing TTS (basic echo prevention)
+                        if tts_playing or mic_muted:
+                            # Don't capture while playing TTS or muted
                             await asyncio.sleep(0.1)
                             continue
 
@@ -419,6 +422,10 @@ async def websocket_handler(request):
                     global tts_volume
                     tts_volume = max(0.0, min(1.0, float(data.get("level", 0.7))))
                     log.info(f"Volume set to {tts_volume:.0%}")
+                elif data.get("type") == "mute":
+                    global mic_muted
+                    mic_muted = bool(data.get("muted", False))
+                    log.info(f"Mic {'muted' if mic_muted else 'unmuted'}")
     finally:
         ui_clients.discard(ws)
         log.info(f"Web UI client disconnected (total: {len(ui_clients)})")
@@ -439,11 +446,58 @@ async def start_web_server():
     log.info(f"Web UI available at http://0.0.0.0:{WEB_PORT}")
 
 
+async def hid_mute_listener():
+    """Listen for physical mute button on USB speakerphone via evdev."""
+    global mic_muted
+
+    try:
+        import evdev
+        from evdev import ecodes
+    except ImportError:
+        log.info("evdev not available, hardware mute button disabled")
+        return
+
+    while True:
+        try:
+            # Find the Anker input device
+            devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
+            anker_dev = None
+            for dev in devices:
+                name = dev.name.lower()
+                if "anker" in name or "powerconf" in name:
+                    anker_dev = dev
+                    log.info(f"Found HID device: {dev.name} ({dev.path})")
+                    break
+
+            if anker_dev is None:
+                log.info("No Anker HID device found, retrying in 10s...")
+                await asyncio.sleep(10)
+                continue
+
+            # Read events
+            async for event in anker_dev.async_read_loop():
+                # KEY_MUTE (113) or KEY_MICMUTE (248)
+                if event.type == ecodes.EV_KEY and event.value == 1:  # key press
+                    if event.code in (ecodes.KEY_MUTE, ecodes.KEY_MICMUTE, 248):
+                        mic_muted = not mic_muted
+                        log.info(f"Hardware mute button: {'muted' if mic_muted else 'unmuted'}")
+                        # Sync to all UI clients
+                        await broadcast_to_ui({"type": "mute_sync", "muted": mic_muted})
+
+        except Exception as e:
+            log.warning(f"HID listener error: {e}. Retrying in 10s...")
+            await asyncio.sleep(10)
+
+
 async def main():
     """Start all services."""
     log.info("Starting HAL RPi audio streamer...")
     await start_web_server()
-    await audio_stream_handler()
+    # Run audio handler and HID listener concurrently
+    await asyncio.gather(
+        audio_stream_handler(),
+        hid_mute_listener(),
+    )
 
 
 if __name__ == "__main__":
