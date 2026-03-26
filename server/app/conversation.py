@@ -82,28 +82,11 @@ class ConversationManager:
             await self.on_state_change(new_state)
 
     def _build_system_prompt(self) -> str:
-        import os
-        from datetime import datetime, timezone
-
-        tz = timezone.utc
-        try:
-            import zoneinfo
-            tz_name = os.environ.get("TZ", "")
-            # Fallback: read from /etc/timezone (Debian) or /etc/localtime symlink (Arch/others)
-            if not tz_name:
-                if os.path.isfile("/etc/timezone"):
-                    tz_name = open("/etc/timezone").read().strip()
-                elif os.path.islink("/etc/localtime"):
-                    link = os.readlink("/etc/localtime")
-                    # e.g. /usr/share/zoneinfo/Europe/Berlin → Europe/Berlin
-                    if "zoneinfo/" in link:
-                        tz_name = link.split("zoneinfo/", 1)[1]
-            if tz_name:
-                tz = zoneinfo.ZoneInfo(tz_name)
-        except Exception:
-            pass
-
-        now = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %A %Z")
+        from datetime import datetime
+        # datetime.now().astimezone() uses the system's /etc/localtime
+        # (mounted from host) — automatically handles DST, works on any distro,
+        # no timezone name detection needed
+        now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %A %Z")
         return f"{self._system_prompt}\n\nCurrent date and time: {now}"
 
     @property
