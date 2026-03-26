@@ -83,13 +83,21 @@ class ConversationManager:
 
     def _build_system_prompt(self) -> str:
         import os
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timezone
+
+        tz = timezone.utc
         try:
             import zoneinfo
-            tz_name = os.environ.get("TZ", "UTC")
-            tz = zoneinfo.ZoneInfo(tz_name)
+            # 1. TZ env var
+            tz_name = os.environ.get("TZ", "")
+            # 2. /etc/timezone (Debian/Ubuntu)
+            if not tz_name and os.path.isfile("/etc/timezone"):
+                tz_name = open("/etc/timezone").read().strip()
+            if tz_name:
+                tz = zoneinfo.ZoneInfo(tz_name)
         except Exception:
-            tz = timezone.utc
+            pass
+
         now = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %A %Z")
         return f"{self._system_prompt}\n\nCurrent date and time: {now}"
 

@@ -23,6 +23,8 @@ services:
     volumes:
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro
       - huggingface-cache:/root/.cache/huggingface
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     deploy:
       resources:
         reservations:
