@@ -21,6 +21,7 @@ services:
       - MEMORY_URL=${MEMORY_URL:-http://shodh-memory:3030}
       - MEMORY_USER_ID=${MEMORY_USER_ID:-hal-default}
       - MEMORY_API_KEY=${MEMORY_API_KEY:-sk-shodh-dev-default}
+      - TZ=${TZ:-UTC}
     volumes:
       - ./server/models:/app/models
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro

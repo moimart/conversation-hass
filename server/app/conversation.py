@@ -82,8 +82,15 @@ class ConversationManager:
             await self.on_state_change(new_state)
 
     def _build_system_prompt(self) -> str:
-        from datetime import datetime
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S %A")
+        import os
+        from datetime import datetime, timezone, timedelta
+        try:
+            import zoneinfo
+            tz_name = os.environ.get("TZ", "UTC")
+            tz = zoneinfo.ZoneInfo(tz_name)
+        except Exception:
+            tz = timezone.utc
+        now = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %A %Z")
         return f"{self._system_prompt}\n\nCurrent date and time: {now}"
 
     @property
