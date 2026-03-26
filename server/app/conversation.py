@@ -88,11 +88,16 @@ class ConversationManager:
         tz = timezone.utc
         try:
             import zoneinfo
-            # 1. TZ env var
             tz_name = os.environ.get("TZ", "")
-            # 2. /etc/timezone (Debian/Ubuntu)
-            if not tz_name and os.path.isfile("/etc/timezone"):
-                tz_name = open("/etc/timezone").read().strip()
+            # Fallback: read from /etc/timezone (Debian) or /etc/localtime symlink (Arch/others)
+            if not tz_name:
+                if os.path.isfile("/etc/timezone"):
+                    tz_name = open("/etc/timezone").read().strip()
+                elif os.path.islink("/etc/localtime"):
+                    link = os.readlink("/etc/localtime")
+                    # e.g. /usr/share/zoneinfo/Europe/Berlin → Europe/Berlin
+                    if "zoneinfo/" in link:
+                        tz_name = link.split("zoneinfo/", 1)[1]
             if tz_name:
                 tz = zoneinfo.ZoneInfo(tz_name)
         except Exception:
