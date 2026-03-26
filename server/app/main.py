@@ -203,8 +203,13 @@ async def audio_endpoint(websocket: WebSocket):
             log.info("AI speaking: False (error recovery)")
 
     async def on_state_change(new_state: str):
-        """Callback: broadcast state changes to UI."""
-        await broadcast_to_ui(state, {"type": "state", "state": new_state})
+        """Callback: broadcast state changes to RPi and UI."""
+        msg = {"type": "state", "state": new_state}
+        try:
+            await websocket.send_json(msg)
+        except Exception:
+            pass
+        await broadcast_to_ui(state, msg)
 
     conversation.on_response = on_response
     conversation.on_wake_word = on_wake_word
