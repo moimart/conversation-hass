@@ -46,9 +46,9 @@ class TestWakeWordDetection:
     @pytest.mark.asyncio
     async def test_wake_word_no_callback_if_in_followup(self, conversation):
         conversation.on_wake_word = AsyncMock()
-        conversation._last_response_time = time.monotonic()  # in follow-up window
+        conversation._awaiting_followup = True  # LLM asked a question
         await conversation.process_text("hey homie do something")
-        # In follow-up window, text is accumulated directly — no wake word trigger
+        # In follow-up, text is accumulated directly — no wake word trigger
         conversation.on_wake_word.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -72,7 +72,7 @@ class TestWakeWordDetection:
     async def test_wake_word_embedded_in_sentence(self, conversation):
         await conversation.process_text("I said hey homie do something")
         assert conversation._wake_detected is True
-        assert conversation._command_buffer == ["do something"]
+        assert conversation._command_buffer == ["I said do something"]
 
 
 class TestConversationState:
@@ -93,20 +93,19 @@ class TestConversationState:
         ]
 
     @pytest.mark.asyncio
-    async def test_followup_window(self, conversation):
-        conversation._last_response_time = time.monotonic()
-        # Should be in conversation due to follow-up window
+    async def test_followup_when_question(self, conversation):
+        conversation._awaiting_followup = True
         assert conversation.in_conversation is True
 
     @pytest.mark.asyncio
-    async def test_followup_window_expired(self, conversation):
-        conversation._last_response_time = time.monotonic() - 20.0
+    async def test_no_followup_when_not_question(self, conversation):
+        conversation._awaiting_followup = False
         assert conversation.in_conversation is False
 
     @pytest.mark.asyncio
     async def test_followup_accumulates_without_wake_word(self, conversation):
-        # Simulate just after a response
-        conversation._last_response_time = time.monotonic()
+        # LLM asked a question — follow-up active
+        conversation._awaiting_followup = True
         await conversation.process_text("also dim the lights")
         assert conversation._command_buffer == ["also dim the lights"]
 
@@ -158,15 +157,26 @@ class TestOnSilence:
         assert conversation._wake_detected is False
 
     @pytest.mark.asyncio
-    async def test_silence_sets_followup_time(self, conversation):
+    async def test_silence_enables_followup_on_question(self, conversation):
         await conversation.process_text("hey homie hello")
 
         with patch.object(conversation, "_chat_completion", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = {"message": {"content": "Hi!", "role": "assistant"}}
+            mock_chat.return_value = {"message": {"content": "What would you like?", "role": "assistant"}}
             await conversation.on_silence()
 
-        assert conversation._last_response_time > 0
-        assert conversation.in_conversation is True  # within follow-up window
+        assert conversation._awaiting_followup is True
+        assert conversation.in_conversation is True
+
+    @pytest.mark.asyncio
+    async def test_silence_no_followup_on_statement(self, conversation):
+        await conversation.process_text("hey homie hello")
+
+        with patch.object(conversation, "_chat_completion", new_callable=AsyncMock) as mock_chat:
+            mock_chat.return_value = {"message": {"content": "Done, light is on.", "role": "assistant"}}
+            await conversation.on_silence()
+
+        assert conversation._awaiting_followup is False
+        assert conversation.in_conversation is False
 
 
 class TestLLMWithTools:
@@ -222,7 +232,7 @@ class TestLLMWithTools:
 
     @pytest.mark.asyncio
     async def test_tool_loop_limit(self, conversation):
-        """Ensure the tool-calling loop stops after 5 rounds."""
+        """Ensure the tool-calling loop stops after 8 rounds."""
         async def always_call_tool(messages):
             return {
                 "message": {
@@ -239,7 +249,7 @@ class TestLLMWithTools:
 
         result = await conversation._run_llm_with_tools("infinite loop test")
         assert result == "I've completed the action."
-        assert conversation.mcp.call_tool.await_count == 5
+        assert conversation.mcp.call_tool.await_count == 8
 
     @pytest.mark.asyncio
     async def test_history_trimming(self, conversation):
@@ -299,7 +309,8 @@ class TestSystemPrompt:
             system_prompt="You are Jarvis.",
         )
         prompt = cm._build_system_prompt()
-        assert prompt == "You are Jarvis."
+        assert prompt.startswith("You are Jarvis.")
+        assert "Current date and time:" in prompt
 
     def test_default_prompt_when_empty(self, mock_mcp_client, mock_tts):
         cm = ConversationManager(

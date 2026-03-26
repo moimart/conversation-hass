@@ -63,10 +63,10 @@ class ConversationManager:
         self._wake_detected = False
         self._last_text_time = 0.0
 
-        # Continuous conversation: after the AI responds, stay in listening
-        # mode for a follow-up window (no need to repeat the wake word)
-        self._followup_window = 10.0  # seconds
-        self._last_response_time = 0.0
+        # Follow-up: when the LLM asks a question, stay in listening mode
+        # so the user can answer without repeating the wake word
+        self._followup_window = 30.0  # seconds — generous for thinking time
+        self._awaiting_followup = False
 
         # Callbacks
         self.on_response: Callable[[str, bytes | None], Awaitable[None]] | None = None
@@ -96,13 +96,13 @@ class ConversationManager:
 
     @property
     def in_conversation(self) -> bool:
-        """Whether we're in an active conversation (wake word or follow-up window)."""
+        """Whether we're in an active conversation."""
         if self.always_on:
             return True
         if self._wake_detected:
             return True
-        if self._last_response_time > 0:
-            return (time.monotonic() - self._last_response_time) < self._followup_window
+        if self._awaiting_followup:
+            return True
         return False
 
     async def process_text(self, text: str):
@@ -154,6 +154,7 @@ class ConversationManager:
         full_text = " ".join(self._command_buffer).strip()
         self._command_buffer.clear()
         self._wake_detected = False
+        self._awaiting_followup = False
 
         if not full_text:
             await self._set_state("idle")
@@ -178,7 +179,10 @@ class ConversationManager:
             if self.on_response:
                 await self.on_response(response_text, audio_bytes)
 
-            self._last_response_time = time.monotonic()
+            # If the LLM asked a question, stay in conversation for a follow-up
+            if response_text.rstrip().endswith("?"):
+                self._awaiting_followup = True
+                log.info("LLM asked a question — awaiting follow-up")
 
         except Exception as e:
             log.error(f"Error processing command: {e}", exc_info=True)
