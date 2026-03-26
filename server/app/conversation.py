@@ -82,7 +82,9 @@ class ConversationManager:
             await self.on_state_change(new_state)
 
     def _build_system_prompt(self) -> str:
-        return self._system_prompt
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S %A")
+        return f"{self._system_prompt}\n\nCurrent date and time: {now}"
 
     @property
     def always_on(self) -> bool:
