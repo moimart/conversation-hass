@@ -202,8 +202,13 @@ async def audio_endpoint(websocket: WebSocket):
             pipeline.set_ai_speaking(False)
             log.info("AI speaking: False (error recovery)")
 
+    async def on_state_change(new_state: str):
+        """Callback: broadcast state changes to UI."""
+        await broadcast_to_ui(state, {"type": "state", "state": new_state})
+
     conversation.on_response = on_response
     conversation.on_wake_word = on_wake_word
+    conversation.on_state_change = on_state_change
 
     try:
         while True:

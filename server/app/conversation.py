@@ -71,8 +71,15 @@ class ConversationManager:
         # Callbacks
         self.on_response: Callable[[str, bytes | None], Awaitable[None]] | None = None
         self.on_wake_word: Callable[[], Awaitable[None]] | None = None
+        self.on_state_change: Callable[[str], Awaitable[None]] | None = None
 
         self._http = httpx.AsyncClient(timeout=120.0)
+
+    async def _set_state(self, new_state: str):
+        """Update state and notify listeners."""
+        self.state = new_state
+        if self.on_state_change:
+            await self.on_state_change(new_state)
 
     def _build_system_prompt(self) -> str:
         return self._system_prompt
@@ -106,7 +113,7 @@ class ConversationManager:
         if self.always_on:
             # No wake word — process every line
             self._command_buffer.append(text)
-            self.state = "listening"
+            await self._set_state("listening")
             return
 
         if not self.in_conversation:
@@ -114,7 +121,7 @@ class ConversationManager:
             if self.wake_word in text_lower:
                 log.info(f"Wake word detected: '{text}'")
                 self._wake_detected = True
-                self.state = "listening"
+                await self._set_state("listening")
                 # Notify listeners (chime + UI flash)
                 if self.on_wake_word:
                     await self.on_wake_word()
@@ -129,7 +136,7 @@ class ConversationManager:
 
         # In active conversation — accumulate text
         self._command_buffer.append(text)
-        self.state = "listening"
+        await self._set_state("listening")
 
     async def on_silence(self):
         """Called when silence is detected after speech. Triggers LLM if in conversation."""
@@ -142,11 +149,11 @@ class ConversationManager:
         self._wake_detected = False
 
         if not full_text:
-            self.state = "idle"
+            await self._set_state("idle")
             return
 
         log.info(f"Processing: '{full_text}'")
-        self.state = "processing"
+        await self._set_state("processing")
 
         try:
             response_text = await self._run_llm_with_tools(full_text)
@@ -157,7 +164,7 @@ class ConversationManager:
                 await self.memory.remember(memory_text, memory_type="conversation")
 
             # Synthesize speech
-            self.state = "speaking"
+            await self._set_state("speaking")
             audio_bytes = await self.tts_engine.synthesize(response_text)
 
             # Send response back
@@ -173,7 +180,7 @@ class ConversationManager:
                 audio = await self.tts_engine.synthesize(error_msg)
                 await self.on_response(error_msg, audio)
 
-        self.state = "idle"
+        await self._set_state("idle")
 
     async def _run_llm_with_tools(self, user_text: str) -> str:
         """
