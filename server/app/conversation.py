@@ -208,7 +208,7 @@ class ConversationManager:
         messages = [{"role": "system", "content": system_prompt}] + self.history
 
         # Tool-calling loop (max 5 rounds to prevent infinite loops)
-        for _ in range(5):
+        for _ in range(8):
             response = await self._chat_completion(messages)
 
             # Check if the LLM wants to call a tool
