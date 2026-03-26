@@ -238,6 +238,7 @@ class ConversationManager:
             "model": self.ollama_model,
             "messages": messages,
             "stream": False,
+            "keep_alive": -1,
             "options": {
                 "temperature": 0.7,
                 "num_predict": 512,
