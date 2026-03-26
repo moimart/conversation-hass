@@ -125,9 +125,11 @@ class ConversationManager:
                 # Notify listeners (chime + UI flash)
                 if self.on_wake_word:
                     await self.on_wake_word()
-                # Capture any text after the wake word as part of the command
-                idx = text_lower.index(self.wake_word) + len(self.wake_word)
-                remainder = text[idx:].strip()
+                # Capture text around the wake word (before + after)
+                idx = text_lower.index(self.wake_word)
+                before = text[:idx].strip()
+                after = text[idx + len(self.wake_word):].strip()
+                remainder = f"{before} {after}".strip()
                 if remainder:
                     self._command_buffer.append(remainder)
                 return
