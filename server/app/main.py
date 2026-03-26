@@ -191,12 +191,16 @@ async def audio_endpoint(websocket: WebSocket):
             if audio_bytes:
                 await websocket.send_json({"type": "tts_start", "size": len(audio_bytes)})
                 pipeline.set_ai_speaking(True)
+                log.info(f"AI speaking: True (sending {len(audio_bytes)} bytes TTS)")
                 chunk_size = 8192
                 for i in range(0, len(audio_bytes), chunk_size):
                     await websocket.send_bytes(audio_bytes[i : i + chunk_size])
                 await websocket.send_json({"type": "tts_end"})
         except Exception as e:
             log.error(f"Error sending response: {e}")
+            # Ensure ai_speaking is cleared even on send failure
+            pipeline.set_ai_speaking(False)
+            log.info("AI speaking: False (error recovery)")
 
     conversation.on_response = on_response
     conversation.on_wake_word = on_wake_word
@@ -231,6 +235,7 @@ async def audio_endpoint(websocket: WebSocket):
             elif "text" in data:
                 msg = json.loads(data["text"])
                 if msg.get("type") == "tts_finished":
+                    log.info("AI speaking: False (tts_finished received)")
                     pipeline.set_ai_speaking(False)
 
     except WebSocketDisconnect:

@@ -33,6 +33,8 @@ class AudioPipeline:
 
         # Echo suppression: when AI is speaking, suppress transcription
         self._ai_speaking = False
+        self._ai_speaking_since: float = 0.0
+        self._ai_speaking_timeout = 30.0  # safety: auto-clear after 30s
 
         # Audio buffer for current speech segment
         self._audio_buffer = bytearray()
@@ -67,9 +69,12 @@ class AudioPipeline:
         """Mark whether the AI is currently speaking (for echo suppression)."""
         self._ai_speaking = speaking
         if speaking:
+            self._ai_speaking_since = time.monotonic()
             self._speech_active = False
             self._audio_buffer.clear()
             self._partial_buffer.clear()
+        else:
+            self._ai_speaking_since = 0.0
 
     async def process_chunk(self, audio_bytes: bytes) -> dict | None:
         """
@@ -78,7 +83,12 @@ class AudioPipeline:
         Returns a transcription result dict or None.
         """
         if self._ai_speaking:
-            return None
+            # Safety timeout: auto-clear if stuck for too long
+            if self._ai_speaking_since > 0 and (time.monotonic() - self._ai_speaking_since) > self._ai_speaking_timeout:
+                log.warning(f"AI speaking timeout after {self._ai_speaking_timeout}s — auto-clearing")
+                self.set_ai_speaking(False)
+            else:
+                return None
 
         # Convert bytes to float32 numpy array
         audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
