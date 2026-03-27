@@ -140,6 +140,8 @@ class AudioPipeline:
                 break
 
         if is_speech:
+            if not self._speech_active:
+                log.info("Speech started")
             self._speech_active = True
             self._silence_start = None
             self._last_speech_time = now
@@ -158,12 +160,16 @@ class AudioPipeline:
                 # Speech just ended
                 if self._silence_start is None:
                     self._silence_start = now
+                    buf_duration = len(self._audio_buffer) / (self.sample_rate * 2)  # 16-bit = 2 bytes/sample
+                    log.info(f"Speech ended, buffer={buf_duration:.1f}s, waiting for silence threshold")
                 elif now - self._silence_start >= SILENCE_THRESHOLD:
                     # Enough silence — finalize transcription
                     self._speech_active = False
 
                     if len(self._audio_buffer) > 0:
+                        buf_bytes = len(self._audio_buffer)
                         full_audio = self._to_16k_float(bytes(self._audio_buffer))
+                        log.info(f"Finalizing: buffer={buf_bytes} bytes, audio={len(full_audio)} samples ({len(full_audio)/16000:.1f}s)")
                         text = await self.transcriber.transcribe(full_audio)
 
                         self._audio_buffer.clear()
@@ -171,8 +177,10 @@ class AudioPipeline:
                         self._silence_start = None
 
                         if text and text.strip():
-                            # Speaker identification
                             speaker = self.speaker_filter.identify(full_audio, self._target_rate)
+                            log.info(f"Transcribed: '{text.strip()[:80]}' (speaker={speaker})")
                             return {"text": text.strip(), "is_partial": False, "speaker": speaker, "silence_after": True}
+                        else:
+                            log.info(f"Transcription returned empty for {len(full_audio)} samples")
 
         return None
