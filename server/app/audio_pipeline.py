@@ -30,6 +30,12 @@ class AudioPipeline:
         self._vad_model = None
         self._speech_active = False
         self._silence_start: float | None = None
+        self._last_speech_time: float = 0.0
+        self._vad_reset_interval = 300.0  # reset VAD state every 5 min of silence
+        self._last_vad_reset: float = 0.0
+        self._chunk_count: int = 0
+        self._last_health_log: float = 0.0
+        self._health_log_interval = 60.0  # log health every 60s
 
         # Echo suppression: when AI is speaking, suppress transcription
         self._ai_speaking = False
@@ -90,6 +96,22 @@ class AudioPipeline:
             else:
                 return None
 
+        now = time.monotonic()
+        self._chunk_count += 1
+
+        # Periodic health log
+        if now - self._last_health_log >= self._health_log_interval:
+            silence_duration = now - self._last_speech_time if self._last_speech_time > 0 else 0
+            log.info(f"Pipeline health: chunks={self._chunk_count}, silence={silence_duration:.0f}s, speech_active={self._speech_active}")
+            self._last_health_log = now
+
+        # Reset VAD hidden state after extended silence to prevent drift
+        if self._last_speech_time > 0 and (now - self._last_speech_time) > self._vad_reset_interval:
+            if now - self._last_vad_reset > self._vad_reset_interval:
+                log.info("Resetting VAD state after prolonged silence")
+                self._vad_model.reset_states()
+                self._last_vad_reset = now
+
         # Convert bytes to float32 numpy array
         audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
         audio_float = audio_int16.astype(np.float32) / 32768.0
@@ -117,11 +139,10 @@ class AudioPipeline:
                 is_speech = True
                 break
 
-        now = time.monotonic()
-
         if is_speech:
             self._speech_active = True
             self._silence_start = None
+            self._last_speech_time = now
             self._audio_buffer.extend(audio_bytes)
             self._partial_buffer.extend(audio_bytes)
 
