@@ -90,6 +90,8 @@ class WhisperTranscriber(BaseTranscriber):
         if self.model is None:
             return ""
 
+        import torch
+
         segments, info = self.model.transcribe(
             audio,
             beam_size=1,
@@ -109,6 +111,10 @@ class WhisperTranscriber(BaseTranscriber):
             if segment.no_speech_prob > 0.6:
                 continue
             text_parts.append(segment.text)
+
+        # Prevent CUDA memory from growing over time
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         return " ".join(text_parts).strip()
 
@@ -133,11 +139,19 @@ class NemotronTranscriber(BaseTranscriber):
         if self.model is None:
             return ""
 
+        import torch
+
         # NeMo expects 16kHz mono float32
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
 
-        results = self.model.transcribe([audio], batch_size=1, verbose=False)
+        # Prevent computation graph accumulation and VRAM growth
+        with torch.no_grad(), torch.inference_mode():
+            results = self.model.transcribe([audio], batch_size=1, verbose=False)
+
+        # Free intermediate CUDA tensors
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # Results can be a list of strings or a list of Hypothesis objects
         if not results:
