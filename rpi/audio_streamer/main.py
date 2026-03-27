@@ -458,7 +458,12 @@ class AudioManager:
         """Start the aiohttp web server for serving UI and WebSocket."""
         app = web.Application()
         app.router.add_get("/ws", self.websocket_handler)
-        app.router.add_static("/", "/app/web", show_index=True)
+        app.router.add_get("/", self._serve_index)
+        app.router.add_static("/", "/app/web")
+
+    @staticmethod
+    async def _serve_index(request):
+        return web.FileResponse("/app/web/index.html")
 
         runner = web.AppRunner(app)
         await runner.setup()
