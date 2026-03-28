@@ -105,11 +105,18 @@ class AudioPipeline:
             log.info(f"Pipeline health: chunks={self._chunk_count}, silence={silence_duration:.0f}s, speech_active={self._speech_active}")
             self._last_health_log = now
 
-        # Reset VAD hidden state after extended silence to prevent drift
+        # Reload VAD model after extended silence — reset_states() alone
+        # isn't enough, the ONNX runtime accumulates corruption over thousands of calls
         if self._last_speech_time > 0 and (now - self._last_speech_time) > self._vad_reset_interval:
             if now - self._last_vad_reset > self._vad_reset_interval:
-                log.info("Resetting VAD state after prolonged silence")
-                self._vad_model.reset_states()
+                log.info("Reloading VAD model after prolonged silence")
+                try:
+                    from silero_vad import load_silero_vad
+                    self._vad_model = load_silero_vad(onnx=True)
+                    log.info("VAD model reloaded successfully")
+                except Exception as e:
+                    log.error(f"Failed to reload VAD model: {e}")
+                    self._vad_model.reset_states()
                 self._last_vad_reset = now
 
         # Convert bytes to float32 numpy array
