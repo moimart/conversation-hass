@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
@@ -26,8 +27,9 @@ class AudioPipeline:
         self.transcriber: BaseTranscriber | None = None
         self.speaker_filter: SpeakerFilter | None = None
 
-        # VAD state
+        # VAD state — runs in its own executor to never block the event loop
         self._vad_model = None
+        self._vad_executor = ThreadPoolExecutor(max_workers=1)
         self._speech_active = False
         self._silence_start: float | None = None
         self._last_speech_time: float = 0.0
@@ -82,6 +84,20 @@ class AudioPipeline:
         else:
             self._ai_speaking_since = 0.0
 
+    def _run_vad(self, audio_float: np.ndarray) -> bool:
+        """Run VAD synchronously in a thread. Returns True if speech detected."""
+        import torch
+        chunk_tensor = torch.from_numpy(audio_float)
+        vad_chunk_size = 512
+        for i in range(0, len(chunk_tensor), vad_chunk_size):
+            segment = chunk_tensor[i : i + vad_chunk_size]
+            if len(segment) < vad_chunk_size:
+                segment = torch.nn.functional.pad(segment, (0, vad_chunk_size - len(segment)))
+            confidence = self._vad_model(segment, self._target_rate).item()
+            if confidence > 0.5:
+                return True
+        return False
+
     async def process_chunk(self, audio_bytes: bytes) -> dict | None:
         """
         Process a chunk of raw PCM 16-bit LE audio.
@@ -130,21 +146,32 @@ class AudioPipeline:
         else:
             vad_audio = audio_float
 
-        # Run VAD on 16kHz audio
-        import torch
-        chunk_tensor = torch.from_numpy(vad_audio)
-
-        # Silero VAD expects chunks of specific sizes (512 for 16kHz)
-        vad_chunk_size = 512
-        is_speech = False
-        for i in range(0, len(chunk_tensor), vad_chunk_size):
-            segment = chunk_tensor[i : i + vad_chunk_size]
-            if len(segment) < vad_chunk_size:
-                segment = torch.nn.functional.pad(segment, (0, vad_chunk_size - len(segment)))
-            confidence = self._vad_model(segment, self._target_rate).item()
-            if confidence > 0.5:
-                is_speech = True
-                break
+        # Run VAD in an executor so it can never freeze the event loop
+        loop = asyncio.get_event_loop()
+        try:
+            is_speech = await asyncio.wait_for(
+                loop.run_in_executor(self._vad_executor, self._run_vad, vad_audio),
+                timeout=5.0,
+            )
+        except asyncio.TimeoutError:
+            log.error("VAD inference hung (5s timeout) — reloading model and executor")
+            # Replace the stuck executor
+            try:
+                self._vad_executor.shutdown(wait=False)
+            except Exception:
+                pass
+            self._vad_executor = ThreadPoolExecutor(max_workers=1)
+            # Reload VAD model
+            try:
+                from silero_vad import load_silero_vad
+                self._vad_model = load_silero_vad(onnx=True)
+                log.info("VAD model reloaded after hang")
+            except Exception as e:
+                log.error(f"VAD reload failed: {e}")
+            return None
+        except Exception as e:
+            log.error(f"VAD error: {e}")
+            return None
 
         if is_speech:
             if not self._speech_active:
