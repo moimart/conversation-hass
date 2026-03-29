@@ -142,11 +142,7 @@ class WhisperTranscriber(BaseTranscriber):
             audio,
             beam_size=1,
             language="en",
-            vad_filter=True,
-            vad_parameters=dict(
-                min_silence_duration_ms=300,
-                speech_pad_ms=200,
-            ),
+            vad_filter=False,  # Our pipeline already runs Silero VAD upstream
             no_speech_threshold=0.6,
             log_prob_threshold=-1.0,
             condition_on_previous_text=False,

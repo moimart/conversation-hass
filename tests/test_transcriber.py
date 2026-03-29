@@ -59,7 +59,7 @@ class TestTranscribe:
         call_kwargs = mock_model.transcribe.call_args
         assert call_kwargs.kwargs["beam_size"] == 1
         assert call_kwargs.kwargs["language"] == "en"
-        assert call_kwargs.kwargs["vad_filter"] is True
+        assert call_kwargs.kwargs["vad_filter"] is False
 
     @pytest.mark.asyncio
     async def test_handles_empty_segments(self):
