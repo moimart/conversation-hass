@@ -36,8 +36,9 @@ class AudioPipeline:
         self._speech_active = False
         self._speech_start_time: float = 0.0
         self._silence_start: float | None = None
-        self._last_speech_time: float = 0.0
-        self._vad_reset_interval = 300.0  # reset VAD state every 5 min of silence
+        self._last_successful_transcription: float = 0.0
+        self._consecutive_empty: int = 0
+        self._vad_reset_interval = 300.0  # reload VAD every 5 min without transcription
         self._last_vad_reset: float = 0.0
         self._chunk_count: int = 0
         self._last_health_log: float = 0.0
@@ -121,23 +122,35 @@ class AudioPipeline:
 
         # Periodic health log
         if now - self._last_health_log >= self._health_log_interval:
-            silence_duration = now - self._last_speech_time if self._last_speech_time > 0 else 0
-            log.info(f"Pipeline health: chunks={self._chunk_count}, silence={silence_duration:.0f}s, speech_active={self._speech_active}")
+            since_last = now - self._last_successful_transcription if self._last_successful_transcription > 0 else -1
+            log.info(f"Pipeline health: chunks={self._chunk_count}, last_transcription={since_last:.0f}s ago, empty_streak={self._consecutive_empty}, speech_active={self._speech_active}")
             self._last_health_log = now
 
-        # Reload VAD model after extended silence — reset_states() alone
-        # isn't enough, the ONNX runtime accumulates corruption over thousands of calls
-        if self._last_speech_time > 0 and (now - self._last_speech_time) > self._vad_reset_interval:
-            if now - self._last_vad_reset > self._vad_reset_interval:
-                log.info("Reloading VAD model after prolonged silence")
+        # Self-healing: reload VAD + STT if no successful transcription in 5 minutes
+        if now - self._last_vad_reset > self._vad_reset_interval:
+            needs_reload = False
+            if self._last_successful_transcription == 0:
+                # Never had a successful transcription — reload after 5 min of operation
+                needs_reload = (self._chunk_count > self._vad_reset_interval * 12)  # ~12 chunks/sec
+            elif (now - self._last_successful_transcription) > self._vad_reset_interval:
+                needs_reload = True
+
+            if needs_reload:
+                log.warning(f"No successful transcription in {self._vad_reset_interval:.0f}s — reloading VAD and STT models")
                 try:
                     from silero_vad import load_silero_vad
                     self._vad_model = load_silero_vad(onnx=True)
-                    log.info("VAD model reloaded successfully")
+                    log.info("VAD model reloaded")
                 except Exception as e:
-                    log.error(f"Failed to reload VAD model: {e}")
-                    self._vad_model.reset_states()
+                    log.error(f"VAD reload failed: {e}")
+                try:
+                    self.transcriber._reload_model()
+                    self.transcriber._consecutive_failures = 0
+                    log.info("STT model reloaded")
+                except Exception as e:
+                    log.error(f"STT reload failed: {e}")
                 self._last_vad_reset = now
+                self._consecutive_empty = 0
 
         # Convert bytes to float32 numpy array
         audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
@@ -222,11 +235,13 @@ class AudioPipeline:
                         self._silence_start = None
 
                         if text and text.strip():
-                            self._last_speech_time = now
+                            self._last_successful_transcription = now
+                            self._consecutive_empty = 0
                             speaker = self.speaker_filter.identify(full_audio, self._target_rate)
                             log.info(f"Transcribed: '{text.strip()[:80]}' (speaker={speaker})")
                             return {"text": text.strip(), "is_partial": False, "speaker": speaker, "silence_after": True}
                         else:
-                            log.info(f"Transcription returned empty for {len(full_audio)} samples")
+                            self._consecutive_empty += 1
+                            log.info(f"Transcription returned empty for {len(full_audio)} samples (streak: {self._consecutive_empty})")
 
         return None
