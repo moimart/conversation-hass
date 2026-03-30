@@ -15,6 +15,9 @@ log = logging.getLogger("hal.pipeline")
 # Silence threshold: seconds of silence after speech to trigger command processing
 SILENCE_THRESHOLD = 1.5
 
+# Minimum speech duration to attempt transcription (filters ambient noise bursts)
+MIN_SPEECH_DURATION = 0.3  # seconds
+
 
 class AudioPipeline:
     """Processes raw audio: VAD → transcription → speaker filtering."""
@@ -31,6 +34,7 @@ class AudioPipeline:
         self._vad_model = None
         self._vad_executor = ThreadPoolExecutor(max_workers=1)
         self._speech_active = False
+        self._speech_start_time: float = 0.0
         self._silence_start: float | None = None
         self._last_speech_time: float = 0.0
         self._vad_reset_interval = 300.0  # reset VAD state every 5 min of silence
@@ -176,9 +180,9 @@ class AudioPipeline:
         if is_speech:
             if not self._speech_active:
                 log.info("Speech started")
+                self._speech_start_time = now
             self._speech_active = True
             self._silence_start = None
-            self._last_speech_time = now
             self._audio_buffer.extend(audio_bytes)
             self._partial_buffer.extend(audio_bytes)
 
@@ -199,9 +203,16 @@ class AudioPipeline:
                 elif now - self._silence_start >= SILENCE_THRESHOLD:
                     # Enough silence — finalize transcription
                     self._speech_active = False
+                    buf_bytes = len(self._audio_buffer)
+                    buf_duration = buf_bytes / (self.sample_rate * 2)
 
-                    if len(self._audio_buffer) > 0:
-                        buf_bytes = len(self._audio_buffer)
+                    if buf_duration < MIN_SPEECH_DURATION:
+                        # Too short — ambient noise, not speech
+                        log.debug(f"Discarding noise burst ({buf_duration:.2f}s < {MIN_SPEECH_DURATION}s)")
+                        self._audio_buffer.clear()
+                        self._partial_buffer.clear()
+                        self._silence_start = None
+                    elif buf_bytes > 0:
                         full_audio = self._to_16k_float(bytes(self._audio_buffer))
                         log.info(f"Finalizing: buffer={buf_bytes} bytes, audio={len(full_audio)} samples ({len(full_audio)/16000:.1f}s)")
                         text = await self.transcriber.transcribe(full_audio)
@@ -211,6 +222,7 @@ class AudioPipeline:
                         self._silence_start = None
 
                         if text and text.strip():
+                            self._last_speech_time = now
                             speaker = self.speaker_filter.identify(full_audio, self._target_rate)
                             log.info(f"Transcribed: '{text.strip()[:80]}' (speaker={speaker})")
                             return {"text": text.strip(), "is_partial": False, "speaker": speaker, "silence_after": True}
