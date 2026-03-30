@@ -1,5 +1,6 @@
 """HAL — Main FastAPI server coordinating audio pipeline."""
 
+import asyncio
 import io
 import json
 import logging
