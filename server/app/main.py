@@ -238,9 +238,9 @@ async def audio_endpoint(websocket: WebSocket):
                     if not result.get("is_partial", False) and result.get("speaker") != "ai":
                         await conversation.process_text(result["text"])
 
-                    # Silence after speech -> conversation manager may trigger LLM
+                    # Silence after speech -> run LLM in background so audio keeps flowing
                     if result.get("silence_after", False):
-                        await conversation.on_silence()
+                        asyncio.create_task(conversation.on_silence())
 
             elif "text" in data:
                 msg = json.loads(data["text"])
