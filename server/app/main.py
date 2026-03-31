@@ -302,7 +302,7 @@ async def audio_endpoint(websocket: WebSocket):
                     last_pong = time.monotonic()
                     log.debug("Pong received from RPi")
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         log.info("Audio client disconnected")
     except Exception as e:
         log.error(f"Audio WebSocket error: {e}", exc_info=True)
