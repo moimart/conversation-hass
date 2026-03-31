@@ -216,13 +216,28 @@ async def audio_endpoint(websocket: WebSocket):
     conversation.on_wake_word = on_wake_word
     conversation.on_state_change = on_state_change
 
+    # Watchdog: independent task that proves the event loop is alive
+    async def _watchdog():
+        while True:
+            await asyncio.sleep(30)
+            log.debug("Watchdog: event loop alive")
+
+    watchdog_task = asyncio.create_task(_watchdog())
+
     try:
         while True:
             data = await websocket.receive()
 
             if "bytes" in data:
                 audio_chunk = data["bytes"]
-                result = await pipeline.process_chunk(audio_chunk)
+                try:
+                    result = await asyncio.wait_for(
+                        pipeline.process_chunk(audio_chunk),
+                        timeout=10.0,
+                    )
+                except asyncio.TimeoutError:
+                    log.error("process_chunk timed out (10s) — skipping chunk")
+                    continue
 
                 if result:
                     # Build transcription message once, send to both UI and RPi
@@ -253,6 +268,8 @@ async def audio_endpoint(websocket: WebSocket):
         log.info("Audio client disconnected")
     except Exception as e:
         log.error(f"Audio WebSocket error: {e}")
+    finally:
+        watchdog_task.cancel()
 
 
 @app.websocket("/ws/ui")
