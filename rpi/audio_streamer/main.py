@@ -304,6 +304,9 @@ class AudioManager:
             await self.broadcast_to_ui({"type": "state", "state": "idle"})
             await ws.send(json.dumps({"type": "tts_finished"}))
 
+        elif msg_type == "ping":
+            await ws.send(json.dumps({"type": "pong"}))
+
         elif msg_type in ("transcription", "response", "wake", "state"):
             await self.broadcast_to_ui(msg)
 

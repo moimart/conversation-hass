@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import struct
+import time
 import wave
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -216,31 +217,66 @@ async def audio_endpoint(websocket: WebSocket):
     conversation.on_wake_word = on_wake_word
     conversation.on_state_change = on_state_change
 
+    # Keepalive: ping RPi every 15s, detect dead connections
+    last_pong = time.monotonic()
+    ping_interval = 15.0
+    pong_timeout = 45.0  # 3 missed pongs = dead
+
+    async def _keepalive():
+        nonlocal last_pong
+        while True:
+            await asyncio.sleep(ping_interval)
+            try:
+                await websocket.send_json({"type": "ping"})
+                elapsed = time.monotonic() - last_pong
+                if elapsed > pong_timeout:
+                    log.error(f"No pong from RPi in {elapsed:.0f}s — connection likely dead")
+            except Exception as e:
+                log.error(f"Keepalive send failed: {e}")
+                break
+
     # Watchdog: independent task that proves the event loop is alive
+    chunk_at_last_watchdog = 0
     async def _watchdog():
+        nonlocal chunk_at_last_watchdog
         while True:
             await asyncio.sleep(30)
-            log.debug("Watchdog: event loop alive")
+            current_chunks = pipeline._chunk_count
+            chunks_delta = current_chunks - chunk_at_last_watchdog
+            chunk_at_last_watchdog = current_chunks
+            log.info(f"Watchdog: event_loop=alive, chunks_delta={chunks_delta}/30s, "
+                      f"ai_speaking={pipeline._ai_speaking}, "
+                      f"vad_executor_alive={not pipeline._vad_executor._shutdown}, "
+                      f"reload_pending={pipeline._reload_pending}")
 
+    keepalive_task = asyncio.create_task(_keepalive())
     watchdog_task = asyncio.create_task(_watchdog())
+
+    chunk_count = 0
 
     try:
         while True:
+            log.debug("Waiting for WebSocket data...")
             data = await websocket.receive()
+            chunk_count += 1
 
             if "bytes" in data:
                 audio_chunk = data["bytes"]
+                t0 = time.monotonic()
                 try:
                     result = await asyncio.wait_for(
                         pipeline.process_chunk(audio_chunk),
                         timeout=10.0,
                     )
                 except asyncio.TimeoutError:
-                    log.error("process_chunk timed out (10s) — skipping chunk")
+                    log.error(f"process_chunk timed out (10s) at chunk #{chunk_count} — skipping")
                     continue
 
+                elapsed = time.monotonic() - t0
+                if elapsed > 1.0:
+                    log.warning(f"process_chunk slow: {elapsed:.2f}s at chunk #{chunk_count}")
+
                 if result:
-                    # Build transcription message once, send to both UI and RPi
                     transcription_msg = {
                         "type": "transcription",
                         "text": result["text"],
@@ -250,25 +286,28 @@ async def audio_endpoint(websocket: WebSocket):
                     await broadcast_to_ui(state, transcription_msg)
                     await websocket.send_json(transcription_msg)
 
-                    # Feed finalized human speech to conversation manager
                     if not result.get("is_partial", False) and result.get("speaker") != "ai":
                         await conversation.process_text(result["text"])
 
-                    # Silence after speech -> run LLM in background so audio keeps flowing
                     if result.get("silence_after", False):
                         asyncio.create_task(conversation.on_silence())
 
             elif "text" in data:
                 msg = json.loads(data["text"])
-                if msg.get("type") == "tts_finished":
+                msg_type = msg.get("type")
+                if msg_type == "tts_finished":
                     log.info("AI speaking: False (tts_finished received)")
                     pipeline.set_ai_speaking(False)
+                elif msg_type == "pong":
+                    last_pong = time.monotonic()
+                    log.debug("Pong received from RPi")
 
     except WebSocketDisconnect:
         log.info("Audio client disconnected")
     except Exception as e:
-        log.error(f"Audio WebSocket error: {e}")
+        log.error(f"Audio WebSocket error: {e}", exc_info=True)
     finally:
+        keepalive_task.cancel()
         watchdog_task.cancel()
 
 
