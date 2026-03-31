@@ -40,6 +40,8 @@ class AudioPipeline:
         self._consecutive_empty: int = 0
         self._vad_reset_interval = 300.0  # reload VAD every 5 min without transcription
         self._last_vad_reset: float = 0.0
+        self._reload_pending = False
+        self._reload_count = 0
         self._chunk_count: int = 0
         self._last_health_log: float = 0.0
         self._health_log_interval = 60.0  # log health every 60s
@@ -89,6 +91,53 @@ class AudioPipeline:
         else:
             self._ai_speaking_since = 0.0
 
+    async def _reload_models(self):
+        """Reload VAD and STT models in a thread to avoid blocking the event loop."""
+        loop = asyncio.get_event_loop()
+        self._reload_count += 1
+        log.info(f"Model reload #{self._reload_count} starting")
+
+        try:
+            # Reload VAD in executor with timeout
+            def _reload_vad():
+                from silero_vad import load_silero_vad
+                return load_silero_vad(onnx=True)
+
+            try:
+                new_vad = await asyncio.wait_for(
+                    loop.run_in_executor(None, _reload_vad),
+                    timeout=30.0,
+                )
+                self._vad_model = new_vad
+                log.info("VAD model reloaded")
+            except asyncio.TimeoutError:
+                log.error("VAD reload timed out (30s)")
+            except Exception as e:
+                log.error(f"VAD reload failed: {e}")
+
+            # Reload STT in executor with timeout
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, self.transcriber._reload_model),
+                    timeout=60.0,
+                )
+                self.transcriber._consecutive_failures = 0
+                log.info("STT model reloaded")
+            except asyncio.TimeoutError:
+                log.error("STT reload timed out (60s)")
+            except Exception as e:
+                log.error(f"STT reload failed: {e}")
+
+            self._last_vad_reset = time.monotonic()
+            self._consecutive_empty = 0
+        finally:
+            self._reload_pending = False
+
+        # Exponential backoff: double the interval after each reload, cap at 1 hour
+        if self._reload_count > 1:
+            self._vad_reset_interval = min(self._vad_reset_interval * 2, 3600.0)
+            log.info(f"Next reload interval: {self._vad_reset_interval:.0f}s")
+
     def _run_vad(self, audio_float: np.ndarray) -> bool:
         """Run VAD synchronously in a thread. Returns True if speech detected."""
         import torch
@@ -127,30 +176,18 @@ class AudioPipeline:
             self._last_health_log = now
 
         # Self-healing: reload VAD + STT if no successful transcription in 5 minutes
-        if now - self._last_vad_reset > self._vad_reset_interval:
+        # But only reload ONCE — repeated reloads fragment CUDA memory and eventually hang
+        if not self._reload_pending and now - self._last_vad_reset > self._vad_reset_interval:
             needs_reload = False
             if self._last_successful_transcription == 0:
-                # Never had a successful transcription — reload after 5 min of operation
-                needs_reload = (self._chunk_count > self._vad_reset_interval * 12)  # ~12 chunks/sec
+                needs_reload = (self._chunk_count > self._vad_reset_interval * 12)
             elif (now - self._last_successful_transcription) > self._vad_reset_interval:
                 needs_reload = True
 
             if needs_reload:
-                log.warning(f"No successful transcription in {self._vad_reset_interval:.0f}s — reloading VAD and STT models")
-                try:
-                    from silero_vad import load_silero_vad
-                    self._vad_model = load_silero_vad(onnx=True)
-                    log.info("VAD model reloaded")
-                except Exception as e:
-                    log.error(f"VAD reload failed: {e}")
-                try:
-                    self.transcriber._reload_model()
-                    self.transcriber._consecutive_failures = 0
-                    log.info("STT model reloaded")
-                except Exception as e:
-                    log.error(f"STT reload failed: {e}")
-                self._last_vad_reset = now
-                self._consecutive_empty = 0
+                self._reload_pending = True
+                log.warning(f"No successful transcription in {self._vad_reset_interval:.0f}s — scheduling model reload")
+                asyncio.get_event_loop().create_task(self._reload_models())
 
         # Convert bytes to float32 numpy array
         audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
@@ -237,6 +274,11 @@ class AudioPipeline:
                         if text and text.strip():
                             self._last_successful_transcription = now
                             self._consecutive_empty = 0
+                            # Reset reload backoff on success
+                            if self._reload_count > 0:
+                                self._reload_count = 0
+                                self._vad_reset_interval = 300.0
+                                log.info("Transcription working — reset reload backoff")
                             speaker = self.speaker_filter.identify(full_audio, self._target_rate)
                             log.info(f"Transcribed: '{text.strip()[:80]}' (speaker={speaker})")
                             return {"text": text.strip(), "is_partial": False, "speaker": speaker, "silence_after": True}
