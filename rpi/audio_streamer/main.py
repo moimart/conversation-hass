@@ -335,20 +335,45 @@ class AudioManager:
                 async with websockets.connect(uri, max_size=16 * 1024 * 1024) as ws:
                     log.info("Connected to AI server")
 
+                    chunks_sent = 0
+                    last_health = time.monotonic()
+
                     async def send_audio():
+                        nonlocal stream, chunks_sent, last_health
                         while True:
                             if self.tts_playing or self.mic_muted:
                                 await asyncio.sleep(0.1)
                                 continue
 
-                            audio_data = await loop.run_in_executor(
-                                None, stream.read, self.chunk_size, False
-                            )
+                            try:
+                                audio_data = await asyncio.wait_for(
+                                    loop.run_in_executor(
+                                        None, stream.read, self.chunk_size, False
+                                    ),
+                                    timeout=5.0,
+                                )
+                            except asyncio.TimeoutError:
+                                log.error("stream.read timed out (5s) — reopening audio device")
+                                self.close_stream(stream)
+                                stream = await loop.run_in_executor(None, self.open_input_stream)
+                                continue
+                            except Exception as e:
+                                log.error(f"stream.read failed: {e} — reopening audio device")
+                                self.close_stream(stream)
+                                stream = await loop.run_in_executor(None, self.open_input_stream)
+                                continue
 
                             if self.needs_downmix:
                                 audio_data = self.downmix_to_mono(audio_data)
 
                             await ws.send(audio_data)
+                            chunks_sent += 1
+
+                            # Health log every 60s
+                            now = time.monotonic()
+                            if now - last_health >= 60.0:
+                                log.info(f"Client health: chunks_sent={chunks_sent}, tts_playing={self.tts_playing}, mic_muted={self.mic_muted}")
+                                last_health = now
 
                     async def receive_messages():
                         async for message in ws:
