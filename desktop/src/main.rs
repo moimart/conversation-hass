@@ -148,8 +148,10 @@ fn build_ui(
     // ESC to close
     let key_ctrl = gtk4::EventControllerKey::new();
     let win_ref = window.clone();
+    let entry_esc = entry.clone();
     key_ctrl.connect_key_pressed(move |_, key, _, _| {
         if key == gdk::Key::Escape {
+            entry_esc.set_focusable(false);
             win_ref.close();
             glib::Propagation::Stop
         } else {
@@ -200,6 +202,7 @@ fn build_ui(
                 st_c.remove_css_class("hal-error");
                 st_c.add_css_class("hal-success");
                 st_c.set_visible(true);
+                en_c.set_focusable(false);
                 let w = win_c.clone();
                 glib::timeout_add_local_once(
                     std::time::Duration::from_millis(dismiss_delay),
