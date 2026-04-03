@@ -161,12 +161,6 @@
         responseText.textContent = text;
         responseContainer.classList.add("visible");
         setState("speaking");
-
-        // Fade out response after a delay
-        clearTimeout(handleResponse._fadeTimer);
-        handleResponse._fadeTimer = setTimeout(() => {
-            responseContainer.classList.remove("visible");
-        }, 12000);
     }
 
     // --- State Management ---
@@ -183,6 +177,15 @@
         if (state && labels[state]) {
             document.body.classList.add(`state-${state}`);
             statusText.textContent = labels[state];
+        }
+
+        // Hide response text when done speaking
+        if (state === "idle" && responseContainer.classList.contains("visible")) {
+            // Brief delay so the last words are still visible
+            clearTimeout(setState._fadeTimer);
+            setState._fadeTimer = setTimeout(() => {
+                responseContainer.classList.remove("visible");
+            }, 2000);
         }
     }
 
