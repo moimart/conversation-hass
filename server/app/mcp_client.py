@@ -1,7 +1,7 @@
-"""MCP client for Home Assistant integration.
+"""MCP client supporting multiple MCP servers.
 
-Connects to an existing HA MCP server over HTTP (Streamable HTTP / SSE transport),
-discovers available tools, and executes tool calls on behalf of the LLM.
+Connects to one or more MCP servers over HTTP (Streamable HTTP transport),
+discovers all available tools, and routes tool calls to the correct server.
 """
 
 import asyncio
@@ -121,3 +121,61 @@ class MCPClient:
             error_msg = f"Error calling tool {name}: {e}"
             log.error(error_msg)
             return error_msg
+
+
+class MultiMCPClient:
+    """Wraps multiple MCPClient instances, merging tools and routing calls."""
+
+    def __init__(self):
+        self._clients: dict[str, MCPClient] = {}  # name → client
+        self._tool_to_server: dict[str, str] = {}  # tool_name → server_name
+
+    async def add_server(self, name: str, url: str):
+        """Connect to an MCP server and register its tools."""
+        client = MCPClient(server_url=url)
+        try:
+            await client.connect()
+            self._clients[name] = client
+            for tool_name in client.tool_names:
+                if tool_name in self._tool_to_server:
+                    existing = self._tool_to_server[tool_name]
+                    log.warning(f"Tool '{tool_name}' from '{name}' shadows same tool from '{existing}'")
+                self._tool_to_server[tool_name] = name
+            log.info(f"MCP server '{name}': {len(client.tool_names)} tools from {url}")
+        except Exception as e:
+            log.error(f"Failed to connect to MCP server '{name}' at {url}: {e}")
+
+    async def disconnect_all(self):
+        for name, client in self._clients.items():
+            try:
+                await client.disconnect()
+            except Exception as e:
+                log.warning(f"Error disconnecting MCP server '{name}': {e}")
+
+    @property
+    def tools_for_llm(self) -> list[dict]:
+        tools = []
+        for client in self._clients.values():
+            tools.extend(client.tools_for_llm)
+        return tools
+
+    @property
+    def tool_names(self) -> list[str]:
+        return list(self._tool_to_server.keys())
+
+    def get_tool_descriptions_text(self) -> str:
+        lines = []
+        for client in self._clients.values():
+            text = client.get_tool_descriptions_text()
+            if text:
+                lines.append(text)
+        return "\n".join(lines)
+
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> str:
+        server_name = self._tool_to_server.get(name)
+        if not server_name:
+            return f"Error: Unknown tool '{name}'"
+        client = self._clients.get(server_name)
+        if not client:
+            return f"Error: Server '{server_name}' not connected"
+        return await client.call_tool(name, arguments)

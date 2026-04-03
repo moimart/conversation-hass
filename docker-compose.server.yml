@@ -24,6 +24,7 @@ services:
     volumes:
       - ./server/models:/app/models
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro
+      - ./server/mcp_servers.json:/app/mcp_servers.json:ro
       - huggingface-cache:/root/.cache/huggingface
       - /etc/localtime:/etc/localtime:ro
     deploy:

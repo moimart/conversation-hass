@@ -21,6 +21,7 @@ services:
       - MEMORY_API_KEY=${MEMORY_API_KEY:-sk-shodh-dev-default}
     volumes:
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro
+      - ./server/mcp_servers.json:/app/mcp_servers.json:ro
       - huggingface-cache:/root/.cache/huggingface
       - /etc/localtime:/etc/localtime:ro
     deploy:

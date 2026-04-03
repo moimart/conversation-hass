@@ -195,21 +195,18 @@ class TestLifespan:
         mock_app = MagicMock()
         mock_app.state = MagicMock()
 
-        with patch("server.app.main.MCPClient") as MockMCP, \
+        mock_multi = MagicMock()
+        mock_multi.add_server = AsyncMock()
+        mock_multi.tool_names = []
+        mock_multi.disconnect_all = AsyncMock()
+
+        with patch("server.app.main.MultiMCPClient", return_value=mock_multi), \
              patch("server.app.main.TTSEngine") as MockTTS, \
              patch("server.app.main.MemoryClient") as MockMemory, \
              patch("server.app.main.AudioPipeline") as MockPipeline, \
              patch("server.app.main.ConversationManager"), \
              patch("server.app.main._generate_chime", return_value=b"chime"), \
              patch.dict("os.environ", {"MCP_SERVER_URL": "http://broken", "WAKE_WORD": "hey hal"}):
-
-            # First call: broken MCP that fails to connect
-            mock_mcp_broken = MagicMock()
-            mock_mcp_broken.connect = AsyncMock(side_effect=ConnectionError("refused"))
-            # Second call: clean fallback MCP
-            mock_mcp_fallback = MagicMock()
-            mock_mcp_fallback.disconnect = AsyncMock()
-            MockMCP.side_effect = [mock_mcp_broken, mock_mcp_fallback]
 
             MockTTS.return_value = MagicMock()
             MockTTS.return_value.initialize = AsyncMock()
@@ -219,25 +216,23 @@ class TestLifespan:
             MockPipeline.return_value.initialize = AsyncMock()
 
             async with lifespan(mock_app):
-                state = mock_app.state.hal
-                # MCPClient should have been called twice (broken + fallback)
-                assert MockMCP.call_count == 2
-                # Second call should be with empty URL
-                assert MockMCP.call_args_list[1].kwargs.get("server_url") == ""
+                # add_server should have been called with the env var URL
+                mock_multi.add_server.assert_awaited_once_with("home-assistant", "http://broken")
 
     @pytest.mark.asyncio
     async def test_lifespan_shutdown_disconnects_mcp(self):
-        """Shutdown should disconnect MCP client."""
+        """Shutdown should disconnect all MCP clients."""
         from server.app.main import lifespan
 
         mock_app = MagicMock()
         mock_app.state = MagicMock()
 
-        mock_mcp = MagicMock()
-        mock_mcp.connect = AsyncMock()
-        mock_mcp.disconnect = AsyncMock()
+        mock_multi = MagicMock()
+        mock_multi.add_server = AsyncMock()
+        mock_multi.tool_names = ["ha_call_service"]
+        mock_multi.disconnect_all = AsyncMock()
 
-        with patch("server.app.main.MCPClient", return_value=mock_mcp), \
+        with patch("server.app.main.MultiMCPClient", return_value=mock_multi), \
              patch("server.app.main.TTSEngine") as MockTTS, \
              patch("server.app.main.MemoryClient") as MockMemory, \
              patch("server.app.main.AudioPipeline") as MockPipeline, \
@@ -255,7 +250,7 @@ class TestLifespan:
             async with lifespan(mock_app):
                 pass
 
-            mock_mcp.disconnect.assert_awaited_once()
+            mock_multi.disconnect_all.assert_awaited_once()
 
 
 # --- Audio endpoint message handling ---

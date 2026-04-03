@@ -12,7 +12,7 @@ from typing import Callable, Awaitable
 
 import httpx
 
-from .mcp_client import MCPClient
+from .mcp_client import MCPClient, MultiMCPClient
 from .memory import MemoryClient
 from .tts import TTSEngine
 
@@ -38,7 +38,7 @@ class ConversationManager:
         wake_word: str,
         ollama_host: str,
         ollama_model: str,
-        mcp_client: MCPClient,
+        mcp_client: MCPClient | MultiMCPClient,
         tts_engine: TTSEngine,
         memory_client: MemoryClient | None = None,
         system_prompt: str = "",

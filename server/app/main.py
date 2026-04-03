@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from .audio_pipeline import AudioPipeline
 from .conversation import ConversationManager
-from .mcp_client import MCPClient
+from .mcp_client import MCPClient, MultiMCPClient
 from .memory import MemoryClient
 from .tts import TTSEngine
 
@@ -33,7 +33,7 @@ class AppState:
     pipeline: AudioPipeline | None = None
     conversation: ConversationManager | None = None
     tts_engine: TTSEngine | None = None
-    mcp_client: MCPClient | None = None
+    mcp_client: MultiMCPClient | None = None
     memory_client: MemoryClient | None = None
     wake_chime: bytes | None = None
     ui_clients: set = field(default_factory=set)
@@ -77,18 +77,33 @@ async def lifespan(app: FastAPI):
     state.wake_chime = _generate_chime()
     log.info(f"Wake chime generated ({len(state.wake_chime)} bytes)")
 
-    # MCP client for Home Assistant
-    mcp_url = os.environ.get("MCP_SERVER_URL", "")
-    state.mcp_client = MCPClient(server_url=mcp_url)
-    if mcp_url:
+    # MCP servers — load from config file, fall back to env var
+    state.mcp_client = MultiMCPClient()
+    mcp_config_path = os.environ.get("MCP_SERVERS_FILE", "/app/mcp_servers.json")
+    servers_loaded = False
+
+    if os.path.isfile(mcp_config_path):
         try:
-            await state.mcp_client.connect()
+            with open(mcp_config_path) as f:
+                servers = json.load(f)
+            for entry in servers:
+                name = entry.get("name", "unnamed")
+                url = entry.get("url", "")
+                if url:
+                    await state.mcp_client.add_server(name, url)
+                    servers_loaded = True
         except Exception as e:
-            log.error(f"Failed to connect to MCP server: {e}")
-            log.warning("HAL will run without Home Assistant integration")
-            state.mcp_client = MCPClient(server_url="")
-    else:
-        log.warning("MCP_SERVER_URL not set — Home Assistant integration disabled")
+            log.error(f"Failed to load MCP servers config: {e}")
+
+    # Backward compat: fall back to MCP_SERVER_URL env var
+    if not servers_loaded:
+        mcp_url = os.environ.get("MCP_SERVER_URL", "")
+        if mcp_url:
+            await state.mcp_client.add_server("home-assistant", mcp_url)
+        else:
+            log.warning("No MCP servers configured")
+
+    log.info(f"Total MCP tools available: {len(state.mcp_client.tool_names)}")
 
     # Wyoming TTS
     tts_host = os.environ.get("WYOMING_TTS_HOST", "localhost")
@@ -136,7 +151,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     if state.mcp_client:
-        await state.mcp_client.disconnect()
+        await state.mcp_client.disconnect_all()
 
 
 app = FastAPI(title="HAL Voice Server", lifespan=lifespan)
