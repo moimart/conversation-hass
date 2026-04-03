@@ -37,6 +37,7 @@ class AppState:
     memory_client: MemoryClient | None = None
     wake_chime: bytes | None = None
     ui_clients: set = field(default_factory=set)
+    audio_websocket: WebSocket | None = None  # RPi audio client
 
 
 def _generate_chime() -> bytes:
@@ -172,6 +173,7 @@ async def audio_endpoint(websocket: WebSocket):
     conversation = state.conversation
 
     await websocket.accept()
+    state.audio_websocket = websocket
     log.info("Audio client connected")
 
     async def on_wake_word():
@@ -308,6 +310,7 @@ async def audio_endpoint(websocket: WebSocket):
     except Exception as e:
         log.error(f"Audio WebSocket error: {e}", exc_info=True)
     finally:
+        state.audio_websocket = None
         keepalive_task.cancel()
         watchdog_task.cancel()
 
@@ -376,13 +379,19 @@ async def post_command(req: CommandRequest):
 
     log.info(f"REST command received: '{text[:80]}'")
 
-    # Show on UI as transcription
-    await broadcast_to_ui(state, {
+    # Show on UI as transcription (send to both direct UI clients and RPi)
+    transcription_msg = {
         "type": "transcription",
         "text": text,
         "is_partial": False,
         "speaker": "human",
-    })
+    }
+    await broadcast_to_ui(state, transcription_msg)
+    if state.audio_websocket:
+        try:
+            await state.audio_websocket.send_json(transcription_msg)
+        except Exception:
+            pass
 
     # Feed directly to conversation manager (skip wake word)
     conversation._command_buffer.append(text)
