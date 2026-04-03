@@ -89,8 +89,11 @@ async def lifespan(app: FastAPI):
             for entry in servers:
                 name = entry.get("name", "unnamed")
                 url = entry.get("url", "")
-                if url:
-                    await state.mcp_client.add_server(name, url)
+                command = entry.get("command", "")
+                args = entry.get("args", [])
+                env = entry.get("env", {})
+                if url or command:
+                    await state.mcp_client.add_server(name, url=url, command=command, args=args, env=env)
                     servers_loaded = True
         except Exception as e:
             log.error(f"Failed to load MCP servers config: {e}")

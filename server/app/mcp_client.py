@@ -1,41 +1,68 @@
 """MCP client supporting multiple MCP servers.
 
-Connects to one or more MCP servers over HTTP (Streamable HTTP transport),
-discovers all available tools, and routes tool calls to the correct server.
+Supports two transport types:
+  - HTTP (Streamable HTTP): {"name": "...", "url": "https://..."}
+  - stdio (subprocess):     {"name": "...", "command": "uvx", "args": [...], "env": {...}}
+
+Discovers all available tools and routes tool calls to the correct server.
 """
 
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from mcp import ClientSession
+from mcp import ClientSession, StdioServerParameters
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.stdio import stdio_client
 
 log = logging.getLogger("hal.mcp")
 
 
 class MCPClient:
-    """Manages a persistent connection to the HA MCP server."""
+    """Manages a persistent connection to an MCP server (HTTP or stdio)."""
 
-    def __init__(self, server_url: str):
+    def __init__(self, server_url: str = "", command: str = "", args: list[str] | None = None, env: dict[str, str] | None = None):
         self.server_url = server_url
+        self.command = command
+        self.args = args or []
+        self.env = env or {}
         self._session: ClientSession | None = None
         self._tools: list[dict] = []
         self._tools_for_llm: list[dict] = []
         self._context_manager = None
-        self._read = None
-        self._write = None
+
+    @property
+    def transport_type(self) -> str:
+        return "stdio" if self.command else "http"
 
     async def connect(self):
         """Connect to the MCP server and discover tools."""
-        log.info(f"Connecting to MCP server at {self.server_url}...")
+        if self.command:
+            log.info(f"Starting stdio MCP server: {self.command} {' '.join(self.args)}")
+            # Resolve env vars (replace $VAR with actual values)
+            resolved_env = {}
+            for k, v in self.env.items():
+                if isinstance(v, str) and v.startswith("$"):
+                    resolved_env[k] = os.environ.get(v[1:], "")
+                else:
+                    resolved_env[k] = v
 
-        self._context_manager = streamablehttp_client(self.server_url)
-        self._read, self._write, _ = await self._context_manager.__aenter__()
+            server_params = StdioServerParameters(
+                command=self.command,
+                args=self.args,
+                env={**os.environ, **resolved_env},
+            )
+            self._context_manager = stdio_client(server_params)
+        else:
+            log.info(f"Connecting to HTTP MCP server at {self.server_url}...")
+            self._context_manager = streamablehttp_client(self.server_url)
 
-        self._session = ClientSession(self._read, self._write)
+        read, write = (await self._context_manager.__aenter__())[:2]
+
+        self._session = ClientSession(read, write)
         await self._session.__aenter__()
         await self._session.initialize()
 
@@ -130,9 +157,10 @@ class MultiMCPClient:
         self._clients: dict[str, MCPClient] = {}  # name → client
         self._tool_to_server: dict[str, str] = {}  # tool_name → server_name
 
-    async def add_server(self, name: str, url: str):
-        """Connect to an MCP server and register its tools."""
-        client = MCPClient(server_url=url)
+    async def add_server(self, name: str, url: str = "", command: str = "", args: list[str] | None = None, env: dict[str, str] | None = None):
+        """Connect to an MCP server (HTTP or stdio) and register its tools."""
+        client = MCPClient(server_url=url, command=command, args=args, env=env)
+        desc = url or f"{command} {' '.join(args or [])}"
         try:
             await client.connect()
             self._clients[name] = client
@@ -141,9 +169,9 @@ class MultiMCPClient:
                     existing = self._tool_to_server[tool_name]
                     log.warning(f"Tool '{tool_name}' from '{name}' shadows same tool from '{existing}'")
                 self._tool_to_server[tool_name] = name
-            log.info(f"MCP server '{name}': {len(client.tool_names)} tools from {url}")
+            log.info(f"MCP server '{name}' ({client.transport_type}): {len(client.tool_names)} tools from {desc}")
         except Exception as e:
-            log.error(f"Failed to connect to MCP server '{name}' at {url}: {e}")
+            log.error(f"Failed to connect to MCP server '{name}' ({desc}): {e}")
 
     async def disconnect_all(self):
         for name, client in self._clients.items():
