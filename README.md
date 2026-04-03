@@ -174,6 +174,41 @@ The container auto-detects the USB speakerphone, probes its native sample rate a
 
 Navigate to `http://<rpi-ip>:8080` in a browser.
 
+### 5. Desktop Command App (optional)
+
+A lightweight Rust/GTK4 overlay for Hyprland/Wayland that sends text commands directly to HAL from your Linux desktop — bypassing speech entirely.
+
+**Build and install:**
+```bash
+cd desktop
+./install.sh
+```
+
+This builds the binary, copies it to `~/.local/bin/hal-command`, and installs default config/CSS to `~/.config/hal-command/`.
+
+**Add Hyprland keybind** (in `~/.config/hypr/hyprland.conf`):
+```
+bind = SUPER, H, exec, hal-command
+```
+
+**Usage:** Press `SUPER+H` to open the overlay. Type a command. Press `Enter` to send (green tick on success, auto-dismisses). Press `ESC` to dismiss without sending.
+
+**Configuration** (`~/.config/hal-command/config.toml`):
+```toml
+[server]
+url = "http://10.20.30.185:8765"
+
+[ui]
+width = 500
+top_margin = 300
+dismiss_delay = 400
+placeholder = "Command HAL..."
+```
+
+**Styling** (`~/.config/hal-command/style.css`): fully customizable GTK4 CSS for colors, fonts, borders, etc.
+
+Commands sent via the desktop app show on the web UI as transcription and the TTS response plays on the RPi speaker — identical to voice commands.
+
 ## Pre-built Images
 
 | Image | Platform | Registry |
@@ -197,7 +232,7 @@ conversation-hass/
 │   ├── requirements.txt               # faster-whisper, nemo_toolkit, silero-vad, mcp
 │   ├── system_prompt.txt              # LLM personality (editable, mounted read-only)
 │   └── app/
-│       ├── main.py                    # FastAPI server, WebSocket endpoints, wake chime
+│       ├── main.py                    # FastAPI server, WebSocket + REST endpoints, wake chime
 │       ├── audio_pipeline.py          # VAD + STT engine selection + speaker filter
 │       ├── transcriber.py             # WhisperTranscriber + NemotronTranscriber
 │       ├── speaker_filter.py          # Voice embedding comparison (resemblyzer)
@@ -215,7 +250,14 @@ conversation-hass/
 │       ├── style.css                  # Animations, wake flash, white-hot speaking eye
 │       └── app.js                     # WebSocket client, live transcription
 │
-└── tests/                             # 92 pytest tests (all mocked, no GPU needed)
+├── desktop/                           # Rust desktop command app
+│   ├── Cargo.toml                     # GTK4, layer-shell, reqwest
+│   ├── src/main.rs                    # Wayland overlay, sends to /api/command
+│   ├── config/config.toml             # Default config template
+│   ├── config/style.css               # Default stylesheet template
+│   └── install.sh                     # Build + install to ~/.local/bin
+│
+└── tests/                             # 155 pytest tests (all mocked, no GPU needed)
     ├── test_mcp_client.py
     ├── test_tts.py
     ├── test_conversation.py
@@ -268,6 +310,7 @@ All 92 tests run without GPU, ML models, or external services — dependencies a
 |---|---|---|
 | `/ws/audio` | WebSocket | Main audio channel. Receives PCM audio, sends transcription JSON + TTS binary |
 | `/ws/ui` | WebSocket | UI channel. Receives live transcription and state updates |
+| `/api/command` | HTTP POST | Direct text command to LLM (bypasses STT). Body: `{"text": "..."}` |
 | `/health` | HTTP GET | Health check: pipeline, MCP, TTS, and memory status |
 
 ### WebSocket Message Types
