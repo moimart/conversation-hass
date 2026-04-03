@@ -74,6 +74,10 @@ fn send_command(url: &str, text: &str) -> bool {
 }
 
 fn main() {
+    // Ensure Wayland backend
+    // SAFETY: called before any GTK/GLib init, single-threaded at this point
+    unsafe { std::env::set_var("GDK_BACKEND", "wayland"); }
+
     let config = load_config();
     let app = Application::builder().application_id(APP_ID).build();
 

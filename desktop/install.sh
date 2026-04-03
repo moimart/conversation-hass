@@ -31,10 +31,18 @@ else
     echo "Stylesheet already exists at $CONFDIR/style.css (not overwritten)"
 fi
 
+# Install wrapper script that suppresses GTK warnings
+cat > "$BINDIR/hal" << 'WRAPPER'
+#!/bin/sh
+exec hal-command 2>/dev/null
+WRAPPER
+chmod +x "$BINDIR/hal"
+echo "Installed wrapper to $BINDIR/hal (suppresses GTK warnings)"
+
 echo ""
 echo "=== Add to Hyprland ==="
 echo "Add this line to ~/.config/hypr/hyprland.conf:"
 echo ""
-echo "  bind = SUPER, H, exec, hal-command"
+echo "  bind = SUPER, H, exec, hal"
 echo ""
 echo "Done!"
