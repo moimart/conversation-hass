@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from .audio_pipeline import AudioPipeline
 from .conversation import ConversationManager
@@ -348,3 +349,46 @@ async def health():
         "tts_available": state.tts_engine is not None,
         "memory_available": state.memory_client is not None and state.memory_client.available,
     }
+
+
+class CommandRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/command")
+async def post_command(req: CommandRequest):
+    """
+    Direct text command to the LLM, bypassing STT.
+
+    The text is shown on the UI as a transcription and processed by
+    the LLM without requiring a wake word. The TTS response plays
+    on the RPi like any voice command.
+    """
+    state = _get_state(app)
+    conversation = state.conversation
+    text = req.text.strip()
+
+    if not text:
+        return {"status": "error", "message": "Empty text"}
+
+    if not conversation:
+        return {"status": "error", "message": "Server not ready"}
+
+    log.info(f"REST command received: '{text[:80]}'")
+
+    # Show on UI as transcription
+    await broadcast_to_ui(state, {
+        "type": "transcription",
+        "text": text,
+        "is_partial": False,
+        "speaker": "human",
+    })
+
+    # Feed directly to conversation manager (skip wake word)
+    conversation._command_buffer.append(text)
+    conversation._wake_detected = True  # bypass wake word check in on_silence
+
+    # Process immediately as a background task (like on_silence)
+    asyncio.create_task(conversation.on_silence())
+
+    return {"status": "ok", "message": "Command received"}
