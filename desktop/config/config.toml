@@ -1,0 +1,15 @@
+# HAL Command — Configuration
+# Place this file at ~/.config/hal-command/config.toml
+
+[server]
+url = "http://10.20.30.185:8765"
+
+[ui]
+# Width of the command box in pixels
+width = 500
+# Distance from the top of the screen
+top_margin = 300
+# How long the success tick shows before closing (ms)
+dismiss_delay = 400
+# Placeholder text in the entry box
+placeholder = "Command HAL..."

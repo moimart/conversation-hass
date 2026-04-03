@@ -4,20 +4,60 @@ use gtk4::{
     Orientation,
 };
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
+use serde::Deserialize;
 use std::cell::Cell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 const APP_ID: &str = "com.hal.command";
+const DEFAULT_CSS: &str = include_str!("../config/style.css");
 
-fn main() {
-    let server_url = std::env::var("HAL_SERVER_URL")
+#[derive(Deserialize)]
+struct Config {
+    server: ServerConfig,
+    ui: Option<UiConfig>,
+}
+
+#[derive(Deserialize)]
+struct ServerConfig {
+    url: String,
+}
+
+#[derive(Deserialize, Default)]
+struct UiConfig {
+    width: Option<i32>,
+    top_margin: Option<i32>,
+    dismiss_delay: Option<u64>,
+    placeholder: Option<String>,
+}
+
+fn config_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.config"))
+        .join("hal-command")
+}
+
+fn load_config() -> Config {
+    let path = config_dir().join("config.toml");
+    if let Ok(contents) = std::fs::read_to_string(&path) {
+        if let Ok(cfg) = toml::from_str(&contents) {
+            return cfg;
+        }
+        eprintln!("Warning: Failed to parse {}, using defaults", path.display());
+    }
+
+    // Fall back to env var or default
+    let url = std::env::var("HAL_SERVER_URL")
         .unwrap_or_else(|_| "http://localhost:8765".to_string());
+    Config {
+        server: ServerConfig { url },
+        ui: Some(UiConfig::default()),
+    }
+}
 
-    let app = Application::builder().application_id(APP_ID).build();
-
-    let url = server_url.clone();
-    app.connect_activate(move |app| build_ui(app, &url));
-    app.run();
+fn load_css() -> String {
+    let path = config_dir().join("style.css");
+    std::fs::read_to_string(&path).unwrap_or_else(|_| DEFAULT_CSS.to_string())
 }
 
 fn send_command(url: &str, text: &str) -> bool {
@@ -33,10 +73,34 @@ fn send_command(url: &str, text: &str) -> bool {
     })
 }
 
-fn build_ui(app: &Application, server_url: &str) {
+fn main() {
+    let config = load_config();
+    let app = Application::builder().application_id(APP_ID).build();
+
+    let url = config.server.url.clone();
+    let ui = config.ui.unwrap_or_default();
+    let width = ui.width.unwrap_or(500);
+    let top_margin = ui.top_margin.unwrap_or(300);
+    let dismiss_delay = ui.dismiss_delay.unwrap_or(400);
+    let placeholder = ui.placeholder.unwrap_or_else(|| "Command HAL...".to_string());
+
+    app.connect_activate(move |app| {
+        build_ui(app, &url, width, top_margin, dismiss_delay, &placeholder)
+    });
+    app.run();
+}
+
+fn build_ui(
+    app: &Application,
+    server_url: &str,
+    width: i32,
+    top_margin: i32,
+    dismiss_delay: u64,
+    placeholder: &str,
+) {
     let window = ApplicationWindow::builder()
         .application(app)
-        .default_width(500)
+        .default_width(width)
         .default_height(60)
         .decorated(false)
         .resizable(false)
@@ -50,50 +114,11 @@ fn build_ui(app: &Application, server_url: &str) {
     window.set_anchor(Edge::Bottom, false);
     window.set_anchor(Edge::Left, false);
     window.set_anchor(Edge::Right, false);
-    window.set_margin(Edge::Top, 300);
+    window.set_margin(Edge::Top, top_margin);
 
-    // CSS
+    // Load CSS
     let css = CssProvider::new();
-    css.load_from_data(
-        r#"
-        window {
-            background-color: rgba(10, 10, 12, 0.92);
-            border-radius: 16px;
-            border: 1px solid rgba(255, 45, 45, 0.3);
-        }
-        .hal-container {
-            padding: 12px 16px;
-        }
-        .hal-entry {
-            background-color: rgba(20, 20, 24, 0.9);
-            color: #e8e8ec;
-            border: 1px solid rgba(255, 45, 45, 0.2);
-            border-radius: 8px;
-            padding: 8px 12px;
-            font-family: "JetBrains Mono", "Fira Code", monospace;
-            font-size: 15px;
-            caret-color: #ff4444;
-        }
-        .hal-entry:focus {
-            border-color: rgba(255, 45, 45, 0.5);
-        }
-        .hal-icon {
-            color: #ff2d2d;
-            font-size: 18px;
-            margin-right: 10px;
-        }
-        .hal-success {
-            color: #22c55e;
-            font-size: 18px;
-            margin-left: 10px;
-        }
-        .hal-error {
-            color: #ff2d2d;
-            font-size: 18px;
-            margin-left: 10px;
-        }
-        "#,
-    );
+    css.load_from_data(&load_css());
     gtk4::style_context_add_provider_for_display(
         &gdk::Display::default().unwrap(),
         &css,
@@ -104,13 +129,13 @@ fn build_ui(app: &Application, server_url: &str) {
     let container = GtkBox::new(Orientation::Horizontal, 0);
     container.add_css_class("hal-container");
 
-    let icon = Label::new(Some("●"));
+    let icon = Label::new(Some("\u{25CF}")); // ●
     icon.add_css_class("hal-icon");
     container.append(&icon);
 
     let entry = Entry::new();
     entry.set_hexpand(true);
-    entry.set_placeholder_text(Some("Command HAL..."));
+    entry.set_placeholder_text(Some(placeholder));
     entry.add_css_class("hal-entry");
     container.append(&entry);
 
@@ -158,7 +183,6 @@ fn build_ui(app: &Application, server_url: &str) {
         let en_c = en.clone();
         let b_c = b.clone();
 
-        // Run HTTP request in a thread, signal back via channel
         let (tx, rx) = async_channel::bounded::<bool>(1);
         let text_c = text.clone();
 
@@ -172,16 +196,17 @@ fn build_ui(app: &Application, server_url: &str) {
             b_c.set(false);
 
             if success {
-                st_c.set_label("✓");
+                st_c.set_label("\u{2713}"); // ✓
                 st_c.remove_css_class("hal-error");
                 st_c.add_css_class("hal-success");
                 st_c.set_visible(true);
                 let w = win_c.clone();
-                glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || {
-                    w.close();
-                });
+                glib::timeout_add_local_once(
+                    std::time::Duration::from_millis(dismiss_delay),
+                    move || w.close(),
+                );
             } else {
-                st_c.set_label("✗");
+                st_c.set_label("\u{2717}"); // ✗
                 st_c.remove_css_class("hal-success");
                 st_c.add_css_class("hal-error");
                 st_c.set_visible(true);
