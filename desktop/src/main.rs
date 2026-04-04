@@ -73,6 +73,17 @@ fn send_command(url: &str, text: &str) -> bool {
     })
 }
 
+fn send_volume(url: &str, direction: &str) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let _ = reqwest::Client::new()
+            .post(format!("{url}/api/volume"))
+            .json(&serde_json::json!({"direction": direction}))
+            .send()
+            .await;
+    });
+}
+
 fn main() {
     // Ensure Wayland backend
     // SAFETY: called before any GTK/GLib init, single-threaded at this point
@@ -146,6 +157,29 @@ fn build_ui(
     let status = Label::new(None);
     status.set_visible(false);
     container.append(&status);
+
+    // Volume buttons
+    let vol_url = server_url.to_string();
+
+    let vol_down = gtk4::Button::with_label("\u{2212}"); // −
+    vol_down.add_css_class("hal-vol-btn");
+    vol_down.set_focusable(false);
+    let vu_down = vol_url.clone();
+    vol_down.connect_clicked(move |_| {
+        let u = vu_down.clone();
+        std::thread::spawn(move || send_volume(&u, "down"));
+    });
+    container.append(&vol_down);
+
+    let vol_up = gtk4::Button::with_label("+");
+    vol_up.add_css_class("hal-vol-btn");
+    vol_up.set_focusable(false);
+    let vu_up = vol_url.clone();
+    vol_up.connect_clicked(move |_| {
+        let u = vu_up.clone();
+        std::thread::spawn(move || send_volume(&u, "up"));
+    });
+    container.append(&vol_up);
 
     window.set_child(Some(&container));
 

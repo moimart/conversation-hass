@@ -304,6 +304,12 @@ class AudioManager:
             await self.broadcast_to_ui({"type": "state", "state": "idle"})
             await ws.send(json.dumps({"type": "tts_finished"}))
 
+        elif msg_type == "volume_adjust":
+            step = float(msg.get("step", 0.1))
+            self.tts_volume = max(0.0, min(1.0, self.tts_volume + step))
+            log.info(f"Volume adjusted by {step:+.0%}: now {self.tts_volume:.0%}")
+            await self.broadcast_to_ui({"type": "volume_sync", "level": self.tts_volume})
+
         elif msg_type == "ping":
             await ws.send(json.dumps({"type": "pong"}))
 

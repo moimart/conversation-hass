@@ -419,3 +419,28 @@ async def post_command(req: CommandRequest):
     asyncio.create_task(conversation.on_silence())
 
     return {"status": "ok", "message": "Command received"}
+
+
+class VolumeRequest(BaseModel):
+    direction: str  # "up" or "down"
+    step: float = 0.1
+
+
+@app.post("/api/volume")
+async def post_volume(req: VolumeRequest):
+    """Adjust RPi volume up or down."""
+    state = _get_state(app)
+    ws = state.audio_websocket
+    if not ws:
+        return {"status": "error", "message": "RPi not connected"}
+
+    step = abs(req.step)
+    if req.direction == "down":
+        step = -step
+
+    try:
+        # Tell RPi to adjust volume relatively
+        await ws.send_json({"type": "volume_adjust", "step": step})
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
