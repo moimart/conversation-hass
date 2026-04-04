@@ -42,18 +42,27 @@ class MCPClient:
         """Connect to the MCP server and discover tools."""
         if self.command:
             log.info(f"Starting stdio MCP server: {self.command} {' '.join(self.args)}")
-            # Resolve env vars (replace $VAR with actual values)
+            # Resolve env vars (replace $VAR with actual values from host env)
             resolved_env = {}
             for k, v in self.env.items():
                 if isinstance(v, str) and v.startswith("$"):
-                    resolved_env[k] = os.environ.get(v[1:], "")
+                    resolved_val = os.environ.get(v[1:], "")
+                    resolved_env[k] = resolved_val
+                    log.info(f"  env {k}: ${v[1:]} → {'(set)' if resolved_val else '(empty)'}")
                 else:
                     resolved_env[k] = v
+                    log.info(f"  env {k}: (literal, {len(v)} chars)")
+
+            full_env = {**os.environ, **resolved_env}
+            # Verify the keys we care about are in the final env
+            for k in self.env:
+                val = full_env.get(k, "")
+                log.info(f"  final env {k}: {'(set, ' + str(len(val)) + ' chars)' if val else '(MISSING)'}")
 
             server_params = StdioServerParameters(
                 command=self.command,
                 args=self.args,
-                env={**os.environ, **resolved_env},
+                env=full_env,
             )
             self._context_manager = stdio_client(server_params)
         else:
