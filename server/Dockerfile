@@ -6,25 +6,23 @@ ENV PYTHONUNBUFFERED=1
 # System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
-    gcc g++ git curl \
+    gcc g++ git curl wget gnupg \
     libsndfile1 ffmpeg \
-    chromium-browser \
     && rm -rf /var/lib/apt/lists/*
 
-# Chromium for MCP servers using nodriver/puppeteer
-ENV CHROMIUM_PATH=/usr/bin/chromium-browser
-ENV KINDLY_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-# Required: Chromium won't run as root without --no-sandbox
-ENV CHROMIUM_FLAGS="--no-sandbox --disable-gpu --disable-dev-shm-usage"
-ENV CHROME_FLAGS="--no-sandbox --disable-gpu --disable-dev-shm-usage"
-ENV PUPPETEER_CHROMIUM_REVISION=skip
-# nodriver reads this
-ENV NODRIVER_BROWSER_ARGS="--no-sandbox,--disable-gpu,--disable-dev-shm-usage"
+# Install real Chromium from Debian repos (Ubuntu 22.04's is a snap stub)
+RUN echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && wget -qO- https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create a wrapper that always passes --no-sandbox
-RUN mv /usr/bin/chromium-browser /usr/bin/chromium-browser-real \
-    && printf '#!/bin/sh\nexec /usr/bin/chromium-browser-real --no-sandbox --disable-gpu --disable-dev-shm-usage "$@"\n' > /usr/bin/chromium-browser \
-    && chmod +x /usr/bin/chromium-browser
+# Chrome for MCP servers using nodriver/puppeteer
+# Create a wrapper that always passes --no-sandbox (required when running as root)
+RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome-stable --no-sandbox --disable-gpu --disable-dev-shm-usage --headless=new "$@"\n' > /usr/bin/chromium \
+    && chmod +x /usr/bin/chromium
+ENV CHROMIUM_PATH=/usr/bin/chromium
+ENV KINDLY_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV CHROME_PATH=/usr/bin/chromium
 
 # Install uv/uvx for stdio-based MCP servers
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
