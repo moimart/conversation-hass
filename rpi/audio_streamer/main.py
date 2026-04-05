@@ -310,6 +310,15 @@ class AudioManager:
             log.info(f"Volume adjusted by {step:+.0%}: now {self.tts_volume:.0%}")
             await self.broadcast_to_ui({"type": "volume_sync", "level": self.tts_volume})
 
+        elif msg_type == "mute_toggle":
+            self.mic_muted = not self.mic_muted
+            log.info(f"Mic {'muted' if self.mic_muted else 'unmuted'} (via server)")
+            await self.broadcast_to_ui({"type": "mute_sync", "muted": self.mic_muted})
+            await ws.send(json.dumps({"type": "mute_sync", "muted": self.mic_muted}))
+
+        elif msg_type == "mute_query":
+            await ws.send(json.dumps({"type": "mute_sync", "muted": self.mic_muted}))
+
         elif msg_type == "ping":
             await ws.send(json.dumps({"type": "pong"}))
 

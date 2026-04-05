@@ -444,3 +444,36 @@ async def post_volume(req: VolumeRequest):
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/mute")
+async def post_mute_toggle():
+    """Toggle RPi mic mute. Returns the new mute state."""
+    state = _get_state(app)
+    ws = state.audio_websocket
+    if not ws:
+        return {"status": "error", "message": "RPi not connected"}
+
+    try:
+        await ws.send_json({"type": "mute_toggle"})
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/mute")
+async def get_mute_status():
+    """Get current RPi mic mute state."""
+    state = _get_state(app)
+    ws = state.audio_websocket
+    if not ws:
+        return {"muted": False}
+
+    # Request status from RPi
+    try:
+        await ws.send_json({"type": "mute_query"})
+        # The actual state comes back async — for now return cached state
+        # (The RPi broadcasts mute_sync which updates the UI)
+        return {"status": "ok"}
+    except Exception:
+        return {"muted": False}

@@ -70,6 +70,36 @@ window {
                 inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+.hal-mute-btn {
+    background: linear-gradient(180deg, rgba(40, 40, 46, 0.95) 0%, rgba(22, 22, 26, 0.95) 100%);
+    color: rgba(255, 45, 45, 0.7);
+    border: 1px solid rgba(255, 45, 45, 0.15);
+    border-radius: 8px;
+    padding: 4px 8px;
+    margin-left: 6px;
+    font-size: 14px;
+    min-width: 34px;
+    min-height: 34px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: all 150ms ease;
+}
+
+.hal-mute-btn:hover {
+    background: linear-gradient(180deg, rgba(60, 30, 30, 0.95) 0%, rgba(40, 15, 15, 0.95) 100%);
+    border-color: rgba(255, 45, 45, 0.4);
+    box-shadow: 0 1px 6px rgba(255, 45, 45, 0.15),
+                0 0 12px rgba(255, 45, 45, 0.08);
+}
+
+.hal-mute-btn.muted {
+    background: linear-gradient(180deg, rgba(80, 20, 20, 0.95) 0%, rgba(50, 10, 10, 0.95) 100%);
+    color: #ff4444;
+    border-color: rgba(255, 45, 45, 0.5);
+    box-shadow: 0 0 10px rgba(255, 45, 45, 0.2),
+                inset 0 0 6px rgba(255, 45, 45, 0.1);
+}
+
 .hal-vol-btn:active {
     background: linear-gradient(180deg, rgba(30, 10, 10, 0.95) 0%, rgba(50, 20, 20, 0.95) 100%);
     color: #ff6666;

@@ -73,6 +73,16 @@ fn send_command(url: &str, text: &str) -> bool {
     })
 }
 
+fn send_mute_toggle(url: &str) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let _ = reqwest::Client::new()
+            .post(format!("{url}/api/mute"))
+            .send()
+            .await;
+    });
+}
+
 fn send_volume(url: &str, direction: &str) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
@@ -180,6 +190,28 @@ fn build_ui(
         std::thread::spawn(move || send_volume(&u, "up"));
     });
     container.append(&vol_up);
+
+    // Mute button
+    let mute_btn = gtk4::Button::with_label("\u{1F50A}"); // speaker icon
+    mute_btn.add_css_class("hal-mute-btn");
+    mute_btn.set_focusable(false);
+    let mute_url = server_url.to_string();
+    let mute_ref = mute_btn.clone();
+    mute_btn.connect_clicked(move |_| {
+        let u = mute_url.clone();
+        let btn = mute_ref.clone();
+        // Toggle local state immediately for responsiveness
+        let is_muted = btn.css_classes().iter().any(|c| c == "muted");
+        if is_muted {
+            btn.remove_css_class("muted");
+            btn.set_label("\u{1F50A}"); // unmuted
+        } else {
+            btn.add_css_class("muted");
+            btn.set_label("\u{1F507}"); // muted
+        }
+        std::thread::spawn(move || send_mute_toggle(&u));
+    });
+    container.append(&mute_btn);
 
     window.set_child(Some(&container));
 
