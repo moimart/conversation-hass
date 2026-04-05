@@ -83,6 +83,25 @@ fn send_mute_toggle(url: &str) {
     });
 }
 
+fn get_mute_status(url: &str) -> bool {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let resp = match reqwest::Client::new()
+            .get(format!("{url}/api/mute"))
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return false,
+        };
+        let json: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        json.get("muted").and_then(|v| v.as_bool()).unwrap_or(false)
+    })
+}
+
 fn send_volume(url: &str, direction: &str) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
@@ -191,23 +210,38 @@ fn build_ui(
     });
     container.append(&vol_up);
 
-    // Mute button
-    let mute_btn = gtk4::Button::with_label("\u{1F50A}"); // speaker icon
+    // Mute button — HAL-themed: red dot = live, dim dot = muted
+    let mute_btn = gtk4::Button::with_label("\u{25CF}"); // ● dot
     mute_btn.add_css_class("hal-mute-btn");
     mute_btn.set_focusable(false);
+    mute_btn.set_tooltip_text(Some("Toggle mic"));
+
+    // Sync initial mute state from server
+    let init_url = server_url.to_string();
+    let init_btn = mute_btn.clone();
+    let (tx_init, rx_init) = async_channel::bounded::<bool>(1);
+    std::thread::spawn(move || {
+        let muted = get_mute_status(&init_url);
+        let _ = tx_init.send_blocking(muted);
+    });
+    glib::spawn_future_local(async move {
+        if let Ok(muted) = rx_init.recv().await {
+            if muted {
+                init_btn.add_css_class("muted");
+            }
+        }
+    });
+
     let mute_url = server_url.to_string();
     let mute_ref = mute_btn.clone();
     mute_btn.connect_clicked(move |_| {
         let u = mute_url.clone();
         let btn = mute_ref.clone();
-        // Toggle local state immediately for responsiveness
         let is_muted = btn.css_classes().iter().any(|c| c == "muted");
         if is_muted {
             btn.remove_css_class("muted");
-            btn.set_label("\u{1F50A}"); // unmuted
         } else {
             btn.add_css_class("muted");
-            btn.set_label("\u{1F507}"); // muted
         }
         std::thread::spawn(move || send_mute_toggle(&u));
     });

@@ -70,34 +70,41 @@ window {
                 inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+/* Mute indicator: glowing red dot = live mic, dim grey = muted */
 .hal-mute-btn {
-    background: linear-gradient(180deg, rgba(40, 40, 46, 0.95) 0%, rgba(22, 22, 26, 0.95) 100%);
-    color: rgba(255, 45, 45, 0.7);
-    border: 1px solid rgba(255, 45, 45, 0.15);
-    border-radius: 8px;
-    padding: 4px 8px;
-    margin-left: 6px;
-    font-size: 14px;
-    min-width: 34px;
-    min-height: 34px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4),
-                inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    transition: all 150ms ease;
+    background: transparent;
+    color: #ff2d2d;
+    border: none;
+    border-radius: 50%;
+    padding: 0;
+    margin-left: 10px;
+    font-size: 10px;
+    min-width: 22px;
+    min-height: 22px;
+    text-shadow: 0 0 8px rgba(255, 45, 45, 0.6),
+                 0 0 16px rgba(255, 45, 45, 0.3);
+    transition: all 200ms ease;
+    box-shadow: none;
 }
 
 .hal-mute-btn:hover {
-    background: linear-gradient(180deg, rgba(60, 30, 30, 0.95) 0%, rgba(40, 15, 15, 0.95) 100%);
-    border-color: rgba(255, 45, 45, 0.4);
-    box-shadow: 0 1px 6px rgba(255, 45, 45, 0.15),
-                0 0 12px rgba(255, 45, 45, 0.08);
+    text-shadow: 0 0 12px rgba(255, 45, 45, 0.8),
+                 0 0 24px rgba(255, 45, 45, 0.4);
+    background: rgba(255, 45, 45, 0.08);
+    box-shadow: none;
 }
 
+/* Muted: dim grey dot, no glow */
 .hal-mute-btn.muted {
-    background: linear-gradient(180deg, rgba(80, 20, 20, 0.95) 0%, rgba(50, 10, 10, 0.95) 100%);
-    color: #ff4444;
-    border-color: rgba(255, 45, 45, 0.5);
-    box-shadow: 0 0 10px rgba(255, 45, 45, 0.2),
-                inset 0 0 6px rgba(255, 45, 45, 0.1);
+    color: rgba(80, 80, 90, 0.6);
+    text-shadow: none;
+    background: transparent;
+    box-shadow: none;
+}
+
+.hal-mute-btn.muted:hover {
+    color: rgba(120, 120, 130, 0.8);
+    background: rgba(255, 255, 255, 0.03);
 }
 
 .hal-vol-btn:active {

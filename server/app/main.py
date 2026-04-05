@@ -38,6 +38,7 @@ class AppState:
     wake_chime: bytes | None = None
     ui_clients: set = field(default_factory=set)
     audio_websocket: WebSocket | None = None  # RPi audio client
+    mic_muted: bool = False  # cached from RPi
 
 
 def _generate_chime() -> bytes:
@@ -322,6 +323,9 @@ async def audio_endpoint(websocket: WebSocket):
                 elif msg_type == "pong":
                     last_pong = time.monotonic()
                     log.debug("Pong received from RPi")
+                elif msg_type == "mute_sync":
+                    state.mic_muted = bool(msg.get("muted", False))
+                    log.debug(f"Cached mute state: {state.mic_muted}")
 
     except (WebSocketDisconnect, RuntimeError):
         log.info("Audio client disconnected")
@@ -465,15 +469,4 @@ async def post_mute_toggle():
 async def get_mute_status():
     """Get current RPi mic mute state."""
     state = _get_state(app)
-    ws = state.audio_websocket
-    if not ws:
-        return {"muted": False}
-
-    # Request status from RPi
-    try:
-        await ws.send_json({"type": "mute_query"})
-        # The actual state comes back async — for now return cached state
-        # (The RPi broadcasts mute_sync which updates the UI)
-        return {"status": "ok"}
-    except Exception:
-        return {"muted": False}
+    return {"muted": state.mic_muted}
