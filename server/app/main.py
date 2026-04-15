@@ -147,6 +147,8 @@ async def lifespan(app: FastAPI):
         tts_engine=state.tts_engine,
         memory_client=state.memory_client,
         system_prompt=system_prompt,
+        num_ctx=int(os.environ.get("OLLAMA_NUM_CTX", "32768")),
+        num_predict=int(os.environ.get("OLLAMA_NUM_PREDICT", "512")),
     )
 
     log.info("HAL voice server ready.")

@@ -42,6 +42,8 @@ class ConversationManager:
         tts_engine: TTSEngine,
         memory_client: MemoryClient | None = None,
         system_prompt: str = "",
+        num_ctx: int = 32768,
+        num_predict: int = 512,
     ):
         self.wake_word = wake_word.lower().strip() if wake_word else ""
         self.ollama_host = ollama_host.rstrip("/")
@@ -50,6 +52,8 @@ class ConversationManager:
         self.mcp = mcp_client
         self.tts_engine = tts_engine
         self.memory = memory_client
+        self.num_ctx = num_ctx
+        self.num_predict = num_predict
 
         # State: idle, listening, processing, speaking
         self.state = "idle"
@@ -259,8 +263,8 @@ class ConversationManager:
             "keep_alive": -1,
             "options": {
                 "temperature": 0.7,
-                "num_predict": 512,
-                "num_ctx": 32768,
+                "num_predict": self.num_predict,
+                "num_ctx": self.num_ctx,
             },
         }
 
