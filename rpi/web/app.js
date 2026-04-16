@@ -179,13 +179,15 @@
             statusText.textContent = labels[state];
         }
 
-        // Hide response text when done speaking
-        if (state === "idle" && responseContainer.classList.contains("visible")) {
-            // Brief delay so the last words are still visible
+        // Hide previous response when HAL starts thinking about a new question
+        if (state === "processing" && responseContainer.classList.contains("visible")) {
             clearTimeout(setState._fadeTimer);
-            setState._fadeTimer = setTimeout(() => {
-                responseContainer.classList.remove("visible");
-            }, 2000);
+            responseContainer.classList.remove("visible");
+        }
+
+        // Cancel any pending fade (we want the response to linger)
+        if (state === "speaking") {
+            clearTimeout(setState._fadeTimer);
         }
     }
 
