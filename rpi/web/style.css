@@ -61,34 +61,34 @@
     --vol-hover-bg: rgba(255, 255, 255, 0.05);
 }
 
-/* === BIRCH theme — light, egg white + birch wood === */
+/* === BIRCH theme — egg-white walls + birch wood === */
 body.theme-birch {
-    --bg: #f5f1e8;
-    --surface: #efe8d8;
-    --border: #c9b896;
+    --bg: #fbf6e9;            /* warm egg white */
+    --surface: #f5ecd8;        /* slightly creamier panels */
+    --border: #d8c5a3;         /* light birch */
     --text: #2c1f10;
     --text-dim: #6b5b42;
-    --accent: #c4661f;
-    --accent-rgb: 196, 102, 31;
-    --accent-glow: #e88440;
-    --accent-glow-rgb: 232, 132, 64;
-    --accent-deep: #803d10;
-    --accent-warm: #d97824;
-    --accent-warm-rgb: 217, 120, 36;
+    --accent: #b25a1c;         /* warm copper/birch tone */
+    --accent-rgb: 178, 90, 28;
+    --accent-glow: #d97a35;
+    --accent-glow-rgb: 217, 122, 53;
+    --accent-deep: #7a3a0e;
+    --accent-warm: #c96e1f;
+    --accent-warm-rgb: 201, 110, 31;
     --success: #4a7c2f;
 
-    --speak-core-1: rgba(255, 245, 220, 0.95);
-    --speak-core-2: rgba(255, 220, 170, 0.8);
-    --speak-pupil: rgba(120, 80, 40, 0.5);
-    --speak-pupil-2: rgba(120, 80, 40, 0.2);
-    --speak-reflection: rgba(255, 250, 230, 0.6);
-    --speak-glow: rgba(255, 230, 180, 0.18);
+    --speak-core-1: rgba(255, 250, 235, 0.95);
+    --speak-core-2: rgba(255, 225, 180, 0.8);
+    --speak-pupil: rgba(100, 60, 30, 0.5);
+    --speak-pupil-2: rgba(100, 60, 30, 0.2);
+    --speak-reflection: rgba(255, 252, 240, 0.6);
+    --speak-glow: rgba(255, 235, 190, 0.18);
 
     --bezel-1: #8a7a5e;
     --bezel-2: #b8a682;
     --bezel-3: #d4c19a;
     --bezel-4: #ede0c4;
-    --bezel-inner: #efe8d8;
+    --bezel-inner: #fbf6e9;
     --bezel-shadow: rgba(80, 60, 30, 0.3);
 
     --core-deep-stop: #5e2a08;
@@ -98,14 +98,14 @@ body.theme-birch {
     --iris-highlight: rgba(255, 180, 100, 0.4);
     --pupil-1: rgba(60, 30, 10, 0.6);
     --pupil-2: rgba(60, 30, 10, 0.3);
-    --reflection: rgba(255, 250, 230, 0.45);
+    --reflection: rgba(255, 252, 240, 0.45);
 
     --scan-line: rgba(120, 80, 40, 0.3);
     --grid-line: rgba(120, 80, 40, 0.025);
-    --ambient-radial: rgba(196, 102, 31, 0.05);
+    --ambient-radial: rgba(178, 90, 28, 0.05);
 
-    --status-speak: #c4661f;
-    --status-speak-glow: rgba(196, 102, 31, 0.6);
+    --status-speak: #b25a1c;
+    --status-speak-glow: rgba(178, 90, 28, 0.6);
     --vol-hover-bg: rgba(120, 80, 40, 0.08);
 }
 
