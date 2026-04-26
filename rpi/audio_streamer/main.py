@@ -322,7 +322,16 @@ class AudioManager:
         elif msg_type == "ping":
             await ws.send(json.dumps({"type": "pong"}))
 
-        elif msg_type in ("transcription", "response", "wake", "state"):
+        elif msg_type == "volume":
+            try:
+                level = float(msg.get("level", 0.7))
+            except (TypeError, ValueError):
+                level = 0.7
+            self.tts_volume = max(0.0, min(1.0, level))
+            log.info(f"Volume set to {self.tts_volume:.0%} (via server)")
+            await self.broadcast_to_ui({"type": "volume_sync", "level": self.tts_volume})
+
+        elif msg_type in ("transcription", "response", "wake", "state", "set_theme"):
             await self.broadcast_to_ui(msg)
 
     def handle_binary_data(self, data: bytes):

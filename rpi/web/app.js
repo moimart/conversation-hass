@@ -120,6 +120,12 @@
                 break;
             case "pong":
                 break;
+            case "set_theme":
+                if (msg.name && THEMES.includes(msg.name)) {
+                    localStorage.setItem(THEME_KEY, msg.name);
+                    applyTheme(msg.name);
+                }
+                break;
             default:
                 console.log("Unknown message:", msg);
         }

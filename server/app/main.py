@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from .audio_pipeline import AudioPipeline
 from .conversation import ConversationManager
+from .local_tools import LocalToolsClient
 from .mcp_client import MCPClient, MultiMCPClient
 from .memory import MemoryClient
 from .tts import TTSEngine
@@ -39,6 +40,11 @@ class AppState:
     ui_clients: set = field(default_factory=set)
     audio_websocket: WebSocket | None = None  # RPi audio client
     mic_muted: bool = False  # cached from RPi
+    local_tools: object | None = None  # LocalToolsClient
+    current_theme: str = "dark"
+    theme_day: str = "birch"
+    theme_night: str = "dark"
+    theme_scheduler_task: object | None = None
 
 
 def _generate_chime() -> bytes:
@@ -66,6 +72,210 @@ def _generate_chime() -> bytes:
     return buf.getvalue()
 
 
+VALID_THEMES = {"dark", "birch", "odyssey", "japandi"}
+
+
+def _parse_iso(ts: str) -> "datetime | None":
+    from datetime import datetime
+    if not ts:
+        return None
+    try:
+        # HA returns ISO with offset like 2026-04-15T18:42:00+00:00
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+async def _theme_scheduler(state: AppState):
+    """Background task: switch themes at dusk/dawn based on HA's sun.sun.
+
+    Strategy: poll sun.sun every 5 minutes. Apply the correct theme for
+    the current sun state (below_horizon → night, above_horizon → day).
+    Simple and robust — no precise scheduling needed since we just keep
+    the theme in sync with the sun's current state.
+    """
+    import asyncio
+    import json
+    import re
+
+    log.info(f"Theme scheduler started (day={state.theme_day}, night={state.theme_night})")
+
+    while True:
+        try:
+            if not state.mcp_client or "ha_get_state" not in state.mcp_client.tool_names:
+                await asyncio.sleep(300)
+                continue
+
+            result = await state.mcp_client.call_tool("ha_get_state", {"entity_id": "sun.sun"})
+
+            # Parse JSON (sometimes wrapped in markdown)
+            data = None
+            try:
+                data = json.loads(result)
+            except (TypeError, ValueError):
+                m = re.search(r"\{[\s\S]*\}", result or "")
+                if m:
+                    try:
+                        data = json.loads(m.group(0))
+                    except (TypeError, ValueError):
+                        pass
+
+            sun_state = data.get("state") if isinstance(data, dict) else None
+            target = state.theme_night if sun_state == "below_horizon" else state.theme_day
+
+            if state.current_theme != target:
+                log.info(f"Sun is {sun_state} → switching theme to {target}")
+                await apply_theme(state, target)
+
+            await asyncio.sleep(300)  # check every 5 minutes
+
+        except asyncio.CancelledError:
+            log.info("Theme scheduler cancelled")
+            return
+        except Exception as e:
+            log.error(f"Theme scheduler error: {e}")
+            await asyncio.sleep(300)
+
+
+async def _push_to_rpi(state: AppState, msg: dict) -> bool:
+    """Send a JSON message to the RPi audio websocket (if connected)."""
+    ws = state.audio_websocket
+    if not ws:
+        return False
+    try:
+        await ws.send_json(msg)
+        return True
+    except Exception as e:
+        log.warning(f"Could not send {msg.get('type')} to RPi: {e}")
+        return False
+
+
+async def apply_theme(state: AppState, theme: str) -> bool:
+    """Update server-side theme and push to RPi web UI."""
+    if theme not in VALID_THEMES:
+        return False
+    state.current_theme = theme
+    msg = {"type": "set_theme", "name": theme}
+    await broadcast_to_ui(state, msg)
+    await _push_to_rpi(state, msg)
+    log.info(f"Theme set to: {theme}")
+    return True
+
+
+def _build_local_tools(state: AppState) -> LocalToolsClient:
+    """Construct the LocalToolsClient with all tools wired to AppState."""
+    tools = LocalToolsClient()
+
+    async def set_theme(args: dict) -> str:
+        name = (args.get("name") or "").lower().strip()
+        if name not in VALID_THEMES:
+            return f"Invalid theme '{name}'. Valid: {', '.join(sorted(VALID_THEMES))}"
+        ok = await apply_theme(state, name)
+        return f"Theme set to {name}" if ok else "Failed to apply theme"
+
+    tools.register(
+        "ui_set_theme",
+        "Change the HAL web UI theme. Use 'dark' at night/dusk, 'birch' or 'japandi' for light rooms during the day, 'odyssey' for a sterile white look.",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "enum": sorted(VALID_THEMES), "description": "Theme name"},
+            },
+            "required": ["name"],
+        },
+        set_theme,
+    )
+
+    async def get_current_theme(_args: dict) -> str:
+        return f"Current theme: {state.current_theme}"
+
+    tools.register(
+        "ui_get_theme",
+        "Get the currently active HAL UI theme.",
+        {"type": "object", "properties": {}},
+        get_current_theme,
+    )
+
+    async def set_volume(args: dict) -> str:
+        try:
+            level = float(args.get("level", 0.7))
+        except (TypeError, ValueError):
+            return "Volume level must be a number between 0 and 1"
+        level = max(0.0, min(1.0, level))
+        ok = await _push_to_rpi(state, {"type": "volume", "level": level})
+        return f"Volume set to {level:.0%}" if ok else "RPi not connected"
+
+    tools.register(
+        "audio_set_volume",
+        "Set the speaker volume on the Raspberry Pi (0.0 = silent, 1.0 = max).",
+        {
+            "type": "object",
+            "properties": {
+                "level": {"type": "number", "minimum": 0, "maximum": 1, "description": "Volume level"},
+            },
+            "required": ["level"],
+        },
+        set_volume,
+    )
+
+    async def adjust_volume(args: dict) -> str:
+        direction = (args.get("direction") or "").lower()
+        if direction not in ("up", "down"):
+            return "direction must be 'up' or 'down'"
+        try:
+            step = float(args.get("step", 0.1))
+        except (TypeError, ValueError):
+            step = 0.1
+        if direction == "down":
+            step = -abs(step)
+        else:
+            step = abs(step)
+        ok = await _push_to_rpi(state, {"type": "volume_adjust", "step": step})
+        return f"Volume {direction} by {abs(step):.0%}" if ok else "RPi not connected"
+
+    tools.register(
+        "audio_adjust_volume",
+        "Adjust the speaker volume up or down by a small step (default 10%).",
+        {
+            "type": "object",
+            "properties": {
+                "direction": {"type": "string", "enum": ["up", "down"]},
+                "step": {"type": "number", "default": 0.1},
+            },
+            "required": ["direction"],
+        },
+        adjust_volume,
+    )
+
+    async def mute(_args: dict) -> str:
+        ok = await _push_to_rpi(state, {"type": "mute_toggle"})
+        return "Mic mute toggled" if ok else "RPi not connected"
+
+    tools.register(
+        "audio_toggle_mute",
+        "Toggle the microphone mute on the Raspberry Pi.",
+        {"type": "object", "properties": {}},
+        mute,
+    )
+
+    async def get_sun_times(_args: dict) -> str:
+        """Query Home Assistant's sun.sun entity for sunrise/sunset/dusk."""
+        # Find an MCP server that has ha_get_state
+        if not state.mcp_client or "ha_get_state" not in state.mcp_client.tool_names:
+            return "Home Assistant integration not available"
+        result = await state.mcp_client.call_tool("ha_get_state", {"entity_id": "sun.sun"})
+        return result
+
+    tools.register(
+        "get_sun_times",
+        "Get sunrise, sunset, dusk and dawn times from Home Assistant for the current location.",
+        {"type": "object", "properties": {}},
+        get_sun_times,
+    )
+
+    return tools
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize all services on startup, clean up on shutdown."""
@@ -75,6 +285,9 @@ async def lifespan(app: FastAPI):
     log.info("Initializing HAL voice server...")
 
     # Generate wake word chime
+    state.theme_day = os.environ.get("THEME_DAY", "birch")
+    state.theme_night = os.environ.get("THEME_NIGHT", "dark")
+    state.current_theme = state.theme_night  # start safe (dark)
     state.wake_chime = _generate_chime()
     log.info(f"Wake chime generated ({len(state.wake_chime)} bytes)")
 
@@ -107,7 +320,11 @@ async def lifespan(app: FastAPI):
         else:
             log.warning("No MCP servers configured")
 
-    log.info(f"Total MCP tools available: {len(state.mcp_client.tool_names)}")
+    # Register local tools (theme, volume, mute, sun-time helpers)
+    state.local_tools = _build_local_tools(state)
+    state.mcp_client.register_client("hal-local", state.local_tools)
+
+    log.info(f"Total tools available: {len(state.mcp_client.tool_names)}")
 
     # Wyoming TTS
     tts_host = os.environ.get("WYOMING_TTS_HOST", "localhost")
@@ -151,11 +368,19 @@ async def lifespan(app: FastAPI):
         num_predict=int(os.environ.get("OLLAMA_NUM_PREDICT", "512")),
     )
 
+    # Daily dusk/dawn theme scheduler
+    if os.environ.get("AUTO_THEME", "true").lower() in ("true", "1", "yes"):
+        state.theme_scheduler_task = asyncio.create_task(_theme_scheduler(state))
+    else:
+        state.theme_scheduler_task = None
+
     log.info("HAL voice server ready.")
 
     yield
 
     # Shutdown
+    if getattr(state, "theme_scheduler_task", None):
+        state.theme_scheduler_task.cancel()
     if state.mcp_client:
         await state.mcp_client.disconnect_all()
 

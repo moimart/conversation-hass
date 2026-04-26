@@ -182,6 +182,20 @@ class MultiMCPClient:
         except Exception as e:
             log.error(f"Failed to connect to MCP server '{name}' ({desc}): {e}")
 
+    def register_client(self, name: str, client) -> None:
+        """Register an already-initialized client (e.g. LocalToolsClient).
+
+        The client must implement: tool_names, tools_for_llm,
+        get_tool_descriptions_text(), call_tool(name, args), disconnect().
+        """
+        self._clients[name] = client
+        for tool_name in client.tool_names:
+            if tool_name in self._tool_to_server:
+                existing = self._tool_to_server[tool_name]
+                log.warning(f"Tool '{tool_name}' from '{name}' shadows same tool from '{existing}'")
+            self._tool_to_server[tool_name] = name
+        log.info(f"Registered client '{name}': {len(client.tool_names)} tools")
+
     async def disconnect_all(self):
         for name, client in self._clients.items():
             try:
