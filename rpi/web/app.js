@@ -14,12 +14,40 @@
     const responseText = document.getElementById("response-text");
     const connectionEl = document.getElementById("connection");
     const statusText = document.querySelector(".status-text");
+    const themeSelect = document.getElementById("theme-select");
 
     // --- State ---
     let ws = null;
     let reconnectTimer = null;
     let currentPartialEl = null;
     const MAX_TRANSCRIPT_LINES = 50;
+
+    // --- Theme ---
+    const THEME_KEY = "hal-theme";
+    const THEMES = ["dark", "birch", "odyssey", "japandi"];
+
+    function applyTheme(name) {
+        if (!THEMES.includes(name)) name = "dark";
+        // Remove any existing theme-* class
+        document.body.classList.forEach(c => {
+            if (c.startsWith("theme-")) document.body.classList.remove(c);
+        });
+        if (name !== "dark") {
+            document.body.classList.add(`theme-${name}`);
+        }
+        if (themeSelect) themeSelect.value = name;
+    }
+
+    const savedTheme = localStorage.getItem(THEME_KEY) || "dark";
+    applyTheme(savedTheme);
+
+    if (themeSelect) {
+        themeSelect.addEventListener("change", (e) => {
+            const choice = e.target.value;
+            localStorage.setItem(THEME_KEY, choice);
+            applyTheme(choice);
+        });
+    }
 
     // --- WebSocket ---
     function connect() {
