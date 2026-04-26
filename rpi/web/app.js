@@ -193,7 +193,10 @@
 
     // --- State Management ---
     function setState(state) {
-        document.body.className = "";
+        // Remove only state-* classes — preserve theme-* and any others
+        Array.from(document.body.classList).forEach(c => {
+            if (c.startsWith("state-")) document.body.classList.remove(c);
+        });
 
         const labels = {
             idle: "IDLE",
