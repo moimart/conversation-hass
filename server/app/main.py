@@ -103,10 +103,12 @@ async def _theme_scheduler(state: AppState):
     while True:
         try:
             if not state.mcp_client or "ha_get_state" not in state.mcp_client.tool_names:
+                log.warning("Theme scheduler: HA tool ha_get_state not available, retry in 5min")
                 await asyncio.sleep(300)
                 continue
 
             result = await state.mcp_client.call_tool("ha_get_state", {"entity_id": "sun.sun"})
+            log.info(f"Theme scheduler: sun.sun raw response (len={len(result or '')}): {(result or '')[:300]}")
 
             # Parse JSON (sometimes wrapped in markdown)
             data = None
@@ -120,12 +122,26 @@ async def _theme_scheduler(state: AppState):
                     except (TypeError, ValueError):
                         pass
 
+            if data is None:
+                log.warning("Theme scheduler: could not parse sun.sun response — skipping")
+                await asyncio.sleep(300)
+                continue
+
             sun_state = data.get("state") if isinstance(data, dict) else None
+            log.info(f"Theme scheduler: sun_state={sun_state!r}, current_theme={state.current_theme}, day={state.theme_day}, night={state.theme_night}")
+
+            if sun_state is None:
+                log.warning(f"Theme scheduler: no 'state' field in response. Top-level keys: {list(data.keys()) if isinstance(data, dict) else type(data).__name__}")
+                await asyncio.sleep(300)
+                continue
+
             target = state.theme_night if sun_state == "below_horizon" else state.theme_day
 
             if state.current_theme != target:
-                log.info(f"Sun is {sun_state} → switching theme to {target}")
+                log.info(f"Theme scheduler: sun is {sun_state} → switching {state.current_theme} → {target}")
                 await apply_theme(state, target)
+            else:
+                log.debug(f"Theme scheduler: already on correct theme ({target})")
 
             await asyncio.sleep(300)  # check every 5 minutes
 
