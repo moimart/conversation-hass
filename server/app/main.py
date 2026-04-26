@@ -127,7 +127,9 @@ async def _theme_scheduler(state: AppState):
                 await asyncio.sleep(300)
                 continue
 
-            sun_state = data.get("state") if isinstance(data, dict) else None
+            # HA MCP wraps the entity in {"data": {...}, "metadata": {...}}
+            entity = data.get("data", data) if isinstance(data, dict) else {}
+            sun_state = entity.get("state") if isinstance(entity, dict) else None
             log.info(f"Theme scheduler: sun_state={sun_state!r}, current_theme={state.current_theme}, day={state.theme_day}, night={state.theme_night}")
 
             if sun_state is None:
