@@ -291,6 +291,75 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         get_sun_times,
     )
 
+    async def speak_verbatim(args: dict) -> str:
+        """Speak the given text out loud through the RPi, exactly as written.
+
+        Bypasses the natural-language reply: synthesizes TTS for the
+        provided text and pushes it directly to the RPi audio websocket.
+        Sets a flag so the LLM's final text response does not get spoken
+        again (avoids double audio).
+        """
+        text = (args.get("text") or "").strip()
+        if not text:
+            return "Cannot speak empty text"
+
+        if not state.tts_engine:
+            return "TTS engine not available"
+
+        ws = state.audio_websocket
+        if not ws:
+            return "RPi not connected — cannot play audio"
+
+        # Synthesize the verbatim text
+        try:
+            audio_bytes = await state.tts_engine.synthesize(text)
+        except Exception as e:
+            return f"TTS synthesis failed: {e}"
+
+        if not audio_bytes:
+            return "TTS produced no audio"
+
+        # Send the verbatim text to UI clients as the response
+        msg = {"type": "response", "text": text}
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            pass
+        await broadcast_to_ui(state, msg)
+
+        # Push audio to RPi using the same protocol as on_response
+        try:
+            await ws.send_json({"type": "tts_start", "size": len(audio_bytes)})
+            if state.pipeline:
+                state.pipeline.set_ai_speaking(True)
+            chunk_size = 8192
+            for i in range(0, len(audio_bytes), chunk_size):
+                await ws.send_bytes(audio_bytes[i : i + chunk_size])
+            await ws.send_json({"type": "tts_end"})
+        except Exception as e:
+            if state.pipeline:
+                state.pipeline.set_ai_speaking(False)
+            return f"Failed to send audio: {e}"
+
+        # Suppress the final TTS so the LLM's wrap-up doesn't get spoken too
+        if state.conversation:
+            state.conversation._suppress_final_tts = True
+
+        return f"Spoke verbatim: {text[:80]}"
+
+    tools.register(
+        "speak_verbatim",
+        "Speak text out loud through HAL's speaker, exactly as written. Use this when the user asks to 'say X out loud', 'repeat X', 'speak X exactly', or any request that needs the precise wording vocalized. After calling this, your text response will NOT be spoken (only the verbatim text is heard), so keep your text reply minimal — the user has already heard the words.",
+        {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "The exact text to speak out loud"},
+            },
+            "required": ["text"],
+        },
+        speak_verbatim,
+    )
+
     return tools
 
 

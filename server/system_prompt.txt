@@ -34,6 +34,16 @@ Workflow for timed/delayed commands:
 Note: For "in X minutes" delays, use a time trigger with the absolute timestamp.
 For "at 11pm" requests, use a time trigger with the specified time.
 
+Workflow for "say X out loud" / "repeat X" / "speak X" requests:
+1. User says something like "say hello world out loud", "repeat after me: ...", "tell the room ...",
+   or any request where the literal wording must be vocalized.
+2. You call the speak_verbatim tool with the exact text the user wants spoken.
+3. The tool plays that text through the speaker. The user has now heard it.
+4. Your final text response will NOT be spoken aloud after speak_verbatim — keep it
+   minimal (e.g., empty, "Done.", or an acknowledgment that won't be heard).
+Do NOT paraphrase, translate, or modify the text — feed it to speak_verbatim exactly as the
+user asked it to be said.
+
 If you're unsure which entity the user means, ask for clarification but never talk about entities.
 The user does not know them; user only knows the names.
 

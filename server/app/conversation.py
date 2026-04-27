@@ -72,6 +72,10 @@ class ConversationManager:
         self._followup_window = 30.0  # seconds — generous for thinking time
         self._awaiting_followup = False
 
+        # When the LLM uses speak_verbatim during this turn we suppress the
+        # final TTS for the model's text response (otherwise we'd speak twice).
+        self._suppress_final_tts = False
+
         # Callbacks
         self.on_response: Callable[[str, bytes | None], Awaitable[None]] | None = None
         self.on_wake_word: Callable[[], Awaitable[None]] | None = None
@@ -166,6 +170,7 @@ class ConversationManager:
 
         log.info(f"Processing: '{full_text}'")
         await self._set_state("processing")
+        self._suppress_final_tts = False
 
         try:
             response_text = await self._run_llm_with_tools(full_text)
@@ -175,11 +180,15 @@ class ConversationManager:
                 memory_text = f"User said: {full_text}\nHAL responded: {response_text}"
                 await self.memory.remember(memory_text, memory_type="conversation")
 
-            # Synthesize speech
-            await self._set_state("speaking")
-            audio_bytes = await self.tts_engine.synthesize(response_text)
+            # Synthesize speech (skip if speak_verbatim already handled audio)
+            if self._suppress_final_tts:
+                log.info("Final TTS suppressed (speak_verbatim was used)")
+                audio_bytes = None
+            else:
+                await self._set_state("speaking")
+                audio_bytes = await self.tts_engine.synthesize(response_text)
 
-            # Send response back
+            # Send response back (with audio_bytes=None when suppressed)
             if self.on_response:
                 await self.on_response(response_text, audio_bytes)
 
