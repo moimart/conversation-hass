@@ -32,6 +32,28 @@ Examples:
 - `{"text": "what's the temperature in the bedroom?"}`
 - `{"text": "play some jazz on the living room speaker"}`
 
+## Speak text out loud verbatim (bypass the LLM)
+
+When you (the agent) want HAL to say a specific message exactly as written —
+notifications, announcements, status reports — use `/api/speak`. This
+bypasses the LLM entirely: the text is sent straight to TTS and played on the
+Raspberry Pi speaker. No persona transformation, no paraphrasing.
+
+```sh
+curl -sS -X POST "$HAL_SERVER_URL/api/speak" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "<exact words to speak>"}'
+```
+
+Examples:
+- `{"text": "Master, your laundry cycle just finished."}`
+- `{"text": "Heads up: the front door has been open for 5 minutes."}`
+- `{"text": "Build complete. All tests passed."}`
+
+Use this when the wording matters and you don't want HAL's witty butler
+persona to rewrite it. Use `/api/command` instead when you want HAL to
+process the request through its LLM (e.g., to control the home).
+
 ## Volume control
 
 Adjust the Raspberry Pi speaker volume by ±10%:

@@ -764,6 +764,66 @@ async def post_volume(req: VolumeRequest):
         return {"status": "error", "message": str(e)}
 
 
+class SpeakRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/speak")
+async def post_speak(req: SpeakRequest):
+    """
+    Speak text verbatim through the RPi speaker — bypasses the LLM.
+
+    Useful for announcements, notifications, or anything that should be
+    vocalized exactly without going through Steve's persona.
+    """
+    state = _get_state(app)
+    text = (req.text or "").strip()
+
+    if not text:
+        return {"status": "error", "message": "Empty text"}
+
+    ws = state.audio_websocket
+    if not ws:
+        return {"status": "error", "message": "RPi not connected"}
+
+    if not state.tts_engine:
+        return {"status": "error", "message": "TTS engine not available"}
+
+    log.info(f"REST speak: '{text[:80]}'")
+
+    try:
+        audio_bytes = await state.tts_engine.synthesize(text)
+    except Exception as e:
+        return {"status": "error", "message": f"TTS synthesis failed: {e}"}
+
+    if not audio_bytes:
+        return {"status": "error", "message": "TTS produced no audio"}
+
+    # Show on UI as response
+    msg = {"type": "response", "text": text}
+    try:
+        await ws.send_json(msg)
+    except Exception:
+        pass
+    await broadcast_to_ui(state, msg)
+
+    # Stream audio to RPi
+    try:
+        await ws.send_json({"type": "tts_start", "size": len(audio_bytes)})
+        if state.pipeline:
+            state.pipeline.set_ai_speaking(True)
+        chunk_size = 8192
+        for i in range(0, len(audio_bytes), chunk_size):
+            await ws.send_bytes(audio_bytes[i : i + chunk_size])
+        await ws.send_json({"type": "tts_end"})
+    except Exception as e:
+        if state.pipeline:
+            state.pipeline.set_ai_speaking(False)
+        return {"status": "error", "message": f"Failed to send audio: {e}"}
+
+    return {"status": "ok", "spoke": text}
+
+
 @app.post("/api/mute")
 async def post_mute_toggle():
     """Toggle RPi mic mute. Returns the new mute state."""

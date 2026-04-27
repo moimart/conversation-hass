@@ -43,6 +43,7 @@ Once installed, the agent can:
 | Endpoint | Method | Body | Purpose |
 |---|---|---|---|
 | `/api/command` | POST | `{"text": "..."}` | Send to LLM — drives all HA control + conversational replies |
+| `/api/speak` | POST | `{"text": "..."}` | Speak text verbatim (bypasses LLM) — for notifications |
 | `/api/volume` | POST | `{"direction": "up\|down", "step": 0.1}` | Adjust speaker volume |
 | `/api/mute` | POST | — | Toggle mic mute |
 | `/api/mute` | GET | — | Read mute state |
