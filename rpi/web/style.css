@@ -65,8 +65,8 @@
 
 /* === BIRCH theme — egg-white walls + birch wood === */
 body.theme-birch {
-    --bg: #ebe4d2;            /* darker warm egg white */
-    --surface: #ddd1b8;        /* slightly creamier panels */
+    --bg: #e6d8b8;            /* warm beige */
+    --surface: #d6c69e;        /* deeper beige panels */
     --border: #d8c5a3;         /* light birch */
     --text: #2c1f10;
     --text-dim: #6b5b42;
