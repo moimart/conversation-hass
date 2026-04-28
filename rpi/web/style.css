@@ -255,85 +255,156 @@ body {
     z-index: 0;
 }
 
-/* === Japandi: shoji screens, wood grain, seigaiha wave === */
+/* ============================================================
+   JAPANDI THEME — decorative background
+   Layered, all CSS/SVG, sprinkled motifs in earthy wood tones.
+   Other themes are unaffected.
+   ============================================================ */
+
+/* Layer A: shoji screens, wood grain, warm corner washes, mountains */
 body.theme-japandi .ambient-grid {
-    /* Layer 1: warm radial (already themed)
-       Layer 2: shoji-screen vertical mullions every 96px (paper-screen frame)
-       Layer 3: shoji horizontal kumiko every 48px (lighter)
-       Layer 4: subtle warm wood grain — diagonal striations
-       Layer 5: tatami-like soft warm wash */
     background-image:
-        radial-gradient(circle at 50% 40%, rgba(139, 90, 60, 0.06) 0%, transparent 60%),
-        linear-gradient(90deg, rgba(80, 55, 35, 0.10) 0px, rgba(80, 55, 35, 0.10) 1.5px, transparent 1.5px),
-        linear-gradient(rgba(80, 55, 35, 0.045) 0px, rgba(80, 55, 35, 0.045) 1px, transparent 1px),
+        /* central warm glow */
+        radial-gradient(circle at 50% 40%, rgba(139, 90, 60, 0.10) 0%, transparent 60%),
+        /* shoji vertical mullions every 96px */
+        linear-gradient(90deg, rgba(80, 55, 35, 0.20) 0px, rgba(80, 55, 35, 0.20) 1.5px, transparent 1.5px),
+        /* horizontal kumiko every 48px */
+        linear-gradient(rgba(80, 55, 35, 0.10) 0px, rgba(80, 55, 35, 0.10) 1px, transparent 1px),
+        /* diagonal wood-grain striations */
         repeating-linear-gradient(115deg,
-            rgba(120, 80, 50, 0.018) 0px,
-            rgba(120, 80, 50, 0.018) 2px,
+            rgba(120, 80, 50, 0.06) 0px,
+            rgba(120, 80, 50, 0.06) 2px,
             transparent 2px,
             transparent 7px),
-        radial-gradient(ellipse at 0% 100%, rgba(184, 122, 79, 0.07) 0%, transparent 55%),
-        radial-gradient(ellipse at 100% 0%, rgba(139, 90, 60, 0.05) 0%, transparent 55%);
-    background-size: 100% 100%, 96px 100%, 100% 48px, 100% 100%, 100% 100%, 100% 100%;
+        /* warm corner washes */
+        radial-gradient(ellipse at 0% 100%, rgba(184, 122, 79, 0.18) 0%, transparent 55%),
+        radial-gradient(ellipse at 100% 0%, rgba(139, 90, 60, 0.14) 0%, transparent 55%),
+        /* far mountain silhouette band along the bottom */
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 220' preserveAspectRatio='none'><path d='M0 220 L0 150 Q60 80 140 110 Q220 140 280 90 Q340 40 420 80 Q510 130 570 80 Q650 20 740 70 Q830 130 900 90 Q970 50 1060 100 Q1140 150 1200 100 L1200 220 Z' fill='rgba(80,55,35,0.16)'/></svg>");
+    background-size:
+        100% 100%,
+        96px 100%,
+        100% 48px,
+        100% 100%,
+        100% 100%,
+        100% 100%,
+        100% 220px;
+    background-position:
+        center,
+        0 0,
+        0 0,
+        0 0,
+        0 100%,
+        100% 0,
+        bottom center;
+    background-repeat:
+        no-repeat,
+        repeat,
+        repeat,
+        repeat,
+        no-repeat,
+        no-repeat,
+        no-repeat;
 }
 
-/* === Japandi: seigaiha (wave) decorative band — bottom-left and top-right corners === */
-body.theme-japandi::before,
-body.theme-japandi::after {
+/* Layer B: seigaiha (wave/scale) corners + asanoha overlay + scattered ensō circles
+   Two pseudo-elements lay this on the body so the grid layer stays clean. */
+body.theme-japandi::before {
+    /* top-right: bigger seigaiha + ensō circle + petal cluster */
     content: '';
     position: fixed;
-    width: 320px;
-    height: 320px;
+    top: -120px;
+    right: -120px;
+    width: 480px;
+    height: 480px;
     pointer-events: none;
     z-index: 0;
-    opacity: 0.55;
+    opacity: 0.85;
+    transform: rotate(180deg);
     background:
-        radial-gradient(circle at 20px 20px,
-            transparent 17px,
-            rgba(139, 90, 60, 0.18) 17px,
-            rgba(139, 90, 60, 0.18) 18px,
-            transparent 19px),
-        radial-gradient(circle at 20px 20px,
-            transparent 11px,
-            rgba(139, 90, 60, 0.12) 11px,
-            rgba(139, 90, 60, 0.12) 12px,
-            transparent 13px),
-        radial-gradient(circle at 20px 20px,
-            transparent 5px,
-            rgba(139, 90, 60, 0.08) 5px,
-            rgba(139, 90, 60, 0.08) 6px,
-            transparent 7px);
-    background-size: 40px 40px;
+        /* seigaiha rings */
+        radial-gradient(circle at 30px 30px,
+            transparent 25px, rgba(139, 90, 60, 0.32) 25px, rgba(139, 90, 60, 0.32) 27px, transparent 28px),
+        radial-gradient(circle at 30px 30px,
+            transparent 17px, rgba(139, 90, 60, 0.22) 17px, rgba(139, 90, 60, 0.22) 19px, transparent 20px),
+        radial-gradient(circle at 30px 30px,
+            transparent 8px, rgba(139, 90, 60, 0.16) 8px, rgba(139, 90, 60, 0.16) 10px, transparent 11px);
+    background-size: 60px 60px;
     background-repeat: repeat;
     mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
     -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
 }
 
-body.theme-japandi::before {
-    top: -80px;
-    right: -80px;
-    transform: rotate(180deg);
-}
-
 body.theme-japandi::after {
-    bottom: -80px;
-    left: -80px;
+    /* bottom-left: matching seigaiha cluster, larger */
+    content: '';
+    position: fixed;
+    bottom: -120px;
+    left: -120px;
+    width: 480px;
+    height: 480px;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.85;
+    background:
+        radial-gradient(circle at 30px 30px,
+            transparent 25px, rgba(139, 90, 60, 0.32) 25px, rgba(139, 90, 60, 0.32) 27px, transparent 28px),
+        radial-gradient(circle at 30px 30px,
+            transparent 17px, rgba(139, 90, 60, 0.22) 17px, rgba(139, 90, 60, 0.22) 19px, transparent 20px),
+        radial-gradient(circle at 30px 30px,
+            transparent 8px, rgba(139, 90, 60, 0.16) 8px, rgba(139, 90, 60, 0.16) 10px, transparent 11px);
+    background-size: 60px 60px;
+    background-repeat: repeat;
+    mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
 }
 
-/* === Japandi: a subtle vertical "kakejiku" stripe down the right edge — like a hanging scroll === */
+/* Layer C: asanoha (hemp leaf) faint repeating pattern + scattered ensō and sakura
+   Uses the .ambient-grid::before pseudo for an additional canvas. */
+body.theme-japandi .ambient-grid::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+        /* asanoha-inspired star/asterisk pattern */
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 80' width='80' height='80'><g fill='none' stroke='rgba(80,55,35,0.10)' stroke-width='0.8'><line x1='40' y1='5' x2='40' y2='75'/><line x1='5' y1='40' x2='75' y2='40'/><line x1='10' y1='10' x2='70' y2='70'/><line x1='70' y1='10' x2='10' y2='70'/></g></svg>"),
+        /* scattered ensō circles (3 spots) */
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' width='1600' height='900'><circle cx='220' cy='180' r='55' fill='none' stroke='rgba(139,90,60,0.32)' stroke-width='2.5' stroke-dasharray='160 25' transform='rotate(-30 220 180)'/><circle cx='1380' cy='720' r='42' fill='none' stroke='rgba(139,90,60,0.28)' stroke-width='2' stroke-dasharray='130 20' transform='rotate(60 1380 720)'/><circle cx='1100' cy='220' r='30' fill='none' stroke='rgba(139,90,60,0.22)' stroke-width='1.5' stroke-dasharray='90 15' transform='rotate(-50 1100 220)'/></svg>"),
+        /* sakura/petal dots scattered */
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' width='1600' height='900'><g fill='rgba(184,122,79,0.30)'><circle cx='340' cy='420' r='3'/><circle cx='480' cy='280' r='2.5'/><circle cx='640' cy='560' r='3'/><circle cx='820' cy='180' r='2.5'/><circle cx='960' cy='480' r='3'/><circle cx='1120' cy='360' r='2.5'/><circle cx='1280' cy='560' r='3'/><circle cx='180' cy='720' r='2.5'/><circle cx='720' cy='820' r='3'/><circle cx='1040' cy='760' r='2.5'/><circle cx='1300' cy='160' r='3'/><circle cx='560' cy='100' r='2.5'/><circle cx='1480' cy='420' r='3'/><circle cx='80' cy='480' r='2.5'/></g></svg>"),
+        /* a single bigger calligraphy brush stroke arcing across */
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' width='1600' height='900'><path d='M 80 660 Q 380 580 760 640 T 1500 600' fill='none' stroke='rgba(80,55,35,0.18)' stroke-width='2.5' stroke-linecap='round'/></svg>");
+    background-size:
+        80px 80px,
+        100% 100%,
+        100% 100%,
+        100% 100%;
+    background-repeat: repeat, no-repeat, no-repeat, no-repeat;
+    background-position: 0 0, center, center, center;
+    opacity: 0.9;
+}
+
+/* Layer D: vertical "kakejiku" hanging-scroll stripe on the right edge */
 body.theme-japandi .ambient-grid::after {
     content: '';
     position: fixed;
-    top: 12vh;
-    bottom: 12vh;
-    right: 4vw;
-    width: 2px;
+    top: 8vh;
+    bottom: 8vh;
+    right: 5vw;
+    width: 3px;
     background: linear-gradient(180deg,
         transparent 0%,
-        rgba(80, 55, 35, 0.18) 12%,
-        rgba(80, 55, 35, 0.10) 50%,
-        rgba(80, 55, 35, 0.18) 88%,
+        rgba(80, 55, 35, 0.30) 8%,
+        rgba(80, 55, 35, 0.18) 50%,
+        rgba(80, 55, 35, 0.30) 92%,
         transparent 100%);
+    border-radius: 2px;
     pointer-events: none;
+    box-shadow:
+        -1px 0 4px rgba(80, 55, 35, 0.10),
+        1px 0 4px rgba(80, 55, 35, 0.10);
 }
 
 /* === Eye === */
