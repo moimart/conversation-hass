@@ -255,6 +255,87 @@ body {
     z-index: 0;
 }
 
+/* === Japandi: shoji screens, wood grain, seigaiha wave === */
+body.theme-japandi .ambient-grid {
+    /* Layer 1: warm radial (already themed)
+       Layer 2: shoji-screen vertical mullions every 96px (paper-screen frame)
+       Layer 3: shoji horizontal kumiko every 48px (lighter)
+       Layer 4: subtle warm wood grain — diagonal striations
+       Layer 5: tatami-like soft warm wash */
+    background-image:
+        radial-gradient(circle at 50% 40%, rgba(139, 90, 60, 0.06) 0%, transparent 60%),
+        linear-gradient(90deg, rgba(80, 55, 35, 0.10) 0px, rgba(80, 55, 35, 0.10) 1.5px, transparent 1.5px),
+        linear-gradient(rgba(80, 55, 35, 0.045) 0px, rgba(80, 55, 35, 0.045) 1px, transparent 1px),
+        repeating-linear-gradient(115deg,
+            rgba(120, 80, 50, 0.018) 0px,
+            rgba(120, 80, 50, 0.018) 2px,
+            transparent 2px,
+            transparent 7px),
+        radial-gradient(ellipse at 0% 100%, rgba(184, 122, 79, 0.07) 0%, transparent 55%),
+        radial-gradient(ellipse at 100% 0%, rgba(139, 90, 60, 0.05) 0%, transparent 55%);
+    background-size: 100% 100%, 96px 100%, 100% 48px, 100% 100%, 100% 100%, 100% 100%;
+}
+
+/* === Japandi: seigaiha (wave) decorative band — bottom-left and top-right corners === */
+body.theme-japandi::before,
+body.theme-japandi::after {
+    content: '';
+    position: fixed;
+    width: 320px;
+    height: 320px;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.55;
+    background:
+        radial-gradient(circle at 20px 20px,
+            transparent 17px,
+            rgba(139, 90, 60, 0.18) 17px,
+            rgba(139, 90, 60, 0.18) 18px,
+            transparent 19px),
+        radial-gradient(circle at 20px 20px,
+            transparent 11px,
+            rgba(139, 90, 60, 0.12) 11px,
+            rgba(139, 90, 60, 0.12) 12px,
+            transparent 13px),
+        radial-gradient(circle at 20px 20px,
+            transparent 5px,
+            rgba(139, 90, 60, 0.08) 5px,
+            rgba(139, 90, 60, 0.08) 6px,
+            transparent 7px);
+    background-size: 40px 40px;
+    background-repeat: repeat;
+    mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+}
+
+body.theme-japandi::before {
+    top: -80px;
+    right: -80px;
+    transform: rotate(180deg);
+}
+
+body.theme-japandi::after {
+    bottom: -80px;
+    left: -80px;
+}
+
+/* === Japandi: a subtle vertical "kakejiku" stripe down the right edge — like a hanging scroll === */
+body.theme-japandi .ambient-grid::after {
+    content: '';
+    position: fixed;
+    top: 12vh;
+    bottom: 12vh;
+    right: 4vw;
+    width: 2px;
+    background: linear-gradient(180deg,
+        transparent 0%,
+        rgba(80, 55, 35, 0.18) 12%,
+        rgba(80, 55, 35, 0.10) 50%,
+        rgba(80, 55, 35, 0.18) 88%,
+        transparent 100%);
+    pointer-events: none;
+}
+
 /* === Eye === */
 .eye-container {
     position: relative;
