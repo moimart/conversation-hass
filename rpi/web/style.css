@@ -539,10 +539,14 @@ body.theme-japandi .ambient-grid::after {
     position: absolute;
     inset: 20px;
     border-radius: 50%;
-    background: radial-gradient(circle at 45% 42%,
-        var(--iris-highlight) 0%,
-        transparent 60%
-    );
+    /* Brighter, multi-stop iris glow — matches the cinematic HAL inner light */
+    background:
+        radial-gradient(circle at 45% 42%,
+            rgba(255, 240, 210, 0.45) 0%,
+            rgba(255, 200, 140, 0.30) 18%,
+            var(--iris-highlight) 38%,
+            transparent 62%
+        );
 }
 
 .eye-pupil {
@@ -561,14 +565,32 @@ body.theme-japandi .ambient-grid::after {
 }
 
 .eye-reflection {
+    /* Primary catchlight — top-left of the lens, like a glass dome reflection */
     position: absolute;
-    top: 28%;
-    left: 35%;
-    width: 12px;
-    height: 12px;
+    top: 24%;
+    left: 32%;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: var(--reflection);
-    filter: blur(2px);
+    filter: blur(2.5px);
+    z-index: 3;
+}
+
+/* Secondary catchlight — smaller, on the opposite side. Two reflections give
+   the wet/spherical glass look from the film. */
+.eye-core::after {
+    content: '';
+    position: absolute;
+    top: 58%;
+    left: 62%;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.22);
+    filter: blur(1.2px);
+    pointer-events: none;
+    z-index: 3;
 }
 
 .eye-scan-line {
@@ -887,9 +909,28 @@ body.state-listening .status-text {
     color: var(--accent);
 }
 
-/* Processing state */
+/* Processing state — dark theme uses hue-rotate which works on red.
+   Light/warm themes get a placid breath instead (hue-rotate on
+   copper/brown turns greenish, which we don't want). */
 body.state-processing .eye-core {
     animation: core-spin 1.5s linear infinite;
+}
+
+body.theme-birch.state-processing .eye-core,
+body.theme-japandi.state-processing .eye-core,
+body.theme-odyssey.state-processing .eye-core {
+    animation: core-warm-pulse 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes core-warm-pulse {
+    from {
+        filter: brightness(1) saturate(1);
+        transform: scale(1);
+    }
+    to {
+        filter: brightness(1.18) saturate(1.25);
+        transform: scale(1.02);
+    }
 }
 
 body.state-processing .eye-scan-line {
