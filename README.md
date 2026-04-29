@@ -146,6 +146,17 @@ Then `systemctl --user restart pulseaudio`. HAL TTS streams (tagged `media.role=
 
 Set `SENDSPIN_PLAYER_ENTITY=media_player.hal_speaker` (or your actual entity) on the *server* `.env` to enable hardware-volume-button redirection (buttons drive MA when music is playing) and the optional Shape C explicit pause/resume (`SENDSPIN_PAUSE_DURING_TTS=true`). Shape C only resumes if MA was actually playing when HAL spoke — manual user pauses are never overridden.
 
+**Deploying the sidecar** — on the Pi:
+
+```bash
+git pull
+docker compose -f docker-compose.rpi-ghcr.yml pull
+docker compose -f docker-compose.rpi-ghcr.yml up -d
+docker compose -f docker-compose.rpi-ghcr.yml logs -f sendspin
+```
+
+The MA player should appear within ~30s via mDNS. Set channel mode in MA, then set `SENDSPIN_PLAYER_ENTITY` on the server and restart that stack.
+
 See `rpi/sendspin/README.md` for details.
 
 ## Prerequisites
