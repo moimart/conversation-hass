@@ -463,3 +463,51 @@ class TestMain:
 
 
 import os
+
+
+# --- Sendspin coordination ---
+
+class TestSendspinMusicState:
+    """The /api/music/state endpoint sets the music_playing flag."""
+
+    @pytest.mark.asyncio
+    async def test_sets_playing_true(self, mgr):
+        request = MagicMock()
+        request.json = AsyncMock(return_value={"playing": True})
+        resp = await mgr._set_music_state(request)
+        assert mgr.music_playing is True
+        assert resp.status == 204
+
+    @pytest.mark.asyncio
+    async def test_sets_playing_false(self, mgr):
+        mgr.music_playing = True
+        request = MagicMock()
+        request.json = AsyncMock(return_value={"playing": False})
+        resp = await mgr._set_music_state(request)
+        assert mgr.music_playing is False
+        assert resp.status == 204
+
+    @pytest.mark.asyncio
+    async def test_missing_field_defaults_false(self, mgr):
+        mgr.music_playing = True
+        request = MagicMock()
+        request.json = AsyncMock(return_value={})
+        await mgr._set_music_state(request)
+        assert mgr.music_playing is False
+
+    @pytest.mark.asyncio
+    async def test_bad_payload_returns_400(self, mgr):
+        request = MagicMock()
+        request.json = AsyncMock(side_effect=ValueError("not json"))
+        resp = await mgr._set_music_state(request)
+        assert resp.status == 400
+
+
+class TestSendspinDefaults:
+    """AudioManager init defaults for the new sendspin-coordination fields."""
+
+    def test_music_playing_defaults_false(self, mgr):
+        assert mgr.music_playing is False
+
+    def test_server_ws_defaults_none(self, mgr):
+        assert mgr._server_ws is None

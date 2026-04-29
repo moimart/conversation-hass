@@ -49,6 +49,14 @@ class AppState:
     mqtt_bridge: MQTTBridge | None = None
     tts_volume: float = 0.7  # cached, mirrors RPi state
     last_snapshot: bytes | None = None  # latest JPEG from the RPi
+    sendspin_player_entity: str = ""  # e.g. media_player.hal_speaker
+    sendspin_pause_during_tts: bool = False  # Shape C fallback
+    # Set when we paused MA ourselves so we know to resume; never set
+    # when the user paused manually before HAL spoke.
+    sendspin_was_playing: bool = False
+    # Serializes media_player service calls so rapid HID volume mashes
+    # don't fan out into N concurrent HA calls arriving out of order.
+    _ma_lock: object = field(default_factory=asyncio.Lock)
 
 
 def _generate_chime() -> bytes:
@@ -170,6 +178,88 @@ async def _push_to_rpi(state: AppState, msg: dict) -> bool:
     except Exception as e:
         log.warning(f"Could not send {msg.get('type')} to RPi: {e}")
         return False
+
+
+async def _ma_call(state: AppState, service: str, extra: dict | None = None) -> None:
+    """Invoke a media_player service on the configured Sendspin player.
+
+    Serialized via state._ma_lock so concurrent button presses arrive
+    at HA in the order they were issued, with a 5s timeout per call so
+    a hung MCP tool can't pile up the queue indefinitely.
+    """
+    entity = state.sendspin_player_entity
+    if not entity or not state.mcp_client:
+        return
+    args = {
+        "domain": "media_player",
+        "service": service,
+        "target": {"entity_id": entity},
+    }
+    if extra:
+        args["service_data"] = extra
+    async with state._ma_lock:
+        try:
+            await asyncio.wait_for(
+                state.mcp_client.call_tool("ha_call_service", args),
+                timeout=5.0,
+            )
+        except asyncio.TimeoutError:
+            log.warning(f"ha_call_service {service} timed out after 5s")
+        except Exception as e:
+            log.warning(f"ha_call_service {service} failed: {e}")
+
+
+async def _ma_volume_step(state: AppState, step: float) -> None:
+    """Forward a hardware vol button press to the Sendspin player in MA."""
+    if not state.sendspin_player_entity:
+        return
+    service = "volume_up" if step > 0 else "volume_down"
+    await _ma_call(state, service)
+
+
+async def _ma_query_state(state: AppState) -> str | None:
+    """Return the Sendspin player's current state ('playing'/'paused'/...).
+
+    Returns None on any error or if not configured.
+    """
+    entity = state.sendspin_player_entity
+    if not entity or not state.mcp_client:
+        return None
+    try:
+        result = await asyncio.wait_for(
+            state.mcp_client.call_tool("ha_get_state", {"entity_id": entity}),
+            timeout=3.0,
+        )
+    except (asyncio.TimeoutError, Exception) as e:
+        log.warning(f"ha_get_state for sendspin player failed: {e}")
+        return None
+    try:
+        data = json.loads(result)
+    except (TypeError, ValueError):
+        return None
+    # HA MCP wraps the entity in {"data": {...}, "metadata": {...}}
+    entity_data = data.get("data", data) if isinstance(data, dict) else {}
+    if not isinstance(entity_data, dict):
+        return None
+    return entity_data.get("state")
+
+
+async def _ma_pause_if_playing(state: AppState) -> None:
+    """Pause MA only if currently playing; remember so we can resume later."""
+    ma_state = await _ma_query_state(state)
+    if ma_state == "playing":
+        state.sendspin_was_playing = True
+        await _ma_call(state, "media_pause")
+    else:
+        # User paused/stopped manually — don't touch it on resume.
+        state.sendspin_was_playing = False
+
+
+async def _ma_resume_if_we_paused(state: AppState) -> None:
+    """Resume MA only if we were the ones who paused it."""
+    if state.sendspin_was_playing:
+        state.sendspin_was_playing = False
+        await _ma_call(state, "media_play")
 
 
 async def apply_theme(state: AppState, theme: str) -> bool:
@@ -381,6 +471,10 @@ async def lifespan(app: FastAPI):
     state.theme_day = os.environ.get("THEME_DAY", "birch")
     state.theme_night = os.environ.get("THEME_NIGHT", "dark")
     state.current_theme = state.theme_night  # start safe (dark)
+    state.sendspin_player_entity = os.environ.get("SENDSPIN_PLAYER_ENTITY", "").strip()
+    state.sendspin_pause_during_tts = (
+        os.environ.get("SENDSPIN_PAUSE_DURING_TTS", "false").lower() in ("true", "1", "yes")
+    )
     state.wake_chime = _generate_chime()
     log.info(f"Wake chime generated ({len(state.wake_chime)} bytes)")
 
@@ -620,6 +714,15 @@ async def audio_endpoint(websocket: WebSocket):
         await broadcast_to_ui(state, msg)
         if state.mqtt_bridge:
             await state.mqtt_bridge.publish_state(new_state)
+        # Optional Shape C: explicitly pause/resume the Sendspin MA
+        # player around TTS instead of relying on Pulse role-ducking.
+        # Only resumes if we were the ones who paused it — never
+        # overrides a user's manual pause.
+        if state.sendspin_pause_during_tts and state.sendspin_player_entity:
+            if new_state == "speaking":
+                asyncio.create_task(_ma_pause_if_playing(state))
+            elif new_state == "idle":
+                asyncio.create_task(_ma_resume_if_we_paused(state))
 
     conversation.on_response = on_response
     conversation.on_wake_word = on_wake_word
@@ -724,6 +827,13 @@ async def audio_endpoint(websocket: WebSocket):
                 elif msg_type == "snapshot":
                     # RPi pushed a JPEG snapshot — forward to MQTT
                     pass  # snapshot is binary; handled via dedicated message below
+                elif msg_type == "ma_volume_adjust":
+                    try:
+                        step = float(msg.get("step", 0.0))
+                    except (TypeError, ValueError):
+                        step = 0.0
+                    if step != 0.0:
+                        asyncio.create_task(_ma_volume_step(state, step))
 
     except (WebSocketDisconnect, RuntimeError):
         log.info("Audio client disconnected")

@@ -9,7 +9,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from server.app.main import AppState, _generate_chime, _get_state, broadcast_to_ui
+from server.app.main import (
+    AppState,
+    _generate_chime,
+    _get_state,
+    _ma_call,
+    _ma_pause_if_playing,
+    _ma_query_state,
+    _ma_resume_if_we_paused,
+    _ma_volume_step,
+    broadcast_to_ui,
+)
 
 
 # --- AppState ---
@@ -286,3 +296,202 @@ class TestAudioEndpointLogic:
         assert result_with_silence.get("silence_after", False) is True
         assert result_without.get("silence_after", False) is False
         assert result_partial.get("silence_after", False) is False
+
+
+# --- Sendspin / Music Assistant coordination ---
+
+def _state_with_mcp(player_entity: str = "media_player.hal_speaker"):
+    """Build an AppState with a mocked MCP client and configured entity."""
+    state = AppState()
+    state.sendspin_player_entity = player_entity
+    state.mcp_client = MagicMock()
+    state.mcp_client.call_tool = AsyncMock(return_value="{}")
+    return state
+
+
+class TestMaCall:
+    """_ma_call invokes ha_call_service with the right args, or no-ops."""
+
+    @pytest.mark.asyncio
+    async def test_no_op_when_entity_unset(self):
+        state = AppState()
+        state.mcp_client = MagicMock()
+        state.mcp_client.call_tool = AsyncMock()
+        await _ma_call(state, "media_pause")
+        state.mcp_client.call_tool.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_op_when_mcp_unset(self):
+        state = AppState()
+        state.sendspin_player_entity = "media_player.x"
+        # mcp_client stays None → silent return, no exception
+        await _ma_call(state, "media_pause")
+
+    @pytest.mark.asyncio
+    async def test_invokes_ha_call_service(self):
+        state = _state_with_mcp("media_player.x")
+        await _ma_call(state, "media_pause")
+        state.mcp_client.call_tool.assert_awaited_once_with(
+            "ha_call_service",
+            {
+                "domain": "media_player",
+                "service": "media_pause",
+                "target": {"entity_id": "media_player.x"},
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_extra_data_attached(self):
+        state = _state_with_mcp("media_player.x")
+        await _ma_call(state, "volume_set", {"volume_level": 0.5})
+        args = state.mcp_client.call_tool.await_args.args
+        assert args[1]["service_data"] == {"volume_level": 0.5}
+
+    @pytest.mark.asyncio
+    async def test_swallows_mcp_exception(self):
+        state = _state_with_mcp("media_player.x")
+        state.mcp_client.call_tool = AsyncMock(side_effect=RuntimeError("boom"))
+        # Must not raise — caller relies on best-effort semantics.
+        await _ma_call(state, "media_pause")
+
+    @pytest.mark.asyncio
+    async def test_serializes_concurrent_calls(self):
+        """Two concurrent _ma_call invocations must execute sequentially."""
+        state = _state_with_mcp("media_player.x")
+        in_flight = 0
+        peak = 0
+
+        async def slow_tool(*args, **kwargs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            import asyncio as _a
+            await _a.sleep(0.01)
+            in_flight -= 1
+            return "{}"
+
+        state.mcp_client.call_tool = AsyncMock(side_effect=slow_tool)
+        import asyncio as _a
+        await _a.gather(
+            _ma_call(state, "volume_up"),
+            _ma_call(state, "volume_up"),
+            _ma_call(state, "volume_up"),
+        )
+        assert peak == 1, f"expected lock to serialize, saw {peak} concurrent"
+
+
+class TestMaVolumeStep:
+    """Sign of step → up/down service."""
+
+    @pytest.mark.asyncio
+    async def test_positive_step_calls_up(self):
+        state = _state_with_mcp("media_player.x")
+        await _ma_volume_step(state, 0.1)
+        service = state.mcp_client.call_tool.await_args.args[1]["service"]
+        assert service == "volume_up"
+
+    @pytest.mark.asyncio
+    async def test_negative_step_calls_down(self):
+        state = _state_with_mcp("media_player.x")
+        await _ma_volume_step(state, -0.1)
+        service = state.mcp_client.call_tool.await_args.args[1]["service"]
+        assert service == "volume_down"
+
+    @pytest.mark.asyncio
+    async def test_no_op_without_entity(self):
+        state = AppState()
+        state.mcp_client = MagicMock()
+        state.mcp_client.call_tool = AsyncMock()
+        await _ma_volume_step(state, 0.1)
+        state.mcp_client.call_tool.assert_not_awaited()
+
+
+class TestMaQueryState:
+    """_ma_query_state unwraps HA MCP's {data, metadata} envelope."""
+
+    @pytest.mark.asyncio
+    async def test_returns_state(self):
+        state = _state_with_mcp("media_player.x")
+        state.mcp_client.call_tool = AsyncMock(return_value=json.dumps({
+            "data": {"state": "playing", "attributes": {}},
+            "metadata": {},
+        }))
+        assert await _ma_query_state(state) == "playing"
+
+    @pytest.mark.asyncio
+    async def test_returns_state_unwrapped(self):
+        """Some tools return the entity directly without the envelope."""
+        state = _state_with_mcp("media_player.x")
+        state.mcp_client.call_tool = AsyncMock(return_value=json.dumps({
+            "state": "paused",
+        }))
+        assert await _ma_query_state(state) == "paused"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_bad_json(self):
+        state = _state_with_mcp("media_player.x")
+        state.mcp_client.call_tool = AsyncMock(return_value="not json")
+        assert await _ma_query_state(state) is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_unconfigured(self):
+        state = AppState()
+        assert await _ma_query_state(state) is None
+
+
+class TestShapeCGating:
+    """Pause/resume only fires when WE paused — never overrides user pauses."""
+
+    @pytest.mark.asyncio
+    async def test_pause_when_playing_sets_flag_and_calls_pause(self):
+        state = _state_with_mcp("media_player.x")
+        state.mcp_client.call_tool = AsyncMock(return_value=json.dumps({
+            "data": {"state": "playing"},
+            "metadata": {},
+        }))
+        await _ma_pause_if_playing(state)
+        assert state.sendspin_was_playing is True
+        # First call was the get_state, second was the pause
+        services_called = [c.args[0] for c in state.mcp_client.call_tool.await_args_list]
+        assert "ha_get_state" in services_called
+        assert "ha_call_service" in services_called
+
+    @pytest.mark.asyncio
+    async def test_pause_when_paused_does_not_call_pause(self):
+        state = _state_with_mcp("media_player.x")
+        state.mcp_client.call_tool = AsyncMock(return_value=json.dumps({
+            "data": {"state": "paused"},
+            "metadata": {},
+        }))
+        await _ma_pause_if_playing(state)
+        assert state.sendspin_was_playing is False
+        # Only ha_get_state should have been called, never a service.
+        called_tools = [c.args[0] for c in state.mcp_client.call_tool.await_args_list]
+        assert called_tools == ["ha_get_state"]
+
+    @pytest.mark.asyncio
+    async def test_resume_only_when_we_paused(self):
+        state = _state_with_mcp("media_player.x")
+        state.sendspin_was_playing = False
+        await _ma_resume_if_we_paused(state)
+        state.mcp_client.call_tool.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_resume_clears_flag(self):
+        state = _state_with_mcp("media_player.x")
+        state.sendspin_was_playing = True
+        await _ma_resume_if_we_paused(state)
+        assert state.sendspin_was_playing is False
+        state.mcp_client.call_tool.assert_awaited_once()
+        assert state.mcp_client.call_tool.await_args.args[1]["service"] == "media_play"
+
+
+class TestSendspinAppStateDefaults:
+    def test_defaults(self):
+        state = AppState()
+        assert state.sendspin_player_entity == ""
+        assert state.sendspin_pause_during_tts is False
+        assert state.sendspin_was_playing is False
+        # _ma_lock defaults to an asyncio.Lock instance.
+        import asyncio as _a
+        assert isinstance(state._ma_lock, _a.Lock)

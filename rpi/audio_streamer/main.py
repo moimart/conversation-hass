@@ -78,6 +78,17 @@ class AudioManager:
         # UI clients
         self.ui_clients: set[web.WebSocketResponse] = set()
 
+        # Sendspin coordination: when a Sendspin stream is active on
+        # the local daemon, hardware volume buttons target the MA
+        # player instead of HAL's TTS volume. Daemon hooks update
+        # this via POST /api/music/state.
+        self.music_playing: bool = False
+
+        # Reference to the live server WebSocket (set by the audio
+        # stream handler when connected). Used to forward
+        # ma_volume_adjust messages.
+        self._server_ws = None
+
     # --- Device probing ---
 
     def find_audio_device(self) -> int | None:
@@ -359,6 +370,7 @@ class AudioManager:
                 log.info(f"Connecting to AI server at {uri}...")
                 async with websockets.connect(uri, max_size=16 * 1024 * 1024) as ws:
                     log.info("Connected to AI server")
+                    self._server_ws = ws
 
                     chunks_sent = 0
                     last_health = time.monotonic()
@@ -412,11 +424,13 @@ class AudioManager:
 
             except (websockets.ConnectionClosed, ConnectionRefusedError, OSError) as e:
                 log.warning(f"Connection lost: {e}. Reconnecting in 5s...")
+                self._server_ws = None
                 await asyncio.sleep(5)
                 self.close_stream(stream)
                 stream = await loop.run_in_executor(None, self.open_input_stream)
             except Exception as e:
                 log.error(f"Unexpected error: {e}. Reconnecting in 5s...")
+                self._server_ws = None
                 await asyncio.sleep(5)
                 self.close_stream(stream)
                 stream = await loop.run_in_executor(None, self.open_input_stream)
@@ -490,13 +504,28 @@ class AudioManager:
                             log.info(f"HID [{dev.path}]: type={event.type} code={event.code} ({code_name}) value={event.value}")
 
                         if event.type == ecodes.EV_KEY and event.value == 1:
+                            step = 0.0
                             if event.code == 115:  # KEY_VOLUMEUP
-                                mgr.tts_volume = min(1.0, mgr.tts_volume + 0.1)
-                                log.info(f"Hardware vol up: {mgr.tts_volume:.0%}")
-                                await mgr.broadcast_to_ui({"type": "volume_sync", "level": mgr.tts_volume})
+                                step = 0.1
                             elif event.code == 114:  # KEY_VOLUMEDOWN
-                                mgr.tts_volume = max(0.0, mgr.tts_volume - 0.1)
-                                log.info(f"Hardware vol down: {mgr.tts_volume:.0%}")
+                                step = -0.1
+                            if step == 0.0:
+                                continue
+
+                            # While Sendspin music is playing, hardware
+                            # buttons drive the MA player; otherwise
+                            # they adjust HAL's TTS volume locally.
+                            if mgr.music_playing and mgr._server_ws is not None:
+                                try:
+                                    await mgr._server_ws.send(json.dumps(
+                                        {"type": "ma_volume_adjust", "step": step}
+                                    ))
+                                    log.info(f"Hardware vol {'up' if step > 0 else 'down'} → MA player")
+                                except Exception as e:
+                                    log.warning(f"ma_volume_adjust send failed: {e}")
+                            else:
+                                mgr.tts_volume = max(0.0, min(1.0, mgr.tts_volume + step))
+                                log.info(f"Hardware vol {'up' if step > 0 else 'down'}: {mgr.tts_volume:.0%}")
                                 await mgr.broadcast_to_ui({"type": "volume_sync", "level": mgr.tts_volume})
 
                 await asyncio.gather(*[read_device(dev) for dev in anker_devs])
@@ -510,6 +539,17 @@ class AudioManager:
     @staticmethod
     async def _serve_index(request):
         return web.FileResponse("/app/web/index.html")
+
+    async def _set_music_state(self, request: web.Request) -> web.Response:
+        """Sendspin daemon hook → tracks whether MA music is playing."""
+        try:
+            data = await request.json()
+            self.music_playing = bool(data.get("playing", False))
+            log.info(f"Sendspin music_playing={self.music_playing}")
+        except Exception as e:
+            log.warning(f"music/state parse failed: {e}")
+            return web.Response(status=400)
+        return web.Response(status=204)
 
     async def _proxy_snapshot(self, request: web.Request) -> web.Response:
         """Forward a JPEG snapshot from the kiosk page to the AI server."""
@@ -536,6 +576,7 @@ class AudioManager:
         app.router.add_get("/ws", self.websocket_handler)
         app.router.add_get("/", self._serve_index)
         app.router.add_post("/api/snapshot", self._proxy_snapshot)
+        app.router.add_post("/api/music/state", self._set_music_state)
         app.router.add_static("/", "/app/web")
 
         runner = web.AppRunner(app)
