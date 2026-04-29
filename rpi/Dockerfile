@@ -3,7 +3,7 @@ FROM python:3.11-slim-bookworm
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# System dependencies for audio + build tools for PyAudio + headless Chromium for snapshots
+# System dependencies for audio + build tools for PyAudio
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc python3-dev \
     portaudio19-dev \
@@ -12,8 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils \
     libpulse0 \
     libsndfile1 \
-    chromium chromium-driver \
-    fonts-noto-core fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

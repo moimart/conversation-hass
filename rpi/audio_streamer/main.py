@@ -8,6 +8,7 @@ import os
 import time
 import wave
 
+import aiohttp
 import numpy as np
 import pyaudio
 import websockets
@@ -510,11 +511,31 @@ class AudioManager:
     async def _serve_index(request):
         return web.FileResponse("/app/web/index.html")
 
+    async def _proxy_snapshot(self, request: web.Request) -> web.Response:
+        """Forward a JPEG snapshot from the kiosk page to the AI server."""
+        body = await request.read()
+        if not body:
+            return web.Response(status=204)
+        url = f"http://{self.ai_server_host}:8765/api/snapshot"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url,
+                    data=body,
+                    headers={"Content-Type": "image/jpeg"},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    return web.Response(status=resp.status)
+        except Exception as e:
+            log.debug(f"snapshot proxy failed: {e}")
+            return web.Response(status=502)
+
     async def start_web_server(self):
         """Start the aiohttp web server for serving UI and WebSocket."""
-        app = web.Application()
+        app = web.Application(client_max_size=8 * 1024 * 1024)
         app.router.add_get("/ws", self.websocket_handler)
         app.router.add_get("/", self._serve_index)
+        app.router.add_post("/api/snapshot", self._proxy_snapshot)
         app.router.add_static("/", "/app/web")
 
         runner = web.AppRunner(app)
@@ -530,26 +551,10 @@ class AudioManager:
         log.info("Starting HAL RPi audio streamer...")
         await self.start_web_server()
 
-        # Optional: periodic web UI snapshot → server → MQTT
-        snapshot_task = None
-        if os.environ.get("SNAPSHOT_ENABLED", "true").lower() in ("true", "1", "yes"):
-            try:
-                from .snapshot import snapshot_loop
-                interval = float(os.environ.get("SNAPSHOT_INTERVAL", "5"))
-                snapshot_task = asyncio.create_task(
-                    snapshot_loop(self.ai_server_host, interval_sec=interval)
-                )
-            except Exception as e:
-                log.warning(f"Snapshot service not started: {e}")
-
-        try:
-            await asyncio.gather(
-                self.audio_stream_handler(),
-                self.hid_volume_listener(),
-            )
-        finally:
-            if snapshot_task:
-                snapshot_task.cancel()
+        await asyncio.gather(
+            self.audio_stream_handler(),
+            self.hid_volume_listener(),
+        )
 
 
 def main():

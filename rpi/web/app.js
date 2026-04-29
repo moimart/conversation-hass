@@ -296,6 +296,31 @@
         }
     }, 30000);
 
+    // --- Snapshot publisher: rasterize #app to JPEG and POST to local proxy ---
+    async function publishSnapshot() {
+        if (typeof html2canvas !== "function") return;
+        if (document.hidden) return;
+        try {
+            const canvas = await html2canvas(document.getElementById("app"), {
+                backgroundColor: null,
+                logging: false,
+                useCORS: true,
+                scale: 1,
+            });
+            const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.7));
+            if (!blob) return;
+            await fetch("/api/snapshot", {
+                method: "POST",
+                body: blob,
+                headers: { "Content-Type": "image/jpeg" },
+            });
+        } catch (e) {
+            console.debug("snapshot failed:", e);
+        }
+    }
+    setTimeout(publishSnapshot, 5000);
+    setInterval(publishSnapshot, 60000);
+
     // --- Init ---
     setVolume(0.7);
     setState("idle");
