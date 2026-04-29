@@ -26,6 +26,12 @@ services:
       - MEMORY_URL=${MEMORY_URL:-http://shodh-memory:3030}
       - MEMORY_USER_ID=${MEMORY_USER_ID:-hal-default}
       - MEMORY_API_KEY=${MEMORY_API_KEY:-sk-shodh-dev-default}
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - HAL_DEVICE_ID=${HAL_DEVICE_ID:-hal-default}
+      - HAL_DEVICE_NAME=${HAL_DEVICE_NAME:-HAL}
     volumes:
       - ./server/models:/app/models
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro

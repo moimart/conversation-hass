@@ -529,10 +529,27 @@ class AudioManager:
         """Start all services."""
         log.info("Starting HAL RPi audio streamer...")
         await self.start_web_server()
-        await asyncio.gather(
-            self.audio_stream_handler(),
-            self.hid_volume_listener(),
-        )
+
+        # Optional: periodic web UI snapshot → server → MQTT
+        snapshot_task = None
+        if os.environ.get("SNAPSHOT_ENABLED", "true").lower() in ("true", "1", "yes"):
+            try:
+                from .snapshot import snapshot_loop
+                interval = float(os.environ.get("SNAPSHOT_INTERVAL", "5"))
+                snapshot_task = asyncio.create_task(
+                    snapshot_loop(self.ai_server_host, interval_sec=interval)
+                )
+            except Exception as e:
+                log.warning(f"Snapshot service not started: {e}")
+
+        try:
+            await asyncio.gather(
+                self.audio_stream_handler(),
+                self.hid_volume_listener(),
+            )
+        finally:
+            if snapshot_task:
+                snapshot_task.cancel()
 
 
 def main():

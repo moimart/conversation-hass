@@ -12,7 +12,7 @@ import wave
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -21,6 +21,7 @@ from .conversation import ConversationManager
 from .local_tools import LocalToolsClient
 from .mcp_client import MCPClient, MultiMCPClient
 from .memory import MemoryClient
+from .mqtt_bridge import MQTTBridge
 from .tts import TTSEngine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
@@ -45,6 +46,9 @@ class AppState:
     theme_day: str = "birch"
     theme_night: str = "dark"
     theme_scheduler_task: object | None = None
+    mqtt_bridge: MQTTBridge | None = None
+    tts_volume: float = 0.7  # cached, mirrors RPi state
+    last_snapshot: bytes | None = None  # latest JPEG from the RPi
 
 
 def _generate_chime() -> bytes:
@@ -176,6 +180,8 @@ async def apply_theme(state: AppState, theme: str) -> bool:
     msg = {"type": "set_theme", "name": theme}
     await broadcast_to_ui(state, msg)
     await _push_to_rpi(state, msg)
+    if state.mqtt_bridge:
+        await state.mqtt_bridge.publish_theme(theme)
     log.info(f"Theme set to: {theme}")
     return True
 
@@ -461,6 +467,68 @@ async def lifespan(app: FastAPI):
     else:
         state.theme_scheduler_task = None
 
+    # MQTT bridge → expose HAL as a HA device
+    mqtt_host = os.environ.get("MQTT_BROKER_HOST", "")
+    if mqtt_host:
+        bridge = MQTTBridge(
+            host=mqtt_host,
+            port=int(os.environ.get("MQTT_BROKER_PORT", "1883")),
+            username=os.environ.get("MQTT_USERNAME", ""),
+            password=os.environ.get("MQTT_PASSWORD", ""),
+            device_id=os.environ.get("HAL_DEVICE_ID", "hal-default"),
+            device_name=os.environ.get("HAL_DEVICE_NAME", "HAL"),
+        )
+        # Wire MQTT commands to existing helpers
+        async def _mqtt_volume(level: float):
+            await _push_to_rpi(state, {"type": "volume", "level": level})
+            state.tts_volume = level
+            await bridge.publish_volume(level)
+
+        async def _mqtt_mute(target: bool):
+            # Only toggle if the cached state differs (avoid flapping)
+            if state.mic_muted != target:
+                await _push_to_rpi(state, {"type": "mute_toggle"})
+
+        async def _mqtt_theme(theme: str):
+            await apply_theme(state, theme)
+
+        async def _mqtt_speak(text: str):
+            if not text.strip() or not state.tts_engine:
+                return
+            ws = state.audio_websocket
+            if not ws:
+                log.warning("MQTT speak ignored — RPi not connected")
+                return
+            audio_bytes = await state.tts_engine.synthesize(text)
+            if not audio_bytes:
+                return
+            try:
+                msg = {"type": "response", "text": text}
+                await ws.send_json(msg)
+                await broadcast_to_ui(state, msg)
+                await ws.send_json({"type": "tts_start", "size": len(audio_bytes)})
+                if state.pipeline:
+                    state.pipeline.set_ai_speaking(True)
+                chunk_size = 8192
+                for i in range(0, len(audio_bytes), chunk_size):
+                    await ws.send_bytes(audio_bytes[i : i + chunk_size])
+                await ws.send_json({"type": "tts_end"})
+            except Exception as e:
+                log.error(f"MQTT speak failed: {e}")
+                if state.pipeline:
+                    state.pipeline.set_ai_speaking(False)
+
+        bridge.on_volume_set = _mqtt_volume
+        bridge.on_mute_set = _mqtt_mute
+        bridge.on_theme_set = _mqtt_theme
+        bridge.on_speak = _mqtt_speak
+
+        await bridge.start()
+        state.mqtt_bridge = bridge
+        log.info(f"MQTT bridge started for broker {mqtt_host}")
+    else:
+        log.info("MQTT bridge disabled (set MQTT_BROKER_HOST to enable)")
+
     log.info("HAL voice server ready.")
 
     yield
@@ -468,6 +536,8 @@ async def lifespan(app: FastAPI):
     # Shutdown
     if getattr(state, "theme_scheduler_task", None):
         state.theme_scheduler_task.cancel()
+    if state.mqtt_bridge:
+        await state.mqtt_bridge.stop()
     if state.mcp_client:
         await state.mcp_client.disconnect_all()
 
@@ -541,13 +611,15 @@ async def audio_endpoint(websocket: WebSocket):
             log.info("AI speaking: False (error recovery)")
 
     async def on_state_change(new_state: str):
-        """Callback: broadcast state changes to RPi and UI."""
+        """Callback: broadcast state changes to RPi, UI and MQTT."""
         msg = {"type": "state", "state": new_state}
         try:
             await websocket.send_json(msg)
         except Exception:
             pass
         await broadcast_to_ui(state, msg)
+        if state.mqtt_bridge:
+            await state.mqtt_bridge.publish_state(new_state)
 
     conversation.on_response = on_response
     conversation.on_wake_word = on_wake_word
@@ -640,6 +712,18 @@ async def audio_endpoint(websocket: WebSocket):
                 elif msg_type == "mute_sync":
                     state.mic_muted = bool(msg.get("muted", False))
                     log.debug(f"Cached mute state: {state.mic_muted}")
+                    if state.mqtt_bridge:
+                        await state.mqtt_bridge.publish_mute(state.mic_muted)
+                elif msg_type == "volume_sync":
+                    try:
+                        state.tts_volume = max(0.0, min(1.0, float(msg.get("level", 0.7))))
+                        if state.mqtt_bridge:
+                            await state.mqtt_bridge.publish_volume(state.tts_volume)
+                    except (TypeError, ValueError):
+                        pass
+                elif msg_type == "snapshot":
+                    # RPi pushed a JPEG snapshot — forward to MQTT
+                    pass  # snapshot is binary; handled via dedicated message below
 
     except (WebSocketDisconnect, RuntimeError):
         log.info("Audio client disconnected")
@@ -762,6 +846,33 @@ async def post_volume(req: VolumeRequest):
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/snapshot")
+async def post_snapshot(request: Request):
+    """Receive a JPEG snapshot from the RPi and forward to MQTT."""
+    state = _get_state(app)
+    body = await request.body()
+    if not body:
+        return {"status": "error", "message": "Empty body"}
+
+    # Cache for GET /api/snapshot.jpg
+    state.last_snapshot = body
+
+    # Forward to MQTT for HA camera entity
+    if state.mqtt_bridge:
+        await state.mqtt_bridge.publish_snapshot(body)
+
+    return {"status": "ok", "size": len(body)}
+
+
+@app.get("/api/snapshot.jpg")
+async def get_snapshot():
+    """Return the most recent JPEG snapshot."""
+    state = _get_state(app)
+    if not state.last_snapshot:
+        return Response(status_code=404)
+    return Response(content=state.last_snapshot, media_type="image/jpeg")
 
 
 class SpeakRequest(BaseModel):

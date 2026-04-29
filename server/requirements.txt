@@ -11,3 +11,4 @@ librosa==0.10.2
 soundfile==0.12.1
 mcp>=1.0.0
 nemo_toolkit[asr]>=2.0.0
+aiomqtt==2.3.0
