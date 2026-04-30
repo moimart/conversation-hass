@@ -612,10 +612,18 @@ async def lifespan(app: FastAPI):
                 if state.pipeline:
                     state.pipeline.set_ai_speaking(False)
 
+        async def _mqtt_command(text: str):
+            text = text.strip()
+            if not text or not state.conversation:
+                return
+            log.info(f"MQTT command: {text!r}")
+            await state.conversation.process_text(text)
+
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
         bridge.on_theme_set = _mqtt_theme
         bridge.on_speak = _mqtt_speak
+        bridge.on_command = _mqtt_command
 
         await bridge.start()
         state.mqtt_bridge = bridge

@@ -12,6 +12,7 @@ Topic layout (with HAL_DEVICE_ID = "hal-default"):
     hal/hal-default/theme/state              text
     hal/hal-default/theme/set                <- HA writes
     hal/hal-default/speak                    <- HA writes (notify -> /api/speak)
+    hal/hal-default/command                  <- HA writes (text -> conversation pipeline)
     hal/hal-default/snapshot                 binary JPEG (published from RPi)
     hal/hal-default/availability             "online" / "offline"
 """
@@ -52,6 +53,7 @@ class MQTTBridge:
         self.on_mute_set: Callable[[bool], Awaitable[None]] | None = None
         self.on_theme_set: Callable[[str], Awaitable[None]] | None = None
         self.on_speak: Callable[[str], Awaitable[None]] | None = None
+        self.on_command: Callable[[str], Awaitable[None]] | None = None
 
         self._client = None
         self._connected = False
@@ -176,6 +178,21 @@ class MQTTBridge:
             },
         ))
 
+        # Command — text input that runs through the conversation pipeline
+        # (LLM with tools), as if the user had spoken it.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/command/config",
+            {
+                "name": "Command",
+                "unique_id": f"{self.device_id}_command",
+                "command_topic": f"{self.base}/command",
+                "icon": "mdi:console",
+                "availability": avail,
+                "device": device,
+                "mode": "text",
+            },
+        ))
+
         return configs
 
     async def start(self):
@@ -239,6 +256,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/mute/set")
                     await client.subscribe(f"{self.base}/theme/set")
                     await client.subscribe(f"{self.base}/speak")
+                    await client.subscribe(f"{self.base}/command")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -286,6 +304,10 @@ class MQTTBridge:
             elif topic == f"{self.base}/speak":
                 if payload and self.on_speak:
                     await self.on_speak(payload)
+
+            elif topic == f"{self.base}/command":
+                if payload and self.on_command:
+                    await self.on_command(payload)
 
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")
