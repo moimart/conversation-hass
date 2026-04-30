@@ -301,8 +301,9 @@
         if (typeof html2canvas !== "function") return;
         if (document.hidden) return;
         try {
-            const canvas = await html2canvas(document.getElementById("app"), {
-                backgroundColor: null,
+            const bg = getComputedStyle(document.body).backgroundColor || "#0a0a0c";
+            const canvas = await html2canvas(document.body, {
+                backgroundColor: bg,
                 logging: false,
                 useCORS: true,
                 scale: 1,
