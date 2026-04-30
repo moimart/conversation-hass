@@ -206,47 +206,6 @@ class ConversationManager:
 
         await self._set_state("idle")
 
-    async def process_command(self, text: str):
-        """Run a single text command through the LLM, bypassing wake-word + silence buffering.
-
-        Used when text comes from a non-voice channel (MQTT, HTTP) and should
-        be treated as if the user had spoken a complete utterance.
-        """
-        text = text.strip()
-        if not text:
-            return
-        log.info(f"Processing command: '{text}'")
-        await self._set_state("processing")
-        self._suppress_final_tts = False
-
-        try:
-            response_text = await self._run_llm_with_tools(text)
-
-            if self.memory and self.memory.available:
-                memory_text = f"User said: {text}\nHAL responded: {response_text}"
-                await self.memory.remember(memory_text, memory_type="conversation")
-
-            if self._suppress_final_tts:
-                audio_bytes = None
-            else:
-                await self._set_state("speaking")
-                audio_bytes = await self.tts_engine.synthesize(response_text)
-
-            if self.on_response:
-                await self.on_response(response_text, audio_bytes)
-
-            if response_text.rstrip().endswith("?"):
-                self._awaiting_followup = True
-
-        except Exception as e:
-            log.error(f"Error processing command: {e}", exc_info=True)
-            error_msg = "Sorry, I encountered an error processing that."
-            if self.on_response:
-                audio = await self.tts_engine.synthesize(error_msg)
-                await self.on_response(error_msg, audio)
-
-        await self._set_state("idle")
-
     async def _run_llm_with_tools(self, user_text: str) -> str:
         """
         Send user text to Ollama with MCP tools available.

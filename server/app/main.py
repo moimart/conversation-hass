@@ -614,10 +614,25 @@ async def lifespan(app: FastAPI):
 
         async def _mqtt_command(text: str):
             text = text.strip()
-            if not text or not state.conversation:
+            conversation = state.conversation
+            if not text or not conversation:
                 return
             log.info(f"MQTT command: {text!r}")
-            await state.conversation.process_command(text)
+            transcription_msg = {
+                "type": "transcription",
+                "text": text,
+                "is_partial": False,
+                "speaker": "human",
+            }
+            await broadcast_to_ui(state, transcription_msg)
+            if state.audio_websocket:
+                try:
+                    await state.audio_websocket.send_json(transcription_msg)
+                except Exception:
+                    pass
+            conversation._command_buffer.append(text)
+            conversation._wake_detected = True
+            asyncio.create_task(conversation.on_silence())
 
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
