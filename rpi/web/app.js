@@ -322,6 +322,28 @@
     setTimeout(publishSnapshot, 5000);
     setInterval(publishSnapshot, 60000);
 
+    // --- Clock + date ---
+    function updateClock() {
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, "0");
+        const mm = String(now.getMinutes()).padStart(2, "0");
+        const time = document.getElementById("clock-time");
+        const date = document.getElementById("clock-date");
+        if (time) time.textContent = `${hh}:${mm}`;
+        if (date) {
+            date.textContent = now.toLocaleDateString(undefined, {
+                weekday: "short", day: "2-digit", month: "short",
+            }).toUpperCase();
+        }
+    }
+    updateClock();
+    // Align next tick to the top of the next minute, then run every 60s.
+    const msToNextMinute = 60000 - (Date.now() % 60000);
+    setTimeout(() => {
+        updateClock();
+        setInterval(updateClock, 60000);
+    }, msToNextMinute);
+
     // --- Init ---
     setVolume(0.7);
     setState("idle");

@@ -803,6 +803,37 @@ body.theme-japandi .ambient-grid::after {
     background: rgba(var(--accent-rgb), 0.1);
 }
 
+/* === Clock + Date === */
+.clock-display {
+    position: fixed;
+    top: 24px;
+    left: 24px;
+    z-index: 11;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text);
+    pointer-events: none;
+    user-select: none;
+    line-height: 1;
+}
+
+.clock-time {
+    font-size: 32px;
+    font-weight: 300;
+    letter-spacing: 2px;
+    color: var(--text);
+    opacity: 0.85;
+    font-variant-numeric: tabular-nums;
+}
+
+.clock-date {
+    margin-top: 8px;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    opacity: 0.7;
+}
+
 /* === Theme picker === */
 .theme-picker {
     position: fixed;
