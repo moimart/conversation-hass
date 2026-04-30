@@ -841,13 +841,12 @@ body.theme-japandi .ambient-grid::after {
 }
 
 .clock-date {
-    margin-top: 10px;
-    font-size: 12px;
+    margin-top: 6px;
+    font-size: 14px;
     font-weight: 400;
-    letter-spacing: 4px;
-    text-transform: uppercase;
+    letter-spacing: 0.5px;
     color: var(--accent);
-    opacity: 0.65;
+    opacity: 0.75;
 }
 
 /* === Theme picker === */

@@ -323,6 +323,11 @@
     setInterval(publishSnapshot, 60000);
 
     // --- Clock + date ---
+    const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const MONTHS = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ];
     function updateClock() {
         const now = new Date();
         const hh = String(now.getHours()).padStart(2, "0");
@@ -331,9 +336,7 @@
         const date = document.getElementById("clock-date");
         if (time) time.textContent = `${hh}:${mm}`;
         if (date) {
-            date.textContent = now.toLocaleDateString(undefined, {
-                weekday: "short", day: "2-digit", month: "short",
-            }).toUpperCase();
+            date.textContent = `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
         }
     }
     updateClock();
