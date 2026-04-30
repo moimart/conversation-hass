@@ -597,6 +597,16 @@ async def lifespan(app: FastAPI):
             if not audio_bytes:
                 return
             try:
+                # Show in the transcript scroll (persistent history)
+                transcript_msg = {
+                    "type": "transcription",
+                    "text": text,
+                    "is_partial": False,
+                    "speaker": "ai",
+                }
+                await ws.send_json(transcript_msg)
+                await broadcast_to_ui(state, transcript_msg)
+                # And in the response panel (large, transient)
                 msg = {"type": "response", "text": text}
                 await ws.send_json(msg)
                 await broadcast_to_ui(state, msg)
