@@ -9,15 +9,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
 </head>
 <body>
+    <!-- Clock + date (outside #app so flex centering doesn't fight position:fixed) -->
+    <div class="clock-display" id="clock">
+        <div class="clock-time" id="clock-time">--:--</div>
+        <div class="clock-date" id="clock-date">---</div>
+    </div>
+
     <div id="app">
         <!-- Ambient background -->
         <div class="ambient-grid"></div>
-
-        <!-- Clock + date -->
-        <div class="clock-display" id="clock">
-            <div class="clock-time" id="clock-time">--:--</div>
-            <div class="clock-date" id="clock-date">---</div>
-        </div>
 
         <!-- Main eye container -->
         <div class="eye-container">
