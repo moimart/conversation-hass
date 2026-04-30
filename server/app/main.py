@@ -617,7 +617,7 @@ async def lifespan(app: FastAPI):
             if not text or not state.conversation:
                 return
             log.info(f"MQTT command: {text!r}")
-            await state.conversation.process_text(text)
+            await state.conversation.process_command(text)
 
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
