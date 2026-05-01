@@ -426,9 +426,9 @@ body.theme-japandi .ambient-grid::after {
 /* === Eye === */
 .eye-container {
     position: relative;
-    width: 325px;
-    height: 325px;
-    margin-bottom: 60px;
+    width: 406px;
+    height: 406px;
+    margin-bottom: 75px;
     z-index: 1;
 }
 
@@ -461,7 +461,7 @@ body.theme-japandi .ambient-grid::after {
 
 .eye-bezel-inner {
     position: absolute;
-    inset: 23px;
+    inset: 29px;
     border-radius: 50%;
     /* Deep recessed cavity: lighter at top edge (catches bezel light), darker at center */
     background: radial-gradient(circle at 50% 35%,
@@ -479,7 +479,7 @@ body.theme-japandi .ambient-grid::after {
 .eye-bezel-inner::after {
     content: '';
     position: absolute;
-    inset: 35px;
+    inset: 44px;
     border-radius: 50%;
     background: var(--lens-rim);
     box-shadow:
@@ -522,10 +522,10 @@ body.theme-japandi .ambient-grid::after {
    intrinsic aspect ratio and the element ends up huge. */
 .eye-stream {
     position: absolute;
-    top: 23px;
-    left: 23px;
-    width: calc(100% - 46px);
-    height: calc(100% - 46px);
+    top: 29px;
+    left: 29px;
+    width: calc(100% - 58px);
+    height: calc(100% - 58px);
     border-radius: 50%;
     object-fit: cover;
     background: #000;
@@ -539,7 +539,7 @@ body.theme-japandi .ambient-grid::after {
 
 .eye-outer-ring {
     position: absolute;
-    inset: 28px;
+    inset: 35px;
     border-radius: 50%;
     border: 1px solid rgba(var(--accent-rgb), 0.15);
     animation: ring-pulse 4s ease-in-out infinite;
@@ -547,7 +547,7 @@ body.theme-japandi .ambient-grid::after {
 
 .eye-middle-ring {
     position: absolute;
-    inset: 44px;
+    inset: 55px;
     border-radius: 50%;
     border: 1px solid rgba(var(--accent-rgb), 0.1);
     animation: ring-pulse 4s ease-in-out infinite 0.5s;
@@ -555,7 +555,7 @@ body.theme-japandi .ambient-grid::after {
 
 .eye-glow {
     position: absolute;
-    inset: -50px;
+    inset: -63px;
     border-radius: 50%;
     background: radial-gradient(circle, rgba(var(--accent-rgb), 0.08) 0%, transparent 70%);
     animation: glow-breathe 4s ease-in-out infinite;
@@ -564,7 +564,7 @@ body.theme-japandi .ambient-grid::after {
 
 .eye-core {
     position: absolute;
-    inset: 63px;
+    inset: 79px;
     border-radius: 50%;
     background: radial-gradient(circle at 45% 42%,
         var(--accent-glow) 0%,
@@ -601,7 +601,7 @@ body.theme-japandi .ambient-grid::after {
 
 .eye-iris {
     position: absolute;
-    inset: 25px;
+    inset: 31px;
     border-radius: 50%;
     /* Brighter, multi-stop iris glow — matches the cinematic HAL inner light */
     background:
@@ -617,8 +617,8 @@ body.theme-japandi .ambient-grid::after {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 38px;
-    height: 38px;
+    width: 48px;
+    height: 48px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
     background: radial-gradient(circle,
@@ -648,8 +648,8 @@ body.theme-japandi .ambient-grid::after {
     position: absolute;
     top: 58%;
     left: 62%;
-    width: 9px;
-    height: 9px;
+    width: 11px;
+    height: 11px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.22);
     filter: blur(1.2px);
@@ -659,7 +659,7 @@ body.theme-japandi .ambient-grid::after {
 
 .eye-scan-line {
     position: absolute;
-    inset: 38px;
+    inset: 48px;
     border-radius: 50%;
     overflow: hidden;
     opacity: 0;
