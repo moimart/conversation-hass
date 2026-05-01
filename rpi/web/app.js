@@ -238,6 +238,7 @@
     // to Home Assistant's camera/webrtc/offer subscription.
     let streamPC = null;
     let streamSessionId = null;
+    let streamMode = "trickle";
     function startStream(msg) {
         const container = document.querySelector(".eye-container");
         const video = document.getElementById("eye-stream");
@@ -246,6 +247,11 @@
         clearCamera();
         stopStream();
         streamSessionId = msg.session_id || "";
+        // "trickle" (HA): send offer immediately, stream candidates as
+        //   they arrive. "non-trickle" (go2rtc): wait for ICE gathering
+        //   to finish, then send a single bundled offer (the candidates
+        //   are already inside the SDP).
+        streamMode = msg.mode === "non-trickle" ? "non-trickle" : "trickle";
         const pc = new RTCPeerConnection();
         streamPC = pc;
         pc.addTransceiver("video", { direction: "recvonly" });
@@ -253,6 +259,7 @@
             if (ev.streams && ev.streams[0]) video.srcObject = ev.streams[0];
         };
         pc.onicecandidate = (ev) => {
+            if (streamMode !== "trickle") return;
             if (!ev.candidate || !ws || ws.readyState !== WebSocket.OPEN) return;
             ws.send(JSON.stringify({
                 type: "webrtc_signal",
@@ -269,16 +276,29 @@
             }
         };
         container.classList.add("camera-active", "stream-active");
+        const sendOffer = () => {
+            if (!ws || ws.readyState !== WebSocket.OPEN || !pc.localDescription) return;
+            ws.send(JSON.stringify({
+                type: "webrtc_signal",
+                session_id: streamSessionId,
+                kind: "offer",
+                sdp: pc.localDescription.sdp,
+            }));
+        };
+        const waitForIce = () => new Promise((resolve) => {
+            if (pc.iceGatheringState === "complete") return resolve();
+            pc.addEventListener("icegatheringstatechange", function onChange() {
+                if (pc.iceGatheringState === "complete") {
+                    pc.removeEventListener("icegatheringstatechange", onChange);
+                    resolve();
+                }
+            });
+        });
         pc.createOffer()
-            .then((offer) => pc.setLocalDescription(offer).then(() => offer))
-            .then((offer) => {
-                if (!ws || ws.readyState !== WebSocket.OPEN) return;
-                ws.send(JSON.stringify({
-                    type: "webrtc_signal",
-                    session_id: streamSessionId,
-                    kind: "offer",
-                    sdp: offer.sdp,
-                }));
+            .then((offer) => pc.setLocalDescription(offer))
+            .then(() => {
+                if (streamMode === "non-trickle") return waitForIce().then(sendOffer);
+                sendOffer();
             })
             .catch((e) => {
                 console.warn("WebRTC offer failed:", e);

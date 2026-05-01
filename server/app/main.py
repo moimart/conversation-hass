@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from .audio_pipeline import AudioPipeline
 from .conversation import ConversationManager
+from .go2rtc import Go2RTCClient
 from .ha_ws import HAWSClient
 from .local_tools import LocalToolsClient
 from .mcp_client import MCPClient, MultiMCPClient
@@ -60,7 +61,11 @@ class AppState:
     _ma_lock: object = field(default_factory=asyncio.Lock)
     # HA WebSocket client (lazy) used for WebRTC signaling
     ha_ws: object | None = None
-    # Active WebRTC session, if any: {session_id, entity_id, ha_sub_id, safety_task}
+    # go2rtc REST client (lazy) used by stream_rtsp
+    go2rtc: object | None = None
+    # Active WebRTC session, if any. Shape:
+    #   {session_id, kind: "ha"|"rtsp", entity_id|rtsp_url, safety_task,
+    #    ha_sub_id?, ha_session_id?, go2rtc_name?}
     active_stream: dict | None = None
 
 
@@ -292,9 +297,14 @@ async def _stop_active_stream(state: AppState, *, notify_kiosk: bool = True) -> 
     safety = session.get("safety_task")
     if safety:
         safety.cancel()
+    # HA path
     sub_id = session.get("ha_sub_id")
     if sub_id is not None and isinstance(state.ha_ws, HAWSClient):
         await state.ha_ws.unsubscribe(sub_id)
+    # go2rtc path
+    go2rtc_name = session.get("go2rtc_name")
+    if go2rtc_name and isinstance(state.go2rtc, Go2RTCClient):
+        await state.go2rtc.delete_stream(go2rtc_name)
     if notify_kiosk:
         msg = {"type": "stream_stop", "session_id": session.get("session_id", "")}
         ws = state.audio_websocket
@@ -304,6 +314,45 @@ async def _stop_active_stream(state: AppState, *, notify_kiosk: bool = True) -> 
             except Exception:
                 pass
         await broadcast_to_ui(state, msg)
+
+
+def _ensure_go2rtc(state: AppState) -> Go2RTCClient | None:
+    """Lazy-construct the go2rtc client. Returns None if GO2RTC_URL unset."""
+    url = os.environ.get("GO2RTC_URL", "").strip()
+    if not url:
+        return None
+    if isinstance(state.go2rtc, Go2RTCClient):
+        return state.go2rtc
+    state.go2rtc = Go2RTCClient(url)
+    return state.go2rtc
+
+
+async def _negotiate_rtsp_offer(state: AppState, session_id: str, offer_sdp: str) -> None:
+    """Hand a kiosk-side SDP offer to go2rtc and forward the answer back."""
+    if not state.active_stream or state.active_stream.get("session_id") != session_id:
+        return
+    if state.active_stream.get("kind") != "rtsp":
+        return
+    name = state.active_stream.get("go2rtc_name")
+    if not name or not isinstance(state.go2rtc, Go2RTCClient):
+        return
+    answer_sdp = await state.go2rtc.webrtc_offer(name, offer_sdp)
+    if not answer_sdp:
+        log.warning(f"go2rtc returned no answer for {name!r}")
+        await _stop_active_stream(state)
+        return
+    msg = {
+        "type": "webrtc_signal",
+        "session_id": session_id,
+        "kind": "answer",
+        "sdp": answer_sdp,
+    }
+    ws = state.audio_websocket
+    if ws:
+        try:
+            await ws.send_json(msg)
+        except Exception as e:
+            log.debug(f"forward go2rtc answer to kiosk failed: {e}")
 
 
 async def _on_ha_webrtc_event(state: AppState, session_id: str, event: dict) -> None:
@@ -861,6 +910,7 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
 
         state.active_stream = {
             "session_id": session_id,
+            "kind": "ha",
             "entity_id": entity_id,
             "ha_sub_id": None,
             "safety_task": asyncio.create_task(safety_stop()),
@@ -871,6 +921,7 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
                 "type": "stream_start",
                 "session_id": session_id,
                 "entity_id": entity_id,
+                "mode": "trickle",
             })
         except Exception as e:
             await _stop_active_stream(state, notify_kiosk=False)
@@ -892,12 +943,84 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         stream_camera,
     )
 
+    async def stream_rtsp(args: dict) -> str:
+        rtsp_url = (args.get("rtsp_url") or "").strip()
+        if not (rtsp_url.startswith("rtsp://") or rtsp_url.startswith("rtsps://")):
+            return "rtsp_url must start with rtsp:// or rtsps://"
+        try:
+            duration_s = int(args.get("duration_s", 300))
+        except (TypeError, ValueError):
+            duration_s = 300
+        duration_s = max(10, min(1800, duration_s))
+
+        client = _ensure_go2rtc(state)
+        if not client:
+            return "Live RTSP streaming unavailable (GO2RTC_URL not configured)"
+
+        await _stop_active_stream(state)
+        ws = state.audio_websocket
+        if not ws:
+            return "RPi not connected — cannot start stream"
+
+        import uuid
+        session_id = uuid.uuid4().hex
+        stream_name = f"hal_{session_id}"
+
+        if not await client.register_stream(stream_name, rtsp_url):
+            return f"Failed to register RTSP stream with go2rtc"
+
+        async def safety_stop():
+            try:
+                await asyncio.sleep(duration_s)
+                await _stop_active_stream(state)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass
+
+        state.active_stream = {
+            "session_id": session_id,
+            "kind": "rtsp",
+            "rtsp_url": rtsp_url,
+            "go2rtc_name": stream_name,
+            "safety_task": asyncio.create_task(safety_stop()),
+        }
+
+        try:
+            await ws.send_json({
+                "type": "stream_start",
+                "session_id": session_id,
+                "rtsp_url": rtsp_url,
+                # go2rtc's HTTP API is non-trickle: kiosk waits for ICE
+                # gathering to complete before sending its bundled offer.
+                "mode": "non-trickle",
+            })
+        except Exception as e:
+            await _stop_active_stream(state, notify_kiosk=False)
+            return f"Failed to notify kiosk: {e}"
+
+        return f"Streaming RTSP for up to {duration_s} seconds — say 'stop streaming' to end early"
+
+    tools.register(
+        "stream_rtsp",
+        "Start a live WebRTC video stream from any RTSP URL (any IP camera, NVR, Frigate go2rtc, etc.) and display it inside HAL's orb. Use when the user gives an explicit rtsp:// or rtsps:// URL, or asks to 'stream the RTSP at <url>'. The stream stays up to duration_s seconds (default 300 = 5 minutes); end early with 'stop streaming'. Replaces any active snapshot, image, or stream. RTSP credentials may be inline in the URL (rtsp://user:pass@host/path).",
+        {
+            "type": "object",
+            "properties": {
+                "rtsp_url": {"type": "string", "description": "RTSP URL, e.g. rtsp://user:pass@10.0.0.20:554/stream1"},
+                "duration_s": {"type": "integer", "minimum": 10, "maximum": 1800, "default": 300, "description": "Maximum stream duration in seconds (safety auto-stop)"},
+            },
+            "required": ["rtsp_url"],
+        },
+        stream_rtsp,
+    )
+
     async def stop_streaming(_args: dict) -> str:
         if not state.active_stream:
             return "No active video stream to stop"
-        entity = state.active_stream.get("entity_id", "")
+        label = state.active_stream.get("entity_id") or state.active_stream.get("rtsp_url") or ""
         await _stop_active_stream(state)
-        return f"Stopped streaming {entity}" if entity else "Stopped video stream"
+        return f"Stopped streaming {label}" if label else "Stopped video stream"
 
     tools.register(
         "stop_streaming",
@@ -1079,6 +1202,35 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 log.error(f"MQTT image dispatch failed: {e}")
 
+        async def _mqtt_rtsp_set(payload: str):
+            text = payload.strip()
+            if not text:
+                return
+            url = ""
+            duration_s = 300
+            if text.startswith("{"):
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError as e:
+                    log.warning(f"MQTT rtsp/set: invalid JSON: {e}")
+                    return
+                url = str(data.get("url") or data.get("rtsp_url") or "")
+                try:
+                    duration_s = int(data.get("duration_s", 300))
+                except (TypeError, ValueError):
+                    pass
+            elif text.startswith("rtsp://") or text.startswith("rtsps://"):
+                url = text
+            else:
+                log.warning("MQTT rtsp/set: payload is neither rtsp URL nor JSON")
+                return
+            if not state.local_tools:
+                return
+            result = await state.local_tools.call_tool(
+                "stream_rtsp", {"rtsp_url": url, "duration_s": duration_s}
+            )
+            log.info(f"MQTT rtsp: {result}")
+
         async def _mqtt_command(text: str):
             text = text.strip()
             conversation = state.conversation
@@ -1107,6 +1259,7 @@ async def lifespan(app: FastAPI):
         bridge.on_speak = _mqtt_speak
         bridge.on_command = _mqtt_command
         bridge.on_image_set = _mqtt_image_set
+        bridge.on_rtsp_set = _mqtt_rtsp_set
 
         await bridge.start()
         state.mqtt_bridge = bridge
@@ -1336,12 +1489,25 @@ async def audio_endpoint(websocket: WebSocket):
                     kind = msg.get("kind")
                     if kind == "offer" and msg.get("sdp"):
                         if state.active_stream and state.active_stream.get("session_id") == session_id:
-                            entity_id = state.active_stream.get("entity_id", "")
-                            asyncio.create_task(
-                                _start_webrtc_stream(state, entity_id, session_id, msg["sdp"])
-                            )
+                            stream_kind = state.active_stream.get("kind", "ha")
+                            if stream_kind == "rtsp":
+                                asyncio.create_task(
+                                    _negotiate_rtsp_offer(state, session_id, msg["sdp"])
+                                )
+                            else:
+                                entity_id = state.active_stream.get("entity_id", "")
+                                asyncio.create_task(
+                                    _start_webrtc_stream(state, entity_id, session_id, msg["sdp"])
+                                )
                     elif kind == "candidate":
-                        asyncio.create_task(_forward_kiosk_candidate(state, session_id, msg))
+                        # Only HA streams use trickle ICE; go2rtc bundles candidates
+                        # into the offer/answer so kiosk-side trickle is dropped.
+                        if (
+                            state.active_stream
+                            and state.active_stream.get("session_id") == session_id
+                            and state.active_stream.get("kind") != "rtsp"
+                        ):
+                            asyncio.create_task(_forward_kiosk_candidate(state, session_id, msg))
 
     except (WebSocketDisconnect, RuntimeError):
         log.info("Audio client disconnected")

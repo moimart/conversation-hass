@@ -34,6 +34,7 @@ services:
       - HAL_DEVICE_NAME=${HAL_DEVICE_NAME:-HAL}
       - SENDSPIN_PLAYER_ENTITY=${SENDSPIN_PLAYER_ENTITY:-}
       - SENDSPIN_PAUSE_DURING_TTS=${SENDSPIN_PAUSE_DURING_TTS:-false}
+      - GO2RTC_URL=${GO2RTC_URL:-http://host.docker.internal:1984}
     volumes:
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro
       - ./server/mcp_servers.json:/app/mcp_servers.json:ro
@@ -50,6 +51,17 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - shodh-memory
+      - go2rtc
+
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: hal-go2rtc
+    restart: unless-stopped
+    network_mode: host  # so peer-to-peer ICE candidates from the host LAN are reachable
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+    volumes:
+      - go2rtc-data:/config
 
   shodh-memory:
     image: varunshodh/shodh-memory:latest
@@ -65,3 +77,4 @@ services:
 volumes:
   huggingface-cache:
   shodh-data:
+  go2rtc-data:

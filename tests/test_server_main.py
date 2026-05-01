@@ -816,6 +816,158 @@ class TestPushImage:
         assert msg["duration_s"] == 45
 
 
+class TestStreamRtsp:
+    """Local tool stream_rtsp + go2rtc signaling proxy."""
+
+    def _state(self, monkeypatch):
+        from server.app.go2rtc import Go2RTCClient
+        monkeypatch.setenv("GO2RTC_URL", "http://go2rtc.test:1984")
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        # Stub the go2rtc client (spec'd so isinstance(state.go2rtc, Go2RTCClient) holds).
+        client = MagicMock(spec=Go2RTCClient)
+        client.register_stream = AsyncMock(return_value=True)
+        client.delete_stream = AsyncMock(return_value=True)
+        client.webrtc_offer = AsyncMock(return_value="v=0...answer...")
+        state.go2rtc = client
+        return state
+
+    async def _stream(self, state, args):
+        tools = _build_local_tools(state)
+        return await tools.call_tool("stream_rtsp", args)
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_rtsp_url(self, monkeypatch):
+        state = self._state(monkeypatch)
+        result = await self._stream(state, {"rtsp_url": "http://x"})
+        assert "rtsp" in result
+        state.audio_websocket.send_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_errors_when_go2rtc_unset(self, monkeypatch):
+        monkeypatch.delenv("GO2RTC_URL", raising=False)
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        result = await self._stream(state, {"rtsp_url": "rtsp://cam/x"})
+        assert "GO2RTC_URL" in result
+        assert state.active_stream is None
+
+    @pytest.mark.asyncio
+    async def test_registers_stream_and_pushes_stream_start(self, monkeypatch):
+        state = self._state(monkeypatch)
+        result = await self._stream(state, {"rtsp_url": "rtsp://cam/feed", "duration_s": 60})
+        assert "Streaming RTSP" in result
+        assert state.active_stream is not None
+        assert state.active_stream["kind"] == "rtsp"
+        assert state.active_stream["rtsp_url"] == "rtsp://cam/feed"
+        assert state.active_stream["go2rtc_name"].startswith("hal_")
+        state.go2rtc.register_stream.assert_awaited_once()
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["type"] == "stream_start"
+        assert msg["mode"] == "non-trickle"
+        assert msg["rtsp_url"] == "rtsp://cam/feed"
+        state.active_stream["safety_task"].cancel()
+
+    @pytest.mark.asyncio
+    async def test_register_failure_returns_error(self, monkeypatch):
+        state = self._state(monkeypatch)
+        state.go2rtc.register_stream = AsyncMock(return_value=False)
+        result = await self._stream(state, {"rtsp_url": "rtsp://cam/feed"})
+        assert "Failed to register" in result
+        assert state.active_stream is None
+
+    @pytest.mark.asyncio
+    async def test_stops_active_ha_stream_on_replace(self, monkeypatch):
+        state = self._state(monkeypatch)
+        state.active_stream = {
+            "session_id": "old", "kind": "ha", "entity_id": "camera.x",
+            "ha_sub_id": None, "ha_session_id": None,
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        first_safety = state.active_stream["safety_task"]
+        await self._stream(state, {"rtsp_url": "rtsp://cam/feed"})
+        await asyncio.sleep(0)
+        assert state.active_stream["kind"] == "rtsp"
+        assert first_safety.done()
+        state.active_stream["safety_task"].cancel()
+
+    @pytest.mark.asyncio
+    async def test_stop_active_stream_deletes_go2rtc_stream(self, monkeypatch):
+        from server.app.main import _stop_active_stream
+        state = self._state(monkeypatch)
+        await self._stream(state, {"rtsp_url": "rtsp://cam/feed"})
+        name = state.active_stream["go2rtc_name"]
+        await _stop_active_stream(state)
+        state.go2rtc.delete_stream.assert_awaited_with(name)
+        assert state.active_stream is None
+
+
+class TestRtspNegotiation:
+    """Server-side glue between kiosk offer and go2rtc answer."""
+
+    @pytest.mark.asyncio
+    async def test_negotiate_forwards_answer_to_kiosk(self):
+        from server.app.main import _negotiate_rtsp_offer
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        from server.app.go2rtc import Go2RTCClient
+        client = MagicMock(spec=Go2RTCClient)
+        client.webrtc_offer = AsyncMock(return_value="v=0...answer...")
+        state.go2rtc = client
+        state.active_stream = {
+            "session_id": "sid",
+            "kind": "rtsp",
+            "go2rtc_name": "hal_xyz",
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        await _negotiate_rtsp_offer(state, "sid", "v=0...offer...")
+        client.webrtc_offer.assert_awaited_once_with("hal_xyz", "v=0...offer...")
+        state.audio_websocket.send_json.assert_awaited_once()
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["type"] == "webrtc_signal"
+        assert msg["kind"] == "answer"
+        assert msg["sdp"] == "v=0...answer..."
+        state.active_stream["safety_task"].cancel()
+
+    @pytest.mark.asyncio
+    async def test_negotiate_stops_stream_when_go2rtc_returns_none(self):
+        from server.app.main import _negotiate_rtsp_offer
+        from server.app.go2rtc import Go2RTCClient
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        client = MagicMock(spec=Go2RTCClient)
+        client.webrtc_offer = AsyncMock(return_value=None)
+        client.delete_stream = AsyncMock(return_value=True)
+        state.go2rtc = client
+        state.active_stream = {
+            "session_id": "sid",
+            "kind": "rtsp",
+            "go2rtc_name": "hal_xyz",
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        await _negotiate_rtsp_offer(state, "sid", "v=0...")
+        assert state.active_stream is None
+
+    @pytest.mark.asyncio
+    async def test_negotiate_ignores_mismatched_session(self):
+        from server.app.main import _negotiate_rtsp_offer
+        from server.app.go2rtc import Go2RTCClient
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        client = MagicMock(spec=Go2RTCClient)
+        client.webrtc_offer = AsyncMock(return_value="v=0...")
+        state.go2rtc = client
+        state.active_stream = {
+            "session_id": "current",
+            "kind": "rtsp",
+            "go2rtc_name": "hal_xyz",
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        await _negotiate_rtsp_offer(state, "stale", "v=0...")
+        client.webrtc_offer.assert_not_awaited()
+        state.active_stream["safety_task"].cancel()
+
+
 class TestStreamSignalingHelpers:
     """Internal signaling glue between HA events and the kiosk."""
 

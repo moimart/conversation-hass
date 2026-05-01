@@ -75,7 +75,7 @@ No cloud services. No subscriptions. All processing stays on your network.
    - **Wake word mode** (default): Transcribed text is monitored for the wake word (configurable). Only after detecting it does the system engage the LLM. A two-tone chime plays and the HAL eye flashes white as confirmation. A 10-second follow-up window allows natural back-and-forth conversation without repeating the wake word.
    - **Always-on mode**: Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM automatically.
 
-5. **LLM with multi-MCP tool calling** — The user's command is sent to Ollama (configurable context window, defaults to 32k) with tool definitions discovered at startup from one or more MCP servers (typically Home Assistant, plus a built-in `LocalTools` server that exposes `ui_set_theme`, `audio_set_volume`, `audio_toggle_mute`, `get_sun_times`, `speak_verbatim`, `show_camera`, `show_image`, `stream_camera`, and `stop_streaming`). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. Conversational replies are returned as plain text. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
+5. **LLM with multi-MCP tool calling** — The user's command is sent to Ollama (configurable context window, defaults to 32k) with tool definitions discovered at startup from one or more MCP servers (typically Home Assistant, plus a built-in `LocalTools` server that exposes `ui_set_theme`, `audio_set_volume`, `audio_toggle_mute`, `get_sun_times`, `speak_verbatim`, `show_camera`, `show_image`, `stream_camera`, `stream_rtsp`, and `stop_streaming`). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. Conversational replies are returned as plain text. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
 
 6. **Long-term memory** — Before each LLM call, relevant memories are recalled from [Shodh Memory](https://www.shodh-memory.com/) and injected into the prompt as context. After each exchange, the conversation is stored as a new memory. Shodh uses Hebbian learning (connections that fire together wire together) and natural decay, so frequently referenced facts strengthen over time while irrelevant ones fade — like biological memory.
 
@@ -133,6 +133,7 @@ When `MQTT_BROKER_HOST` is set, HAL appears in HA via auto-discovery as a single
 | `text.<id>_speak` | text | Type anything → HAL speaks it via Wyoming TTS |
 | `text.<id>_command` | text | Type a command → run through the conversation pipeline (LLM + tools) |
 | `text.<id>_show_image` | text | Paste a URL (or short JSON) → show on the orb for 60 s |
+| `text.<id>_stream_rtsp` | text | Paste an RTSP URL → live WebRTC stream in the orb (5 min default) |
 
 Set `HAL_DEVICE_ID` (slug) and `HAL_DEVICE_NAME` (display name) to identify the device. State is republished on reconnect; availability uses MQTT Last-Will-Testament.
 
@@ -152,6 +153,15 @@ modes, all mutually exclusive (newest replaces previous):
   HA's `camera/webrtc/offer` subscription. Default 5 min, max 30.
   End early with `stop_streaming` ("stop streaming", "stop the
   video", etc.). Audio is dropped (video only).
+- **Arbitrary RTSP live stream** — `stream_rtsp(rtsp_url, duration_s=300)`
+  takes any RTSP URL (with optional inline credentials) and streams it
+  via the bundled go2rtc sidecar. The server registers a temporary
+  stream in go2rtc, then exchanges a non-trickle SDP offer/answer
+  through go2rtc's HTTP API (kiosk waits for ICE gathering to
+  complete before sending the offer; candidates are bundled in the
+  SDP). Same `stop_streaming` ends it. Also exposed via MQTT topic
+  `hal/<id>/rtsp/set` (URL or JSON `{"url":"...","duration_s":N}`)
+  and the HA Discovery text entity `text.<id>_stream_rtsp`.
 - **Arbitrary image push** — `show_image(url, duration_s=60)` from
   the LLM, **or** publish to MQTT `hal/<id>/image/set`, **or** write
   to the `text.<id>_show_image` HA entity. The MQTT topic accepts
@@ -288,6 +298,7 @@ docker compose -f docker-compose.rpi-ghcr.yml up -d
 This starts:
 - `hal-audio-streamer` — Mic capture, TTS playback, web UI on port **8080**
 - `hal-sendspin` — Music Assistant multi-room audio player (host networking, port **8927**)
+- `hal-go2rtc` — RTSP→WebRTC bridge sidecar for `stream_rtsp` (host networking, port **1984**)
 
 The audio streamer auto-detects the USB speakerphone, probes its native sample rate and channel count, and resamples to 16kHz mono with FIR anti-aliasing for the AI server. TTS playback is upsampled to the device's native rate.
 
@@ -351,6 +362,7 @@ conversation-hass/
 │       ├── mcp_client.py              # MCP client + MultiMCPClient (merge tools)
 │       ├── local_tools.py             # In-process MCP server: theme/volume/mute/sun/speak
 │       ├── ha_ws.py                   # HA WebSocket client (WebRTC offer signaling)
+│       ├── go2rtc.py                  # go2rtc HTTP client (stream registration + WebRTC offer)
 │       ├── mqtt_bridge.py             # HA Discovery + MQTT state/command bridge
 │       └── tts.py                     # Wyoming protocol TTS client
 │
@@ -435,6 +447,17 @@ HA URL or token.
 |---|---|---|
 | `HA_URL` | — | HA base URL, e.g. `http://homeassistant.local:8123` (leave empty to disable streaming) |
 | `HA_TOKEN` | — | HA Long-Lived Access Token (User profile → Long-Lived Access Tokens) |
+
+### go2rtc sidecar (arbitrary RTSP streaming)
+
+`stream_rtsp` registers an RTSP source in the bundled go2rtc service
+and exchanges a WebRTC offer/answer through it. Compose ships a
+go2rtc container on host networking (so its ICE candidates contain
+the host's LAN IPs, reachable from the kiosk).
+
+| Variable | Default | Description |
+|---|---|---|
+| `GO2RTC_URL` | `http://host.docker.internal:1984` | go2rtc HTTP/WS endpoint reachable from the AI server container |
 
 ### Audio (RPi)
 
@@ -546,7 +569,7 @@ uv pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-All 221 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
+All 236 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
 
 ## License
 

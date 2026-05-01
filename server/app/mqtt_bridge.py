@@ -14,6 +14,7 @@ Topic layout (with HAL_DEVICE_ID = "hal-default"):
     hal/hal-default/speak                    <- HA writes (notify -> /api/speak)
     hal/hal-default/command                  <- HA writes (text -> conversation pipeline)
     hal/hal-default/image/set                <- HA writes (URL / JSON / binary JPEG)
+    hal/hal-default/rtsp/set                 <- HA writes (RTSP URL / JSON)
     hal/hal-default/snapshot                 binary JPEG (published from RPi)
     hal/hal-default/availability             "online" / "offline"
 """
@@ -58,6 +59,8 @@ class MQTTBridge:
         # Image-set: payload may be raw image bytes, a URL string, or a JSON
         # wrapper. The caller decides what to do with it.
         self.on_image_set: Callable[[bytes | str], Awaitable[None]] | None = None
+        # RTSP-set: text payload (RTSP URL or JSON {url, duration_s}).
+        self.on_rtsp_set: Callable[[str], Awaitable[None]] | None = None
 
         self._client = None
         self._connected = False
@@ -215,6 +218,21 @@ class MQTTBridge:
             },
         ))
 
+        # Stream RTSP — paste an RTSP URL to start a WebRTC live stream
+        # in the orb (via the go2rtc sidecar). Default duration 5 min.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/stream_rtsp/config",
+            {
+                "name": "Stream RTSP",
+                "unique_id": f"{self.device_id}_stream_rtsp",
+                "command_topic": f"{self.base}/rtsp/set",
+                "icon": "mdi:cctv",
+                "availability": avail,
+                "device": device,
+                "mode": "text",
+            },
+        ))
+
         return configs
 
     async def start(self):
@@ -280,6 +298,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/speak")
                     await client.subscribe(f"{self.base}/command")
                     await client.subscribe(f"{self.base}/image/set")
+                    await client.subscribe(f"{self.base}/rtsp/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -346,6 +365,10 @@ class MQTTBridge:
             elif topic == f"{self.base}/command":
                 if payload and self.on_command:
                     await self.on_command(payload)
+
+            elif topic == f"{self.base}/rtsp/set":
+                if payload and self.on_rtsp_set:
+                    await self.on_rtsp_set(payload)
 
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")
