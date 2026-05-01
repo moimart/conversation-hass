@@ -13,6 +13,7 @@ Topic layout (with HAL_DEVICE_ID = "hal-default"):
     hal/hal-default/theme/set                <- HA writes
     hal/hal-default/speak                    <- HA writes (notify -> /api/speak)
     hal/hal-default/command                  <- HA writes (text -> conversation pipeline)
+    hal/hal-default/image/set                <- HA writes (URL / JSON / binary JPEG)
     hal/hal-default/snapshot                 binary JPEG (published from RPi)
     hal/hal-default/availability             "online" / "offline"
 """
@@ -54,6 +55,9 @@ class MQTTBridge:
         self.on_theme_set: Callable[[str], Awaitable[None]] | None = None
         self.on_speak: Callable[[str], Awaitable[None]] | None = None
         self.on_command: Callable[[str], Awaitable[None]] | None = None
+        # Image-set: payload may be raw image bytes, a URL string, or a JSON
+        # wrapper. The caller decides what to do with it.
+        self.on_image_set: Callable[[bytes | str], Awaitable[None]] | None = None
 
         self._client = None
         self._connected = False
@@ -193,6 +197,24 @@ class MQTTBridge:
             },
         ))
 
+        # Show Image — URL (or short JSON) -> orb. Same backing topic as
+        # the binary image/set channel; this entity is the URL-friendly UI
+        # for HA automations and openclaw skills. Max length raised so a
+        # JSON wrapper with a URL fits comfortably.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/show_image/config",
+            {
+                "name": "Show Image",
+                "unique_id": f"{self.device_id}_show_image",
+                "command_topic": f"{self.base}/image/set",
+                "icon": "mdi:image",
+                "availability": avail,
+                "device": device,
+                "mode": "text",
+                "max": 1000,
+            },
+        ))
+
         return configs
 
     async def start(self):
@@ -257,6 +279,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/theme/set")
                     await client.subscribe(f"{self.base}/speak")
                     await client.subscribe(f"{self.base}/command")
+                    await client.subscribe(f"{self.base}/image/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -278,6 +301,21 @@ class MQTTBridge:
         self._connected = False
 
     async def _handle_message(self, topic: str, raw_payload):
+        # image/set carries arbitrary bytes (binary JPEG) OR text (URL or
+        # JSON). Pass it through raw so the handler can decide.
+        if topic == f"{self.base}/image/set":
+            if self.on_image_set:
+                payload: bytes | str
+                if isinstance(raw_payload, (bytes, bytearray)):
+                    payload = bytes(raw_payload)
+                else:
+                    payload = str(raw_payload)
+                try:
+                    await self.on_image_set(payload)
+                except Exception as e:
+                    log.error(f"Error handling MQTT {topic}: {e}")
+            return
+
         try:
             payload = raw_payload.decode("utf-8") if isinstance(raw_payload, (bytes, bytearray)) else str(raw_payload)
         except Exception:

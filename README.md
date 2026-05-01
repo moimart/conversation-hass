@@ -75,7 +75,7 @@ No cloud services. No subscriptions. All processing stays on your network.
    - **Wake word mode** (default): Transcribed text is monitored for the wake word (configurable). Only after detecting it does the system engage the LLM. A two-tone chime plays and the HAL eye flashes white as confirmation. A 10-second follow-up window allows natural back-and-forth conversation without repeating the wake word.
    - **Always-on mode**: Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM automatically.
 
-5. **LLM with multi-MCP tool calling** — The user's command is sent to Ollama (configurable context window, defaults to 32k) with tool definitions discovered at startup from one or more MCP servers (typically Home Assistant, plus a built-in `LocalTools` server that exposes `ui_set_theme`, `audio_set_volume`, `audio_toggle_mute`, `get_sun_times`, `speak_verbatim`, `show_camera`, `stream_camera`, and `stop_streaming`). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. Conversational replies are returned as plain text. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
+5. **LLM with multi-MCP tool calling** — The user's command is sent to Ollama (configurable context window, defaults to 32k) with tool definitions discovered at startup from one or more MCP servers (typically Home Assistant, plus a built-in `LocalTools` server that exposes `ui_set_theme`, `audio_set_volume`, `audio_toggle_mute`, `get_sun_times`, `speak_verbatim`, `show_camera`, `show_image`, `stream_camera`, and `stop_streaming`). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. Conversational replies are returned as plain text. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
 
 6. **Long-term memory** — Before each LLM call, relevant memories are recalled from [Shodh Memory](https://www.shodh-memory.com/) and injected into the prompt as context. After each exchange, the conversation is stored as a new memory. Shodh uses Hebbian learning (connections that fire together wire together) and natural decay, so frequently referenced facts strengthen over time while irrelevant ones fade — like biological memory.
 
@@ -132,28 +132,51 @@ When `MQTT_BROKER_HOST` is set, HAL appears in HA via auto-discovery as a single
 | `camera.<id>_screen` | camera | Latest JPEG snapshot of the kiosk UI |
 | `text.<id>_speak` | text | Type anything → HAL speaks it via Wyoming TTS |
 | `text.<id>_command` | text | Type a command → run through the conversation pipeline (LLM + tools) |
+| `text.<id>_show_image` | text | Paste a URL (or short JSON) → show on the orb for 60 s |
 
 Set `HAL_DEVICE_ID` (slug) and `HAL_DEVICE_NAME` (display name) to identify the device. State is republished on reconnect; availability uses MQTT Last-Will-Testament.
 
-### Camera in the orb
+### Images and cameras in the orb
 
-HAL can paint any HA `camera.*` entity inside the eye, filling the
-area up to the metallic rim while keeping the bezel and crystal
-highlights on top. Two modes:
+HAL can paint any image — HA camera snapshot, live WebRTC stream, or
+arbitrary URL — inside the eye, filling the area up to the metallic
+rim while keeping the bezel and crystal highlights on top. Three
+modes, all mutually exclusive (newest replaces previous):
 
-- **Snapshot** — `show_camera(entity_id, duration_s=150)` fetches a
-  single JPEG via the HA MCP server and displays it for 5–900 s
-  (default 150). Replaces any active stream.
-- **Live stream** — `stream_camera(entity_id, duration_s=300)` opens
-  a WebRTC peer connection. The kiosk owns the `RTCPeerConnection`;
-  the server proxies SDP/ICE between kiosk and HA's
-  `camera/webrtc/offer` subscription. Default 5 min, max 30. Replaces
-  any active snapshot. End early with `stop_streaming` ("stop
-  streaming", "stop the video", etc.).
+- **HA camera snapshot** — `show_camera(entity_id, duration_s=150)`
+  fetches a single JPEG via the HA MCP server and displays it for
+  5–900 s (default 150).
+- **HA camera live stream** — `stream_camera(entity_id, duration_s=300)`
+  opens a WebRTC peer connection. The kiosk owns the
+  `RTCPeerConnection`; the server proxies SDP/ICE between kiosk and
+  HA's `camera/webrtc/offer` subscription. Default 5 min, max 30.
+  End early with `stop_streaming` ("stop streaming", "stop the
+  video", etc.). Audio is dropped (video only).
+- **Arbitrary image push** — `show_image(url, duration_s=60)` from
+  the LLM, **or** publish to MQTT `hal/<id>/image/set`, **or** write
+  to the `text.<id>_show_image` HA entity. The MQTT topic accepts
+  binary JPEG/PNG/GIF/WebP, a plain URL, or a JSON wrapper:
+  `{"url": "...", "duration_s": 90}` or
+  `{"image": "<base64>", "mime": "image/png", "duration_s": 30}`.
+  Server-side URL fetcher caps responses at 8 MB and 10 s, refuses
+  non-image content types, and auto-attaches `HA_TOKEN` when the URL
+  starts with `HA_URL` (so `/local/` and `/api/camera_proxy/` work
+  out of the box). Default duration 60 s, configurable per call,
+  bounds 5–600 s.
 
 Streaming requires HA 2024.11+ (built-in go2rtc) and a Long-Lived
-Access Token in `HA_TOKEN` plus `HA_URL`. Live audio is dropped to
-avoid feedback with HAL's TTS — only video is requested.
+Access Token in `HA_TOKEN` plus `HA_URL`. The `show_image` URL
+fetcher uses the same token only when the URL targets HA.
+
+Example HA automation pushing an image to HAL via the text helper:
+
+```yaml
+service: text.set_value
+target:
+  entity_id: text.hal_default_show_image
+data:
+  value: 'https://homeassistant.local:8123/local/dinner.jpg'
+```
 
 ### Sendspin (multi-room audio)
 
@@ -523,7 +546,7 @@ uv pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-All 207 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
+All 221 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
 
 ## License
 

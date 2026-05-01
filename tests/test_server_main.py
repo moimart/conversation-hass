@@ -689,6 +689,133 @@ class TestStreamCamera:
         assert state.active_stream is None
 
 
+class TestPushImage:
+    """Image push pipeline (URL fetch, payload detection, MQTT bridge wiring)."""
+
+    @pytest.mark.asyncio
+    async def test_detect_image_mime(self):
+        from server.app.main import _detect_image_mime
+        assert _detect_image_mime(b"\xff\xd8\xff\xe0sample") == "image/jpeg"
+        assert _detect_image_mime(b"\x89PNG\r\n\x1a\n....") == "image/png"
+        assert _detect_image_mime(b"GIF89a....") == "image/gif"
+        assert _detect_image_mime(b"RIFF1234WEBPVP8L") == "image/webp"
+        assert _detect_image_mime(b"hello world") is None
+
+    @pytest.mark.asyncio
+    async def test_dispatch_show_image_pushes_ws_and_ui(self):
+        from server.app.main import _dispatch_show_image
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        await _dispatch_show_image(state, "Zm9v", "image/jpeg", 60, entity_id="external")
+        state.audio_websocket.send_json.assert_awaited_once()
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["type"] == "show_camera"
+        assert msg["image"] == "Zm9v"
+        assert msg["mime"] == "image/jpeg"
+        assert msg["duration_s"] == 60
+        assert msg["entity_id"] == "external"
+
+    @pytest.mark.asyncio
+    async def test_dispatch_show_image_stops_active_stream(self):
+        from server.app.main import _dispatch_show_image
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        state.active_stream = {
+            "session_id": "x", "entity_id": "camera.x",
+            "ha_sub_id": None, "ha_session_id": None,
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        await _dispatch_show_image(state, "Zm9v", "image/jpeg", 60)
+        assert state.active_stream is None
+
+    @pytest.mark.asyncio
+    async def test_push_payload_binary_jpeg(self):
+        from server.app.main import _push_image_payload
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        result = await _push_image_payload(state, b"\xff\xd8\xff\xe0jpeg-bytes", default_duration=60)
+        assert "pushed" in result and "image/jpeg" in result
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["mime"] == "image/jpeg"
+        assert msg["duration_s"] == 60
+
+    @pytest.mark.asyncio
+    async def test_push_payload_url_calls_fetcher(self):
+        from server.app import main as srv
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        fetcher = AsyncMock(return_value=(b"\xff\xd8\xff\xe0", "image/jpeg"))
+        with patch.object(srv, "_fetch_image_url", fetcher):
+            result = await srv._push_image_payload(state, "https://example.com/x.jpg", default_duration=60)
+            fetcher.assert_awaited_once_with("https://example.com/x.jpg")
+        assert "pushed" in result
+
+    @pytest.mark.asyncio
+    async def test_push_payload_json_url_with_duration(self):
+        from server.app import main as srv
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        body = json.dumps({"url": "https://example.com/x.jpg", "duration_s": 90})
+        with patch.object(srv, "_fetch_image_url", AsyncMock(return_value=(b"\xff\xd8\xff", "image/jpeg"))):
+            await srv._push_image_payload(state, body, default_duration=60)
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["duration_s"] == 90
+
+    @pytest.mark.asyncio
+    async def test_push_payload_json_inline_base64(self):
+        from server.app.main import _push_image_payload
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        body = json.dumps({"image": "AAAA", "mime": "image/png", "duration_s": 30})
+        result = await _push_image_payload(state, body, default_duration=60)
+        assert "inline base64" in result
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["image"] == "AAAA"
+        assert msg["mime"] == "image/png"
+        assert msg["duration_s"] == 30
+
+    @pytest.mark.asyncio
+    async def test_push_payload_invalid_string(self):
+        from server.app.main import _push_image_payload
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        result = await _push_image_payload(state, "not a url and not json", default_duration=60)
+        assert "neither" in result
+        state.audio_websocket.send_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_push_payload_clamps_duration(self):
+        from server.app import main as srv
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        body = json.dumps({"url": "https://x", "duration_s": 99999})
+        with patch.object(srv, "_fetch_image_url", AsyncMock(return_value=(b"\xff\xd8\xff", "image/jpeg"))):
+            await srv._push_image_payload(state, body, default_duration=60)
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["duration_s"] == 600
+
+    @pytest.mark.asyncio
+    async def test_show_image_tool_rejects_non_http(self):
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        tools = _build_local_tools(state)
+        result = await tools.call_tool("show_image", {"url": "ftp://x"})
+        assert "http" in result
+        state.audio_websocket.send_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_show_image_tool_dispatches_through_fetcher(self, monkeypatch):
+        from server.app import main as srv
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        monkeypatch.setattr(srv, "_fetch_image_url", AsyncMock(return_value=(b"\xff\xd8\xff", "image/jpeg")))
+        tools = _build_local_tools(state)
+        result = await tools.call_tool("show_image", {"url": "http://x.test/foo.jpg", "duration_s": 45})
+        assert "pushed" in result
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["duration_s"] == 45
+
+
 class TestStreamSignalingHelpers:
     """Internal signaling glue between HA events and the kiosk."""
 

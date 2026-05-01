@@ -406,6 +406,164 @@ async def _forward_kiosk_candidate(state: AppState, session_id: str, payload: di
         log.debug(f"forward kiosk candidate failed: {e}")
 
 
+# --- Image push to orb -------------------------------------------------------
+
+# Anything pushed to the kiosk uses the existing show_camera WS message. The
+# kiosk doesn't care whether the bytes came from an HA camera, an MQTT topic,
+# or an LLM tool — it just paints them inside the orb for duration_s seconds.
+
+_IMAGE_MAX_BYTES = 8 * 1024 * 1024  # 8 MB
+_IMAGE_FETCH_TIMEOUT = 10.0
+
+
+async def _fetch_image_url(url: str) -> tuple[bytes, str] | None:
+    """Fetch an image URL with sane caps. Returns (bytes, mime) or None.
+
+    Auto-attaches the HA bearer token when the URL points at the configured
+    HA instance, so /local/ and /api/camera_proxy/ paths work without extra
+    config. Refuses non-image content types and anything over 8 MB.
+    """
+    import httpx
+    headers: dict[str, str] = {}
+    ha_url = os.environ.get("HA_URL", "").rstrip("/")
+    ha_token = os.environ.get("HA_TOKEN", "")
+    if ha_url and ha_token and url.startswith(ha_url):
+        headers["Authorization"] = f"Bearer {ha_token}"
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=_IMAGE_FETCH_TIMEOUT,
+            max_redirects=3,
+        ) as client:
+            r = await client.get(url, headers=headers)
+            r.raise_for_status()
+            mime = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+            if not mime.startswith("image/"):
+                log.warning(f"refusing non-image content-type {mime!r} from {url}")
+                return None
+            data = r.content
+            if len(data) > _IMAGE_MAX_BYTES:
+                log.warning(f"image at {url} is {len(data)} bytes, cap is {_IMAGE_MAX_BYTES}")
+                return None
+            return data, mime
+    except Exception as e:
+        log.warning(f"image fetch failed for {url}: {e}")
+        return None
+
+
+def _detect_image_mime(data: bytes) -> str | None:
+    """Return the MIME type for a JPEG/PNG/GIF/WebP byte payload, or None."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+async def _dispatch_show_image(
+    state: AppState,
+    image_b64: str,
+    mime: str,
+    duration_s: int,
+    *,
+    entity_id: str = "external",
+) -> bool:
+    """Push an image to the kiosk via the existing show_camera WS message.
+
+    Stops any active live stream first (mutual exclusion). Returns True if
+    we got the message out — even if the kiosk websocket is closed (the UI
+    broadcast is best-effort).
+    """
+    await _stop_active_stream(state)
+    msg = {
+        "type": "show_camera",
+        "image": image_b64,
+        "mime": mime,
+        "duration_s": duration_s,
+        "entity_id": entity_id,
+    }
+    ws = state.audio_websocket
+    sent = False
+    if ws:
+        try:
+            await ws.send_json(msg)
+            sent = True
+        except Exception as e:
+            log.warning(f"show_image ws send failed: {e}")
+    await broadcast_to_ui(state, msg)
+    return sent
+
+
+async def _push_image_payload(state: AppState, raw: bytes | str, default_duration: int = 60) -> str:
+    """Handle a payload from the MQTT image/set topic or text helper.
+
+    Detects the payload form (binary image / URL / JSON wrapper) and
+    dispatches it. Returns a short status string for logging.
+    """
+    duration_s = default_duration
+    image_bytes: bytes | None = None
+    mime: str | None = None
+    image_b64_inline: str | None = None
+    url: str | None = None
+
+    if isinstance(raw, (bytes, bytearray)):
+        # Binary: image bytes if it looks like one, otherwise try as text.
+        detected = _detect_image_mime(bytes(raw))
+        if detected:
+            image_bytes = bytes(raw)
+            mime = detected
+        else:
+            try:
+                raw = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                return "unrecognized binary payload"
+
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.startswith("{"):
+            try:
+                data = json.loads(s)
+            except json.JSONDecodeError as e:
+                return f"invalid JSON: {e}"
+            try:
+                duration_s = int(data.get("duration_s", default_duration))
+            except (TypeError, ValueError):
+                duration_s = default_duration
+            if data.get("url"):
+                url = str(data["url"])
+            elif data.get("image"):
+                image_b64_inline = str(data["image"])
+                mime = str(data.get("mime") or "image/jpeg")
+        elif s.startswith("http://") or s.startswith("https://"):
+            url = s
+        else:
+            return "payload is neither image bytes, URL, nor JSON"
+
+    duration_s = max(5, min(600, duration_s))
+
+    if url:
+        fetched = await _fetch_image_url(url)
+        if not fetched:
+            return f"fetch failed for {url}"
+        image_bytes, mime = fetched
+
+    if image_b64_inline:
+        await _dispatch_show_image(state, image_b64_inline, mime or "image/jpeg", duration_s)
+        return f"pushed inline base64 ({len(image_b64_inline)} chars) for {duration_s}s"
+
+    if image_bytes and mime:
+        import base64
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        await _dispatch_show_image(state, b64, mime, duration_s)
+        return f"pushed {len(image_bytes)} bytes ({mime}) for {duration_s}s"
+
+    return "nothing to display"
+
+
 async def apply_theme(state: AppState, theme: str) -> bool:
     """Update server-side theme and push to RPi web UI."""
     if theme not in VALID_THEMES:
@@ -613,9 +771,6 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         if not state.mcp_client or "ha_get_camera_image" not in state.mcp_client.tool_names:
             return "Camera fetch unavailable (Home Assistant MCP not connected)"
 
-        # Snapshot replaces any active live stream
-        await _stop_active_stream(state)
-
         content = await state.mcp_client.call_tool_content(
             "ha_get_camera_image", {"entity_id": entity_id}
         )
@@ -630,20 +785,7 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         if not image_b64:
             return f"No image returned for {entity_id}"
 
-        msg = {
-            "type": "show_camera",
-            "image": image_b64,
-            "mime": mime,
-            "duration_s": duration_s,
-            "entity_id": entity_id,
-        }
-        ws = state.audio_websocket
-        if ws:
-            try:
-                await ws.send_json(msg)
-            except Exception as e:
-                log.warning(f"show_camera ws send failed: {e}")
-        await broadcast_to_ui(state, msg)
+        await _dispatch_show_image(state, image_b64, mime, duration_s, entity_id=entity_id)
         return f"Showing {entity_id} on the orb for {duration_s} seconds"
 
     tools.register(
@@ -658,6 +800,32 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
             "required": ["entity_id"],
         },
         show_camera,
+    )
+
+    async def show_image(args: dict) -> str:
+        url = (args.get("url") or "").strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return "url must start with http:// or https://"
+        try:
+            duration_s = int(args.get("duration_s", 60))
+        except (TypeError, ValueError):
+            duration_s = 60
+        duration_s = max(5, min(600, duration_s))
+        result = await _push_image_payload(state, url, default_duration=duration_s)
+        return result
+
+    tools.register(
+        "show_image",
+        "Display an arbitrary image (by URL) inside HAL's orb. Use when the user asks to 'show a picture of X', 'put X on screen', or 'display the photo at <url>'. Default duration is 60 s; pass duration_s for longer or shorter. Replaces any active camera snapshot or stream.",
+        {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Public http(s) URL of the image"},
+                "duration_s": {"type": "integer", "minimum": 5, "maximum": 600, "default": 60, "description": "How long to show the image, in seconds"},
+            },
+            "required": ["url"],
+        },
+        show_image,
     )
 
     async def stream_camera(args: dict) -> str:
@@ -904,6 +1072,13 @@ async def lifespan(app: FastAPI):
                 if state.pipeline:
                     state.pipeline.set_ai_speaking(False)
 
+        async def _mqtt_image_set(payload):
+            try:
+                result = await _push_image_payload(state, payload, default_duration=60)
+                log.info(f"MQTT image: {result}")
+            except Exception as e:
+                log.error(f"MQTT image dispatch failed: {e}")
+
         async def _mqtt_command(text: str):
             text = text.strip()
             conversation = state.conversation
@@ -931,6 +1106,7 @@ async def lifespan(app: FastAPI):
         bridge.on_theme_set = _mqtt_theme
         bridge.on_speak = _mqtt_speak
         bridge.on_command = _mqtt_command
+        bridge.on_image_set = _mqtt_image_set
 
         await bridge.start()
         state.mqtt_bridge = bridge
