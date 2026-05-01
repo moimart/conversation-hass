@@ -199,8 +199,9 @@ class MQTTBridge:
 
         # Show Image — URL (or short JSON) -> orb. Same backing topic as
         # the binary image/set channel; this entity is the URL-friendly UI
-        # for HA automations and openclaw skills. Max length raised so a
-        # JSON wrapper with a URL fits comfortably.
+        # for HA automations and openclaw skills. HA caps text-entity `max`
+        # at 255, so we use the default — fits a typical URL and a small
+        # JSON wrapper. For longer payloads use the MQTT topic directly.
         configs.append((
             f"{DISCOVERY_PREFIX}/text/{self.device_id}/show_image/config",
             {
@@ -211,7 +212,6 @@ class MQTTBridge:
                 "availability": avail,
                 "device": device,
                 "mode": "text",
-                "max": 1000,
             },
         ))
 
