@@ -343,7 +343,10 @@ class AudioManager:
             log.info(f"Volume set to {self.tts_volume:.0%} (via server)")
             await self.broadcast_to_ui({"type": "volume_sync", "level": self.tts_volume})
 
-        elif msg_type in ("transcription", "response", "wake", "state", "set_theme", "show_camera"):
+        elif msg_type in (
+            "transcription", "response", "wake", "state", "set_theme",
+            "show_camera", "stream_start", "stream_stop", "webrtc_signal",
+        ):
             await self.broadcast_to_ui(msg)
 
     def handle_binary_data(self, data: bytes):
@@ -461,6 +464,13 @@ class AudioManager:
                     elif msg_type == "mute":
                         self.mic_muted = bool(data.get("muted", False))
                         log.info(f"Mic {'muted' if self.mic_muted else 'unmuted'}")
+                    elif msg_type == "webrtc_signal":
+                        # Kiosk → server WebRTC signaling. Forward upstream as-is.
+                        if self._server_ws:
+                            try:
+                                await self._server_ws.send(json.dumps(data))
+                            except Exception as e:
+                                log.debug(f"webrtc_signal upstream forward failed: {e}")
         finally:
             self.ui_clients.discard(ws)
             log.info(f"Web UI client disconnected (total: {len(self.ui_clients)})")

@@ -129,6 +129,15 @@
             case "show_camera":
                 showCamera(msg);
                 break;
+            case "stream_start":
+                startStream(msg);
+                break;
+            case "stream_stop":
+                stopStream();
+                break;
+            case "webrtc_signal":
+                handleSignal(msg);
+                break;
             default:
                 console.log("Unknown message:", msg);
         }
@@ -206,11 +215,14 @@
         const container = document.querySelector(".eye-container");
         const inner = document.querySelector(".eye-bezel-inner");
         if (!container || !inner || !msg.image) return;
+        // Snapshot replaces any active live stream.
+        stopStream();
         const mime = msg.mime || "image/jpeg";
         const dur = Math.max(5, Math.min(900, Number(msg.duration_s) || 150));
         if (cameraTimer) clearTimeout(cameraTimer);
         inner.style.backgroundImage = `url("data:${mime};base64,${msg.image}")`;
         container.classList.add("camera-active");
+        container.classList.remove("stream-active");
         cameraTimer = setTimeout(clearCamera, dur * 1000);
     }
     function clearCamera() {
@@ -219,6 +231,92 @@
         if (inner) inner.style.backgroundImage = "";
         if (container) container.classList.remove("camera-active");
         cameraTimer = null;
+    }
+
+    // --- Live WebRTC stream-in-orb ---
+    // The kiosk owns the RTCPeerConnection. The server proxies signaling
+    // to Home Assistant's camera/webrtc/offer subscription.
+    let streamPC = null;
+    let streamSessionId = null;
+    function startStream(msg) {
+        const container = document.querySelector(".eye-container");
+        const video = document.getElementById("eye-stream");
+        if (!container || !video) return;
+        // A new stream replaces any existing one (snapshot or stream).
+        clearCamera();
+        stopStream();
+        streamSessionId = msg.session_id || "";
+        const pc = new RTCPeerConnection();
+        streamPC = pc;
+        pc.addTransceiver("video", { direction: "recvonly" });
+        pc.ontrack = (ev) => {
+            if (ev.streams && ev.streams[0]) video.srcObject = ev.streams[0];
+        };
+        pc.onicecandidate = (ev) => {
+            if (!ev.candidate || !ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({
+                type: "webrtc_signal",
+                session_id: streamSessionId,
+                kind: "candidate",
+                candidate: ev.candidate.candidate,
+                sdpMid: ev.candidate.sdpMid,
+                sdpMLineIndex: ev.candidate.sdpMLineIndex,
+            }));
+        };
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+                stopStream();
+            }
+        };
+        container.classList.add("camera-active", "stream-active");
+        pc.createOffer()
+            .then((offer) => pc.setLocalDescription(offer).then(() => offer))
+            .then((offer) => {
+                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                ws.send(JSON.stringify({
+                    type: "webrtc_signal",
+                    session_id: streamSessionId,
+                    kind: "offer",
+                    sdp: offer.sdp,
+                }));
+            })
+            .catch((e) => {
+                console.warn("WebRTC offer failed:", e);
+                stopStream();
+            });
+    }
+    function handleSignal(msg) {
+        if (!streamPC || !streamSessionId || msg.session_id !== streamSessionId) return;
+        if (msg.kind === "answer" && msg.sdp) {
+            streamPC.setRemoteDescription({ type: "answer", sdp: msg.sdp }).catch((e) => {
+                console.warn("setRemoteDescription failed:", e);
+            });
+        } else if (msg.kind === "candidate" && msg.candidate) {
+            streamPC.addIceCandidate({
+                candidate: msg.candidate,
+                sdpMid: msg.sdpMid || null,
+                sdpMLineIndex: msg.sdpMLineIndex == null ? null : msg.sdpMLineIndex,
+            }).catch((e) => {
+                console.debug("addIceCandidate ignored:", e);
+            });
+        }
+    }
+    function stopStream() {
+        const container = document.querySelector(".eye-container");
+        const video = document.getElementById("eye-stream");
+        if (streamPC) {
+            try { streamPC.close(); } catch (e) { /* ignore */ }
+            streamPC = null;
+        }
+        streamSessionId = null;
+        if (video) {
+            try { video.srcObject = null; } catch (e) { /* ignore */ }
+        }
+        if (container) {
+            container.classList.remove("stream-active");
+            // Drop camera-active too if no snapshot is on screen
+            if (!cameraTimer) container.classList.remove("camera-active");
+        }
     }
 
     // --- State Management ---

@@ -489,10 +489,11 @@ body.theme-japandi .ambient-grid::after {
     pointer-events: none;
 }
 
-/* Camera-in-orb mode — fill inside the metallic rim with the image,
-   hide the inner cavity contour, decorative rings, iris and pupil so
-   nothing occludes the picture. The bezel (metallic rim) and the
-   eye-reflection highlight stay on top for the crystal-glass feel. */
+/* Camera-in-orb mode — fill inside the metallic rim with the image
+   (snapshot) or the live <video> (stream). Hide the inner cavity
+   contour, decorative rings, and the iris/pupil so nothing occludes
+   the picture. The bezel (metallic rim) and the eye-reflection
+   highlight stay on top for the crystal-glass feel. */
 .eye-container.camera-active .eye-bezel-inner {
     background-size: cover !important;
     background-position: center !important;
@@ -512,6 +513,21 @@ body.theme-japandi .ambient-grid::after {
 .eye-container.camera-active .eye-core::before,
 .eye-container.camera-active .eye-core::after {
     display: none;
+}
+
+/* Live stream <video> overlay. Sits where the snapshot image goes
+   (inside the metallic rim) and is hidden until .stream-active. */
+.eye-stream {
+    position: absolute;
+    inset: 18px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #000;
+    pointer-events: none;
+    display: none;
+}
+.eye-container.stream-active .eye-stream {
+    display: block;
 }
 
 .eye-outer-ring {

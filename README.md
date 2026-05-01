@@ -75,7 +75,7 @@ No cloud services. No subscriptions. All processing stays on your network.
    - **Wake word mode** (default): Transcribed text is monitored for the wake word (configurable). Only after detecting it does the system engage the LLM. A two-tone chime plays and the HAL eye flashes white as confirmation. A 10-second follow-up window allows natural back-and-forth conversation without repeating the wake word.
    - **Always-on mode**: Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM automatically.
 
-5. **LLM with multi-MCP tool calling** — The user's command is sent to Ollama (configurable context window, defaults to 32k) with tool definitions discovered at startup from one or more MCP servers (typically Home Assistant, plus a built-in `LocalTools` server that exposes `ui_set_theme`, `audio_set_volume`, `audio_toggle_mute`, `get_sun_times`, and `speak_verbatim`). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. Conversational replies are returned as plain text. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
+5. **LLM with multi-MCP tool calling** — The user's command is sent to Ollama (configurable context window, defaults to 32k) with tool definitions discovered at startup from one or more MCP servers (typically Home Assistant, plus a built-in `LocalTools` server that exposes `ui_set_theme`, `audio_set_volume`, `audio_toggle_mute`, `get_sun_times`, `speak_verbatim`, `show_camera`, `stream_camera`, and `stop_streaming`). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. Conversational replies are returned as plain text. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
 
 6. **Long-term memory** — Before each LLM call, relevant memories are recalled from [Shodh Memory](https://www.shodh-memory.com/) and injected into the prompt as context. After each exchange, the conversation is stored as a new memory. Shodh uses Hebbian learning (connections that fire together wire together) and natural decay, so frequently referenced facts strengthen over time while irrelevant ones fade — like biological memory.
 
@@ -86,6 +86,8 @@ No cloud services. No subscriptions. All processing stays on your network.
 9. **Home Assistant integration** — When MQTT is configured, the AI server publishes HA Discovery messages so HAL appears as a single device exposing state, volume, mute, theme, a camera (the latest UI snapshot), and a text input that speaks anything you write into it. The kiosk page rasterizes itself via `html2canvas` every 60s and POSTs the JPEG to the server.
 
 10. **Multi-room audio (optional)** — A Sendspin sidecar on the Pi registers an [Open Home Foundation](https://www.openhomefoundation.org/) multi-room player in Music Assistant. HAL TTS and Sendspin music share the same PulseAudio socket; HA announcements duck the music via `module-role-ducking` while HAL speaks. Hardware volume buttons on the Anker target MA when music is playing and HAL TTS otherwise.
+
+11. **Camera in the orb** — Ask HAL to show or stream any HA camera and it appears inside the eye (filling the area up to the metallic rim, with the bezel and crystal highlights still on top). `show_camera` paints a snapshot for 150 s by default; `stream_camera` opens a low-latency WebRTC stream against HA's built-in go2rtc (HA 2024.11+) for up to 5 min, ended early by saying "stop streaming". The kiosk owns the `RTCPeerConnection`; the server proxies SDP/ICE between kiosk and HA's WebSocket API. Live audio is dropped — only video is requested — to avoid feedback with HAL's own TTS.
 
 ## Speech-to-Text Engines
 
@@ -129,8 +131,29 @@ When `MQTT_BROKER_HOST` is set, HAL appears in HA via auto-discovery as a single
 | `select.<id>_theme` | select | Live theme switching |
 | `camera.<id>_screen` | camera | Latest JPEG snapshot of the kiosk UI |
 | `text.<id>_speak` | text | Type anything → HAL speaks it via Wyoming TTS |
+| `text.<id>_command` | text | Type a command → run through the conversation pipeline (LLM + tools) |
 
 Set `HAL_DEVICE_ID` (slug) and `HAL_DEVICE_NAME` (display name) to identify the device. State is republished on reconnect; availability uses MQTT Last-Will-Testament.
+
+### Camera in the orb
+
+HAL can paint any HA `camera.*` entity inside the eye, filling the
+area up to the metallic rim while keeping the bezel and crystal
+highlights on top. Two modes:
+
+- **Snapshot** — `show_camera(entity_id, duration_s=150)` fetches a
+  single JPEG via the HA MCP server and displays it for 5–900 s
+  (default 150). Replaces any active stream.
+- **Live stream** — `stream_camera(entity_id, duration_s=300)` opens
+  a WebRTC peer connection. The kiosk owns the `RTCPeerConnection`;
+  the server proxies SDP/ICE between kiosk and HA's
+  `camera/webrtc/offer` subscription. Default 5 min, max 30. Replaces
+  any active snapshot. End early with `stop_streaming` ("stop
+  streaming", "stop the video", etc.).
+
+Streaming requires HA 2024.11+ (built-in go2rtc) and a Long-Lived
+Access Token in `HA_TOKEN` plus `HA_URL`. Live audio is dropped to
+avoid feedback with HAL's TTS — only video is requested.
 
 ### Sendspin (multi-room audio)
 
@@ -304,6 +327,7 @@ conversation-hass/
 │       ├── memory.py                  # Shodh Memory client (remember/recall)
 │       ├── mcp_client.py              # MCP client + MultiMCPClient (merge tools)
 │       ├── local_tools.py             # In-process MCP server: theme/volume/mute/sun/speak
+│       ├── ha_ws.py                   # HA WebSocket client (WebRTC offer signaling)
 │       ├── mqtt_bridge.py             # HA Discovery + MQTT state/command bridge
 │       └── tts.py                     # Wyoming protocol TTS client
 │
@@ -376,6 +400,18 @@ conversation-hass/
 | `MEMORY_URL` | `http://shodh-memory:3030` | Shodh Memory service URL |
 | `MEMORY_USER_ID` | `hal-default` | User ID for memory isolation |
 | `MEMORY_API_KEY` | — | Shodh API key (if your instance requires auth) |
+
+### Home Assistant WebSocket (live camera streaming)
+
+`stream_camera` opens a WebRTC peer connection against HA's built-in
+`camera/webrtc/offer` subscription. The server holds the credentials
+and proxies SDP/ICE between kiosk and HA — the kiosk never sees the
+HA URL or token.
+
+| Variable | Default | Description |
+|---|---|---|
+| `HA_URL` | — | HA base URL, e.g. `http://homeassistant.local:8123` (leave empty to disable streaming) |
+| `HA_TOKEN` | — | HA Long-Lived Access Token (User profile → Long-Lived Access Tokens) |
 
 ### Audio (RPi)
 
@@ -454,6 +490,13 @@ conversation-hass/
 {"type": "volume_adjust", "step": 0.1}       // Adjust TTS volume
 {"type": "mute_toggle"}                      // Toggle mic mute
 {"type": "mute_query"}                       // Ask current mute state
+{"type": "show_camera", "image": "<b64>", "mime": "image/jpeg",
+ "duration_s": 150, "entity_id": "camera.x"}  // Paint snapshot inside the orb
+{"type": "stream_start", "session_id": "...",
+ "entity_id": "camera.x"}                    // Begin live WebRTC stream
+{"type": "stream_stop", "session_id": "..."} // End live stream
+{"type": "webrtc_signal", "session_id": "...",
+ "kind": "answer"|"candidate", ...}           // SDP/ICE forwarded from HA
 ```
 
 **RPi → Server (`/ws/audio`):**
@@ -464,6 +507,8 @@ conversation-hass/
 {"type": "mute_sync", "muted": true}         // RPi reports mute state change
 {"type": "volume_sync", "level": 0.7}        // RPi reports volume change
 {"type": "ma_volume_adjust", "step": 0.1}    // Forward HID button to MA player
+{"type": "webrtc_signal", "session_id": "...",
+ "kind": "offer"|"candidate", ...}            // Kiosk-side SDP/ICE for stream
 ```
 
 ## Customizing the System Prompt
@@ -478,7 +523,7 @@ uv pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-All 179 tests run without GPU, ML models, or external services — dependencies are fully mocked.
+All 207 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
 
 ## License
 

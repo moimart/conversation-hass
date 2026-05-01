@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from .audio_pipeline import AudioPipeline
 from .conversation import ConversationManager
+from .ha_ws import HAWSClient
 from .local_tools import LocalToolsClient
 from .mcp_client import MCPClient, MultiMCPClient
 from .memory import MemoryClient
@@ -57,6 +58,10 @@ class AppState:
     # Serializes media_player service calls so rapid HID volume mashes
     # don't fan out into N concurrent HA calls arriving out of order.
     _ma_lock: object = field(default_factory=asyncio.Lock)
+    # HA WebSocket client (lazy) used for WebRTC signaling
+    ha_ws: object | None = None
+    # Active WebRTC session, if any: {session_id, entity_id, ha_sub_id, safety_task}
+    active_stream: dict | None = None
 
 
 def _generate_chime() -> bytes:
@@ -260,6 +265,123 @@ async def _ma_resume_if_we_paused(state: AppState) -> None:
     if state.sendspin_was_playing:
         state.sendspin_was_playing = False
         await _ma_call(state, "media_play")
+
+
+# --- WebRTC streaming ---------------------------------------------------------
+
+async def _ensure_ha_ws(state: AppState) -> HAWSClient | None:
+    """Lazy-connect the HA WS client. Returns None if HA_URL/HA_TOKEN unset."""
+    ha_url = os.environ.get("HA_URL", "").strip()
+    ha_token = os.environ.get("HA_TOKEN", "").strip()
+    if not ha_url or not ha_token:
+        return None
+    if state.ha_ws and getattr(state.ha_ws, "connected", False):
+        return state.ha_ws
+    client = HAWSClient(ha_url, ha_token)
+    await client.connect()
+    state.ha_ws = client
+    return client
+
+
+async def _stop_active_stream(state: AppState, *, notify_kiosk: bool = True) -> None:
+    """Tear down the active WebRTC session (if any)."""
+    session = state.active_stream
+    if not session:
+        return
+    state.active_stream = None
+    safety = session.get("safety_task")
+    if safety:
+        safety.cancel()
+    sub_id = session.get("ha_sub_id")
+    if sub_id is not None and isinstance(state.ha_ws, HAWSClient):
+        await state.ha_ws.unsubscribe(sub_id)
+    if notify_kiosk:
+        msg = {"type": "stream_stop", "session_id": session.get("session_id", "")}
+        ws = state.audio_websocket
+        if ws:
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                pass
+        await broadcast_to_ui(state, msg)
+
+
+async def _on_ha_webrtc_event(state: AppState, session_id: str, event: dict) -> None:
+    """Forward an HA WebRTC subscription event to the kiosk as a webrtc_signal."""
+    msg_type = event.get("type")
+    out: dict | None = None
+    if msg_type == "answer":
+        out = {
+            "type": "webrtc_signal",
+            "session_id": session_id,
+            "kind": "answer",
+            "sdp": event.get("answer"),
+        }
+    elif msg_type == "candidate":
+        cand = event.get("candidate") or {}
+        out = {
+            "type": "webrtc_signal",
+            "session_id": session_id,
+            "kind": "candidate",
+            "candidate": cand.get("candidate") if isinstance(cand, dict) else cand,
+            "sdpMid": cand.get("sdpMid") if isinstance(cand, dict) else None,
+            "sdpMLineIndex": cand.get("sdpMLineIndex") if isinstance(cand, dict) else None,
+        }
+    elif msg_type == "error":
+        log.warning(f"HA WebRTC error: {event}")
+        await _stop_active_stream(state)
+        return
+    if not out:
+        return
+    ws = state.audio_websocket
+    if ws:
+        try:
+            await ws.send_json(out)
+        except Exception:
+            pass
+
+
+async def _start_webrtc_stream(state: AppState, entity_id: str, session_id: str, offer_sdp: str) -> bool:
+    """Begin the HA WebRTC offer subscription. Returns True on success."""
+    ha = await _ensure_ha_ws(state)
+    if not ha:
+        log.warning("HA WS unavailable (HA_URL/HA_TOKEN unset)")
+        return False
+
+    async def handler(event: dict) -> None:
+        await _on_ha_webrtc_event(state, session_id, event)
+
+    sub_id = await ha.subscribe(
+        {"type": "camera/webrtc/offer", "entity_id": entity_id, "offer": offer_sdp},
+        handler,
+    )
+    if state.active_stream:
+        state.active_stream["ha_sub_id"] = sub_id
+    return True
+
+
+async def _forward_kiosk_candidate(state: AppState, session_id: str, payload: dict) -> None:
+    """Forward a kiosk-side ICE candidate to HA for the active session."""
+    if not state.active_stream or state.active_stream.get("session_id") != session_id:
+        return
+    sub_id = state.active_stream.get("ha_sub_id")
+    if sub_id is None or not isinstance(state.ha_ws, HAWSClient):
+        return
+    try:
+        await state.ha_ws.send_command(
+            {
+                "type": "camera/webrtc/candidate",
+                "session_id": session_id,
+                "candidate": {
+                    "candidate": payload.get("candidate", ""),
+                    "sdpMid": payload.get("sdpMid"),
+                    "sdpMLineIndex": payload.get("sdpMLineIndex"),
+                },
+            },
+            timeout=2.0,
+        )
+    except Exception as e:
+        log.debug(f"forward kiosk candidate failed: {e}")
 
 
 async def apply_theme(state: AppState, theme: str) -> bool:
@@ -469,6 +591,9 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         if not state.mcp_client or "ha_get_camera_image" not in state.mcp_client.tool_names:
             return "Camera fetch unavailable (Home Assistant MCP not connected)"
 
+        # Snapshot replaces any active live stream
+        await _stop_active_stream(state)
+
         content = await state.mcp_client.call_tool_content(
             "ha_get_camera_image", {"entity_id": entity_id}
         )
@@ -511,6 +636,84 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
             "required": ["entity_id"],
         },
         show_camera,
+    )
+
+    async def stream_camera(args: dict) -> str:
+        entity_id = (args.get("entity_id") or "").strip()
+        if not entity_id.startswith("camera."):
+            return "entity_id must be a camera.* entity"
+        try:
+            duration_s = int(args.get("duration_s", 300))
+        except (TypeError, ValueError):
+            duration_s = 300
+        duration_s = max(10, min(1800, duration_s))
+
+        if not os.environ.get("HA_URL") or not os.environ.get("HA_TOKEN"):
+            return "Live streaming unavailable (HA_URL/HA_TOKEN not configured)"
+
+        # Replace any active modality (snapshot or stream)
+        await _stop_active_stream(state)
+        ws = state.audio_websocket
+        if not ws:
+            return "RPi not connected — cannot start stream"
+
+        import uuid
+        session_id = uuid.uuid4().hex
+
+        async def safety_stop():
+            try:
+                await asyncio.sleep(duration_s)
+                await _stop_active_stream(state)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass
+
+        state.active_stream = {
+            "session_id": session_id,
+            "entity_id": entity_id,
+            "ha_sub_id": None,
+            "safety_task": asyncio.create_task(safety_stop()),
+        }
+
+        try:
+            await ws.send_json({
+                "type": "stream_start",
+                "session_id": session_id,
+                "entity_id": entity_id,
+            })
+        except Exception as e:
+            await _stop_active_stream(state, notify_kiosk=False)
+            return f"Failed to notify kiosk: {e}"
+
+        return f"Streaming {entity_id} live for up to {duration_s} seconds — say 'stop streaming' to end early"
+
+    tools.register(
+        "stream_camera",
+        "Start a live WebRTC video stream from a Home Assistant camera and display it inside HAL's orb. Use when the user asks to 'watch <camera> live', 'stream the <camera>', or 'show <camera> live'. The stream stays up to duration_s seconds (default 300 = 5 minutes); the user can end it earlier with 'stop streaming'. Replaces any active snapshot or stream. To find the right entity_id, use ha_search_entities with domain=camera first.",
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "Camera entity_id, e.g. camera.front_door"},
+                "duration_s": {"type": "integer", "minimum": 10, "maximum": 1800, "default": 300, "description": "Maximum stream duration in seconds (safety auto-stop)"},
+            },
+            "required": ["entity_id"],
+        },
+        stream_camera,
+    )
+
+    async def stop_streaming(_args: dict) -> str:
+        if not state.active_stream:
+            return "No active video stream to stop"
+        entity = state.active_stream.get("entity_id", "")
+        await _stop_active_stream(state)
+        return f"Stopped streaming {entity}" if entity else "Stopped video stream"
+
+    tools.register(
+        "stop_streaming",
+        "Stop the live camera stream currently playing inside HAL's orb. Call this when the user says any of: 'stop streaming', 'stop the video', 'stop the camera', 'don't show the video anymore', 'hide the live view', 'turn off the camera feed', or anything else that asks to dismiss the live feed.",
+        {"type": "object", "properties": {}},
+        stop_streaming,
     )
 
     return tools
@@ -720,6 +923,10 @@ async def lifespan(app: FastAPI):
     # Shutdown
     if getattr(state, "theme_scheduler_task", None):
         state.theme_scheduler_task.cancel()
+    if state.active_stream:
+        await _stop_active_stream(state, notify_kiosk=False)
+    if isinstance(state.ha_ws, HAWSClient):
+        await state.ha_ws.disconnect()
     if state.mqtt_bridge:
         await state.mqtt_bridge.stop()
     if state.mcp_client:
@@ -924,6 +1131,19 @@ async def audio_endpoint(websocket: WebSocket):
                         step = 0.0
                     if step != 0.0:
                         asyncio.create_task(_ma_volume_step(state, step))
+                elif msg_type == "webrtc_signal":
+                    # Kiosk → server signaling for an active stream session.
+                    # offer is sent on stream start; candidate is sent during ICE.
+                    session_id = str(msg.get("session_id", ""))
+                    kind = msg.get("kind")
+                    if kind == "offer" and msg.get("sdp"):
+                        if state.active_stream and state.active_stream.get("session_id") == session_id:
+                            entity_id = state.active_stream.get("entity_id", "")
+                            asyncio.create_task(
+                                _start_webrtc_stream(state, entity_id, session_id, msg["sdp"])
+                            )
+                    elif kind == "candidate":
+                        asyncio.create_task(_forward_kiosk_candidate(state, session_id, msg))
 
     except (WebSocketDisconnect, RuntimeError):
         log.info("Audio client disconnected")

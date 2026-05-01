@@ -1,5 +1,6 @@
 """Tests for the server main.py: AppState, lifespan, endpoints, chime generation."""
 
+import asyncio
 import io
 import json
 import wave
@@ -571,3 +572,164 @@ class TestShowCamera:
         await self._show_camera(state, {"entity_id": "camera.x"})
         msg = state.audio_websocket.send_json.await_args.args[0]
         assert msg["duration_s"] == 150
+
+
+class TestStreamCamera:
+    """Local tools for the live WebRTC stream lifecycle."""
+
+    def _state(self, monkeypatch):
+        monkeypatch.setenv("HA_URL", "http://ha.local:8123")
+        monkeypatch.setenv("HA_TOKEN", "token")
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        return state
+
+    async def _stream(self, state, args):
+        tools = _build_local_tools(state)
+        return await tools.call_tool("stream_camera", args)
+
+    async def _stop(self, state):
+        tools = _build_local_tools(state)
+        return await tools.call_tool("stop_streaming", {})
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_camera_entity(self, monkeypatch):
+        state = self._state(monkeypatch)
+        result = await self._stream(state, {"entity_id": "light.x"})
+        assert "must be a camera" in result
+        assert state.active_stream is None
+        state.audio_websocket.send_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_errors_when_ha_creds_missing(self, monkeypatch):
+        monkeypatch.delenv("HA_URL", raising=False)
+        monkeypatch.delenv("HA_TOKEN", raising=False)
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        result = await self._stream(state, {"entity_id": "camera.x"})
+        assert "Live streaming unavailable" in result
+        assert state.active_stream is None
+
+    @pytest.mark.asyncio
+    async def test_errors_when_rpi_disconnected(self, monkeypatch):
+        state = self._state(monkeypatch)
+        state.audio_websocket = None
+        result = await self._stream(state, {"entity_id": "camera.x"})
+        assert "RPi not connected" in result
+        assert state.active_stream is None
+
+    @pytest.mark.asyncio
+    async def test_stream_start_pushes_to_kiosk_and_tracks_session(self, monkeypatch):
+        state = self._state(monkeypatch)
+        result = await self._stream(state, {"entity_id": "camera.front", "duration_s": 60})
+        assert "camera.front" in result
+        assert state.active_stream is not None
+        assert state.active_stream["entity_id"] == "camera.front"
+        sid = state.active_stream["session_id"]
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["type"] == "stream_start"
+        assert msg["session_id"] == sid
+        assert msg["entity_id"] == "camera.front"
+        # Cleanup the safety task to avoid pytest warnings.
+        state.active_stream["safety_task"].cancel()
+
+    @pytest.mark.asyncio
+    async def test_clamps_duration_to_valid_range(self, monkeypatch):
+        state = self._state(monkeypatch)
+        await self._stream(state, {"entity_id": "camera.x", "duration_s": 10_000_000})
+        # Internal: just check the safety task is scheduled and the session
+        # is tracked. We don't expose the duration directly to the kiosk.
+        assert state.active_stream is not None
+        state.active_stream["safety_task"].cancel()
+
+    @pytest.mark.asyncio
+    async def test_stop_streaming_no_active(self, monkeypatch):
+        state = self._state(monkeypatch)
+        result = await self._stop(state)
+        assert "No active" in result
+
+    @pytest.mark.asyncio
+    async def test_stop_streaming_clears_session_and_notifies_kiosk(self, monkeypatch):
+        state = self._state(monkeypatch)
+        await self._stream(state, {"entity_id": "camera.x"})
+        state.audio_websocket.send_json.reset_mock()
+        result = await self._stop(state)
+        assert "camera.x" in result
+        assert state.active_stream is None
+        state.audio_websocket.send_json.assert_awaited()
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["type"] == "stream_stop"
+
+    @pytest.mark.asyncio
+    async def test_new_stream_replaces_active_stream(self, monkeypatch):
+        state = self._state(monkeypatch)
+        await self._stream(state, {"entity_id": "camera.a"})
+        first_sid = state.active_stream["session_id"]
+        first_safety = state.active_stream["safety_task"]
+        await self._stream(state, {"entity_id": "camera.b"})
+        # Yield once so the cancelled first safety task settles.
+        await asyncio.sleep(0)
+        assert state.active_stream is not None
+        assert state.active_stream["entity_id"] == "camera.b"
+        assert state.active_stream["session_id"] != first_sid
+        assert first_safety.done()
+        state.active_stream["safety_task"].cancel()
+
+    @pytest.mark.asyncio
+    async def test_show_camera_stops_active_stream(self, monkeypatch):
+        state = self._state(monkeypatch)
+        await self._stream(state, {"entity_id": "camera.live"})
+        # Now call show_camera with a dummy MCP returning an image
+        state.mcp_client = MagicMock()
+        state.mcp_client.tool_names = ["ha_get_camera_image"]
+        item = MagicMock(); item.data = "Z"; item.mimeType = "image/jpeg"
+        state.mcp_client.call_tool_content = AsyncMock(return_value=[item])
+        tools = _build_local_tools(state)
+        await tools.call_tool("show_camera", {"entity_id": "camera.snap"})
+        assert state.active_stream is None
+
+
+class TestStreamSignalingHelpers:
+    """Internal signaling glue between HA events and the kiosk."""
+
+    @pytest.mark.asyncio
+    async def test_on_ha_event_answer_forwards_to_kiosk(self):
+        from server.app.main import _on_ha_webrtc_event
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        await _on_ha_webrtc_event(state, "sid1", {"type": "answer", "answer": "v=0..."})
+        state.audio_websocket.send_json.assert_awaited_once()
+        out = state.audio_websocket.send_json.await_args.args[0]
+        assert out["type"] == "webrtc_signal"
+        assert out["kind"] == "answer"
+        assert out["session_id"] == "sid1"
+        assert out["sdp"] == "v=0..."
+
+    @pytest.mark.asyncio
+    async def test_on_ha_event_candidate_forwards_fields(self):
+        from server.app.main import _on_ha_webrtc_event
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        await _on_ha_webrtc_event(state, "sid1", {
+            "type": "candidate",
+            "candidate": {"candidate": "candidate:1 ...", "sdpMid": "0", "sdpMLineIndex": 0},
+        })
+        out = state.audio_websocket.send_json.await_args.args[0]
+        assert out["kind"] == "candidate"
+        assert out["candidate"] == "candidate:1 ..."
+        assert out["sdpMid"] == "0"
+        assert out["sdpMLineIndex"] == 0
+
+    @pytest.mark.asyncio
+    async def test_on_ha_event_error_stops_stream(self):
+        from server.app.main import _on_ha_webrtc_event
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        state.active_stream = {
+            "session_id": "sid1",
+            "entity_id": "camera.x",
+            "ha_sub_id": None,
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        await _on_ha_webrtc_event(state, "sid1", {"type": "error", "code": "timeout"})
+        assert state.active_stream is None
