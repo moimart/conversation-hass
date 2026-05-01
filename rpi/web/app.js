@@ -203,24 +203,33 @@
     // --- Camera-in-orb display ---
     let cameraTimer = null;
     function showCamera(msg) {
+        const core = document.querySelector(".eye-core");
         const iris = document.querySelector(".eye-iris");
-        if (!iris || !msg.image) return;
+        const pupil = document.querySelector(".eye-pupil");
+        if (!core || !msg.image) return;
         const mime = msg.mime || "image/jpeg";
         const dur = Math.max(5, Math.min(900, Number(msg.duration_s) || 150));
         if (cameraTimer) clearTimeout(cameraTimer);
-        iris.style.backgroundImage = `url("data:${mime};base64,${msg.image}")`;
-        iris.style.backgroundSize = "cover";
-        iris.style.backgroundPosition = "center";
-        iris.style.backgroundRepeat = "no-repeat";
+        core.style.backgroundImage = `url("data:${mime};base64,${msg.image}")`;
+        core.style.backgroundSize = "cover";
+        core.style.backgroundPosition = "center";
+        core.style.backgroundRepeat = "no-repeat";
+        if (iris) iris.style.opacity = "0";
+        if (pupil) pupil.style.opacity = "0";
         cameraTimer = setTimeout(clearCamera, dur * 1000);
     }
     function clearCamera() {
+        const core = document.querySelector(".eye-core");
         const iris = document.querySelector(".eye-iris");
-        if (!iris) return;
-        iris.style.backgroundImage = "";
-        iris.style.backgroundSize = "";
-        iris.style.backgroundPosition = "";
-        iris.style.backgroundRepeat = "";
+        const pupil = document.querySelector(".eye-pupil");
+        if (core) {
+            core.style.backgroundImage = "";
+            core.style.backgroundSize = "";
+            core.style.backgroundPosition = "";
+            core.style.backgroundRepeat = "";
+        }
+        if (iris) iris.style.opacity = "";
+        if (pupil) pupil.style.opacity = "";
         cameraTimer = null;
     }
 
