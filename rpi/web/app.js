@@ -203,33 +203,21 @@
     // --- Camera-in-orb display ---
     let cameraTimer = null;
     function showCamera(msg) {
-        const core = document.querySelector(".eye-core");
-        const iris = document.querySelector(".eye-iris");
-        const pupil = document.querySelector(".eye-pupil");
-        if (!core || !msg.image) return;
+        const container = document.querySelector(".eye-container");
+        const inner = document.querySelector(".eye-bezel-inner");
+        if (!container || !inner || !msg.image) return;
         const mime = msg.mime || "image/jpeg";
         const dur = Math.max(5, Math.min(900, Number(msg.duration_s) || 150));
         if (cameraTimer) clearTimeout(cameraTimer);
-        core.style.backgroundImage = `url("data:${mime};base64,${msg.image}")`;
-        core.style.backgroundSize = "cover";
-        core.style.backgroundPosition = "center";
-        core.style.backgroundRepeat = "no-repeat";
-        if (iris) iris.style.opacity = "0";
-        if (pupil) pupil.style.opacity = "0";
+        inner.style.backgroundImage = `url("data:${mime};base64,${msg.image}")`;
+        container.classList.add("camera-active");
         cameraTimer = setTimeout(clearCamera, dur * 1000);
     }
     function clearCamera() {
-        const core = document.querySelector(".eye-core");
-        const iris = document.querySelector(".eye-iris");
-        const pupil = document.querySelector(".eye-pupil");
-        if (core) {
-            core.style.backgroundImage = "";
-            core.style.backgroundSize = "";
-            core.style.backgroundPosition = "";
-            core.style.backgroundRepeat = "";
-        }
-        if (iris) iris.style.opacity = "";
-        if (pupil) pupil.style.opacity = "";
+        const container = document.querySelector(".eye-container");
+        const inner = document.querySelector(".eye-bezel-inner");
+        if (inner) inner.style.backgroundImage = "";
+        if (container) container.classList.remove("camera-active");
         cameraTimer = null;
     }
 

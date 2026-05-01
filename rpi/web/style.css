@@ -489,6 +489,31 @@ body.theme-japandi .ambient-grid::after {
     pointer-events: none;
 }
 
+/* Camera-in-orb mode — fill inside the metallic rim with the image,
+   hide the inner cavity contour, decorative rings, iris and pupil so
+   nothing occludes the picture. The bezel (metallic rim) and the
+   eye-reflection highlight stay on top for the crystal-glass feel. */
+.eye-container.camera-active .eye-bezel-inner {
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+.eye-container.camera-active .eye-bezel-inner::after,
+.eye-container.camera-active .eye-outer-ring,
+.eye-container.camera-active .eye-middle-ring {
+    display: none;
+}
+.eye-container.camera-active .eye-core,
+.eye-container.camera-active .eye-iris,
+.eye-container.camera-active .eye-pupil {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+.eye-container.camera-active .eye-core::before,
+.eye-container.camera-active .eye-core::after {
+    display: none;
+}
+
 .eye-outer-ring {
     position: absolute;
     inset: 22px;
