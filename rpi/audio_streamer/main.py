@@ -343,7 +343,7 @@ class AudioManager:
             log.info(f"Volume set to {self.tts_volume:.0%} (via server)")
             await self.broadcast_to_ui({"type": "volume_sync", "level": self.tts_volume})
 
-        elif msg_type in ("transcription", "response", "wake", "state", "set_theme"):
+        elif msg_type in ("transcription", "response", "wake", "state", "set_theme", "show_camera"):
             await self.broadcast_to_ui(msg)
 
     def handle_binary_data(self, data: bytes):

@@ -126,6 +126,9 @@
                     applyTheme(msg.name);
                 }
                 break;
+            case "show_camera":
+                showCamera(msg);
+                break;
             default:
                 console.log("Unknown message:", msg);
         }
@@ -195,6 +198,30 @@
         responseText.textContent = text;
         responseContainer.classList.add("visible");
         setState("speaking");
+    }
+
+    // --- Camera-in-orb display ---
+    let cameraTimer = null;
+    function showCamera(msg) {
+        const iris = document.querySelector(".eye-iris");
+        if (!iris || !msg.image) return;
+        const mime = msg.mime || "image/jpeg";
+        const dur = Math.max(5, Math.min(900, Number(msg.duration_s) || 150));
+        if (cameraTimer) clearTimeout(cameraTimer);
+        iris.style.backgroundImage = `url("data:${mime};base64,${msg.image}")`;
+        iris.style.backgroundSize = "cover";
+        iris.style.backgroundPosition = "center";
+        iris.style.backgroundRepeat = "no-repeat";
+        cameraTimer = setTimeout(clearCamera, dur * 1000);
+    }
+    function clearCamera() {
+        const iris = document.querySelector(".eye-iris");
+        if (!iris) return;
+        iris.style.backgroundImage = "";
+        iris.style.backgroundSize = "";
+        iris.style.backgroundPosition = "";
+        iris.style.backgroundRepeat = "";
+        cameraTimer = null;
     }
 
     // --- State Management ---

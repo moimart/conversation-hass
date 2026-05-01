@@ -11,6 +11,7 @@ import pytest
 
 from server.app.main import (
     AppState,
+    _build_local_tools,
     _generate_chime,
     _get_state,
     _ma_call,
@@ -495,3 +496,78 @@ class TestSendspinAppStateDefaults:
         # _ma_lock defaults to an asyncio.Lock instance.
         import asyncio as _a
         assert isinstance(state._ma_lock, _a.Lock)
+
+
+class TestShowCamera:
+    """Local tool that fetches a camera snapshot and pushes it to the kiosk."""
+
+    def _state(self):
+        state = AppState()
+        state.mcp_client = MagicMock()
+        state.mcp_client.tool_names = ["ha_get_camera_image"]
+        state.mcp_client.call_tool_content = AsyncMock(return_value=[])
+        state.audio_websocket = AsyncMock()
+        return state
+
+    async def _show_camera(self, state, args):
+        tools = _build_local_tools(state)
+        return await tools.call_tool("show_camera", args)
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_camera_entity(self):
+        state = self._state()
+        result = await self._show_camera(state, {"entity_id": "light.kitchen"})
+        assert "must be a camera" in result
+        state.mcp_client.call_tool_content.assert_not_awaited()
+        state.audio_websocket.send_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_errors_when_mcp_unavailable(self):
+        state = self._state()
+        state.mcp_client.tool_names = []  # ha_get_camera_image absent
+        result = await self._show_camera(state, {"entity_id": "camera.front"})
+        assert "Home Assistant" in result
+        state.audio_websocket.send_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_error_when_no_image_returned(self):
+        state = self._state()
+        state.mcp_client.call_tool_content = AsyncMock(return_value=[])
+        result = await self._show_camera(state, {"entity_id": "camera.front"})
+        assert "No image" in result
+        state.audio_websocket.send_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_pushes_image_message_on_success(self):
+        state = self._state()
+        item = MagicMock()
+        item.data = "BASE64DATA"
+        item.mimeType = "image/jpeg"
+        state.mcp_client.call_tool_content = AsyncMock(return_value=[item])
+        result = await self._show_camera(state, {"entity_id": "camera.front", "duration_s": 60})
+        assert "camera.front" in result
+        state.audio_websocket.send_json.assert_awaited_once()
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["type"] == "show_camera"
+        assert msg["image"] == "BASE64DATA"
+        assert msg["mime"] == "image/jpeg"
+        assert msg["duration_s"] == 60
+        assert msg["entity_id"] == "camera.front"
+
+    @pytest.mark.asyncio
+    async def test_clamps_duration_to_valid_range(self):
+        state = self._state()
+        item = MagicMock(); item.data = "X"; item.mimeType = "image/jpeg"
+        state.mcp_client.call_tool_content = AsyncMock(return_value=[item])
+        await self._show_camera(state, {"entity_id": "camera.x", "duration_s": 999999})
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["duration_s"] == 900
+
+    @pytest.mark.asyncio
+    async def test_default_duration_is_150s(self):
+        state = self._state()
+        item = MagicMock(); item.data = "X"; item.mimeType = "image/jpeg"
+        state.mcp_client.call_tool_content = AsyncMock(return_value=[item])
+        await self._show_camera(state, {"entity_id": "camera.x"})
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["duration_s"] == 150

@@ -158,6 +158,21 @@ class MCPClient:
             log.error(error_msg)
             return error_msg
 
+    async def call_tool_content(self, name: str, arguments: dict[str, Any] | None = None) -> list:
+        """Like call_tool, but returns the raw MCP content list.
+
+        Use this when a tool returns non-text content (e.g. ImageContent
+        from ha_get_camera_image). Returns an empty list on error.
+        """
+        if not self._session or name not in self.tool_names:
+            return []
+        try:
+            result = await self._session.call_tool(name, arguments or {})
+            return list(result.content)
+        except Exception as e:
+            log.error(f"Error calling tool {name} for content: {e}")
+            return []
+
 
 class MultiMCPClient:
     """Wraps multiple MCPClient instances, merging tools and routing calls."""
@@ -230,3 +245,13 @@ class MultiMCPClient:
         if not client:
             return f"Error: Server '{server_name}' not connected"
         return await client.call_tool(name, arguments)
+
+    async def call_tool_content(self, name: str, arguments: dict[str, Any] | None = None) -> list:
+        """Route to the owning client's call_tool_content if available."""
+        server_name = self._tool_to_server.get(name)
+        if not server_name:
+            return []
+        client = self._clients.get(server_name)
+        if not client or not hasattr(client, "call_tool_content"):
+            return []
+        return await client.call_tool_content(name, arguments)

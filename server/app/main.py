@@ -456,6 +456,63 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         speak_verbatim,
     )
 
+    async def show_camera(args: dict) -> str:
+        entity_id = (args.get("entity_id") or "").strip()
+        if not entity_id.startswith("camera."):
+            return "entity_id must be a camera.* entity"
+        try:
+            duration_s = int(args.get("duration_s", 150))
+        except (TypeError, ValueError):
+            duration_s = 150
+        duration_s = max(5, min(900, duration_s))
+
+        if not state.mcp_client or "ha_get_camera_image" not in state.mcp_client.tool_names:
+            return "Camera fetch unavailable (Home Assistant MCP not connected)"
+
+        content = await state.mcp_client.call_tool_content(
+            "ha_get_camera_image", {"entity_id": entity_id}
+        )
+        image_b64 = ""
+        mime = "image/jpeg"
+        for item in content:
+            data = getattr(item, "data", None)
+            if data:
+                image_b64 = data
+                mime = getattr(item, "mimeType", None) or mime
+                break
+        if not image_b64:
+            return f"No image returned for {entity_id}"
+
+        msg = {
+            "type": "show_camera",
+            "image": image_b64,
+            "mime": mime,
+            "duration_s": duration_s,
+            "entity_id": entity_id,
+        }
+        ws = state.audio_websocket
+        if ws:
+            try:
+                await ws.send_json(msg)
+            except Exception as e:
+                log.warning(f"show_camera ws send failed: {e}")
+        await broadcast_to_ui(state, msg)
+        return f"Showing {entity_id} on the orb for {duration_s} seconds"
+
+    tools.register(
+        "show_camera",
+        "Display a Home Assistant camera snapshot inside HAL's orb on the kiosk. Use when the user asks to 'show me the <camera>'. The image is shown for duration_s seconds (default 150) then the orb returns to normal. To find the right entity_id, use ha_search_entities with domain=camera first.",
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "Camera entity_id, e.g. camera.front_door"},
+                "duration_s": {"type": "integer", "minimum": 5, "maximum": 900, "default": 150, "description": "How long to keep the image on screen, in seconds"},
+            },
+            "required": ["entity_id"],
+        },
+        show_camera,
+    )
+
     return tools
 
 
