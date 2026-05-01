@@ -733,3 +733,65 @@ class TestStreamSignalingHelpers:
         }
         await _on_ha_webrtc_event(state, "sid1", {"type": "error", "code": "timeout"})
         assert state.active_stream is None
+
+    @pytest.mark.asyncio
+    async def test_on_ha_event_session_captures_ha_session_id(self):
+        from server.app.main import _on_ha_webrtc_event
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        state.active_stream = {
+            "session_id": "ours",
+            "entity_id": "camera.x",
+            "ha_sub_id": None,
+            "ha_session_id": None,
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        await _on_ha_webrtc_event(state, "ours", {"type": "session", "session_id": "HA-SID"})
+        assert state.active_stream["ha_session_id"] == "HA-SID"
+        # Session events are not forwarded to the kiosk.
+        state.audio_websocket.send_json.assert_not_awaited()
+        state.active_stream["safety_task"].cancel()
+
+    @pytest.mark.asyncio
+    async def test_forward_kiosk_candidate_drops_when_no_ha_session_id(self):
+        from server.app.main import _forward_kiosk_candidate
+        from server.app.ha_ws import HAWSClient
+        state = AppState()
+        state.ha_ws = MagicMock(spec=HAWSClient)
+        state.ha_ws.send_command = AsyncMock()
+        state.active_stream = {
+            "session_id": "ours",
+            "entity_id": "camera.x",
+            "ha_sub_id": 1,
+            "ha_session_id": None,
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        await _forward_kiosk_candidate(state, "ours", {"candidate": "c"})
+        state.ha_ws.send_command.assert_not_awaited()
+        state.active_stream["safety_task"].cancel()
+
+    @pytest.mark.asyncio
+    async def test_forward_kiosk_candidate_uses_ha_session_id(self):
+        from server.app.main import _forward_kiosk_candidate
+        from server.app.ha_ws import HAWSClient
+        state = AppState()
+        state.ha_ws = MagicMock(spec=HAWSClient)
+        state.ha_ws.send_command = AsyncMock()
+        state.active_stream = {
+            "session_id": "ours",
+            "entity_id": "camera.x",
+            "ha_sub_id": 1,
+            "ha_session_id": "HA-SID",
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        await _forward_kiosk_candidate(state, "ours", {
+            "candidate": "candidate:1 ...",
+            "sdpMid": "0",
+            "sdpMLineIndex": 0,
+        })
+        state.ha_ws.send_command.assert_awaited_once()
+        sent = state.ha_ws.send_command.await_args.args[0]
+        assert sent["type"] == "camera/webrtc/candidate"
+        assert sent["session_id"] == "HA-SID"
+        assert sent["candidate"]["candidate"] == "candidate:1 ..."
+        state.active_stream["safety_task"].cancel()

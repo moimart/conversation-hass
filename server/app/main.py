@@ -307,10 +307,23 @@ async def _stop_active_stream(state: AppState, *, notify_kiosk: bool = True) -> 
 
 
 async def _on_ha_webrtc_event(state: AppState, session_id: str, event: dict) -> None:
-    """Forward an HA WebRTC subscription event to the kiosk as a webrtc_signal."""
+    """Forward an HA WebRTC subscription event to the kiosk as a webrtc_signal.
+
+    HA emits events:
+      {type: "session", session_id: <HA's id>}    — first; capture for candidate routing
+      {type: "answer",  answer: <sdp>}            — forward as 'answer'
+      {type: "candidate", candidate: {...}}       — forward as 'candidate'
+      {type: "error",   code, message}            — tear down the stream
+    """
     msg_type = event.get("type")
+    log.debug(f"HA WebRTC event for session {session_id}: type={msg_type}")
     out: dict | None = None
-    if msg_type == "answer":
+    if msg_type == "session":
+        if state.active_stream and state.active_stream.get("session_id") == session_id:
+            state.active_stream["ha_session_id"] = event.get("session_id")
+            log.info(f"Captured HA session_id={state.active_stream['ha_session_id']} for {session_id}")
+        return
+    elif msg_type == "answer":
         out = {
             "type": "webrtc_signal",
             "session_id": session_id,
@@ -337,8 +350,8 @@ async def _on_ha_webrtc_event(state: AppState, session_id: str, event: dict) -> 
     if ws:
         try:
             await ws.send_json(out)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug(f"forward HA WebRTC event to kiosk failed: {e}")
 
 
 async def _start_webrtc_stream(state: AppState, entity_id: str, session_id: str, offer_sdp: str) -> bool:
@@ -361,17 +374,26 @@ async def _start_webrtc_stream(state: AppState, entity_id: str, session_id: str,
 
 
 async def _forward_kiosk_candidate(state: AppState, session_id: str, payload: dict) -> None:
-    """Forward a kiosk-side ICE candidate to HA for the active session."""
+    """Forward a kiosk-side ICE candidate to HA for the active session.
+
+    Uses HA's session_id (captured from the first 'session' event), not
+    our internal session_id — HA only knows the id it issued.
+    """
     if not state.active_stream or state.active_stream.get("session_id") != session_id:
         return
-    sub_id = state.active_stream.get("ha_sub_id")
-    if sub_id is None or not isinstance(state.ha_ws, HAWSClient):
+    if not isinstance(state.ha_ws, HAWSClient):
+        return
+    ha_session_id = state.active_stream.get("ha_session_id")
+    if not ha_session_id:
+        # HA hasn't emitted its session event yet — drop the candidate; the
+        # peer connection will retry/regenerate as needed.
+        log.debug("kiosk candidate dropped: no HA session_id yet")
         return
     try:
         await state.ha_ws.send_command(
             {
                 "type": "camera/webrtc/candidate",
-                "session_id": session_id,
+                "session_id": ha_session_id,
                 "candidate": {
                     "candidate": payload.get("candidate", ""),
                     "sdpMid": payload.get("sdpMid"),
