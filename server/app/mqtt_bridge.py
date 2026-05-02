@@ -123,7 +123,6 @@ class MQTTBridge:
                 "icon": "mdi:message-text",
                 "availability": avail,
                 "device": device,
-                "entity_category": "diagnostic",
             },
         ))
 
@@ -328,8 +327,10 @@ class MQTTBridge:
                     await self.publish_volume(self._cached_volume)
                     await self.publish_mute(self._cached_muted)
                     await self.publish_theme(self._cached_theme)
-                    if self._cached_last_response:
-                        await self.publish_last_response(self._cached_last_response)
+                    # Always publish a state for last_response so the sensor
+                    # appears in HA even before HAL has spoken. Empty string
+                    # is fine — HA shows it as blank rather than "unknown".
+                    await self.publish_last_response(self._cached_last_response)
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
