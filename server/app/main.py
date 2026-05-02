@@ -327,6 +327,53 @@ def _ensure_go2rtc(state: AppState) -> Go2RTCClient | None:
     return state.go2rtc
 
 
+async def _stop_active_video(state: AppState) -> None:
+    """Tell the kiosk to clear any HTTP video that may be playing.
+
+    We don't track video state server-side (the kiosk owns the lifecycle —
+    no peer connection or HA subscription to clean up), so this is just a
+    fire-and-forget message. Safe to call at any time.
+    """
+    msg = {"type": "video_stop"}
+    ws = state.audio_websocket
+    if ws:
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            pass
+    await broadcast_to_ui(state, msg)
+
+
+async def _dispatch_play_video(
+    state: AppState,
+    url: str,
+    *,
+    duration_s: int | None = None,
+    loop: bool = False,
+    muted: bool = False,
+) -> bool:
+    """Push a play_video message to the kiosk. Clears any active stream first."""
+    await _stop_active_stream(state)  # mutual exclusion with WebRTC streams
+    msg = {
+        "type": "play_video",
+        "url": url,
+        "loop": bool(loop),
+        "muted": bool(muted),
+    }
+    if duration_s is not None:
+        msg["duration_s"] = max(1, min(7200, int(duration_s)))
+    ws = state.audio_websocket
+    sent = False
+    if ws:
+        try:
+            await ws.send_json(msg)
+            sent = True
+        except Exception as e:
+            log.warning(f"play_video ws send failed: {e}")
+    await broadcast_to_ui(state, msg)
+    return sent
+
+
 async def _negotiate_rtsp_offer(state: AppState, session_id: str, offer_sdp: str) -> None:
     """Hand a kiosk-side SDP offer to go2rtc and forward the answer back."""
     if not state.active_stream or state.active_stream.get("session_id") != session_id:
@@ -523,11 +570,12 @@ async def _dispatch_show_image(
 ) -> bool:
     """Push an image to the kiosk via the existing show_camera WS message.
 
-    Stops any active live stream first (mutual exclusion). Returns True if
-    we got the message out — even if the kiosk websocket is closed (the UI
-    broadcast is best-effort).
+    Stops any active live stream and any playing video first (mutual
+    exclusion). Returns True if we got the message out — even if the kiosk
+    websocket is closed (the UI broadcast is best-effort).
     """
     await _stop_active_stream(state)
+    await _stop_active_video(state)
     msg = {
         "type": "show_camera",
         "image": image_b64,
@@ -1015,12 +1063,62 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         stream_rtsp,
     )
 
+    async def play_video(args: dict) -> str:
+        url = (args.get("url") or "").strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return "url must start with http:// or https://"
+        try:
+            duration_s = args.get("duration_s")
+            duration_s = int(duration_s) if duration_s is not None else None
+        except (TypeError, ValueError):
+            duration_s = None
+        if duration_s is not None:
+            duration_s = max(1, min(7200, duration_s))
+        loop = bool(args.get("loop", False))
+        muted = bool(args.get("muted", False))
+        ok = await _dispatch_play_video(
+            state, url, duration_s=duration_s, loop=loop, muted=muted
+        )
+        if not ok:
+            return "RPi not connected — kiosk did not receive the play_video message"
+        bits = []
+        if loop:
+            bits.append("looping")
+        if muted:
+            bits.append("muted")
+        if duration_s:
+            bits.append(f"max {duration_s}s")
+        suffix = f" ({', '.join(bits)})" if bits else ""
+        return f"Playing video on the orb{suffix} — say 'stop streaming' to dismiss"
+
+    tools.register(
+        "play_video",
+        "Play an HTTP(S) video (MP4, WebM, or HLS .m3u8 playlist) inside HAL's orb. Use when the user asks to 'play <video>', 'show this video', 'put on a movie'. Plays once and auto-stops on the video's end event unless `loop=true`. Optional `duration_s` is a hard cap. Audio plays unless `muted=true`; HAL's TTS auto-ducks the video while speaking. Replaces any active snapshot, image, or live stream. End early with stop_streaming.",
+        {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Public http(s) URL of the video file or HLS playlist"},
+                "duration_s": {"type": "integer", "minimum": 1, "maximum": 7200, "description": "Optional hard cap on playback duration"},
+                "loop": {"type": "boolean", "default": False, "description": "Loop forever until stopped"},
+                "muted": {"type": "boolean", "default": False, "description": "Start muted"},
+            },
+            "required": ["url"],
+        },
+        play_video,
+    )
+
     async def stop_streaming(_args: dict) -> str:
-        if not state.active_stream:
-            return "No active video stream to stop"
-        label = state.active_stream.get("entity_id") or state.active_stream.get("rtsp_url") or ""
+        # Always tell the kiosk to clear video too — videos are kiosk-only
+        # state, so state.active_stream tells us nothing about them.
+        had_stream = state.active_stream is not None
+        label = ""
+        if state.active_stream:
+            label = state.active_stream.get("entity_id") or state.active_stream.get("rtsp_url") or ""
         await _stop_active_stream(state)
-        return f"Stopped streaming {label}" if label else "Stopped video stream"
+        await _stop_active_video(state)
+        if had_stream:
+            return f"Stopped streaming {label}" if label else "Stopped video stream"
+        return "Stopped any active video on the orb"
 
     tools.register(
         "stop_streaming",
@@ -1231,6 +1329,34 @@ async def lifespan(app: FastAPI):
             )
             log.info(f"MQTT rtsp: {result}")
 
+        async def _mqtt_video_set(payload: str):
+            text = payload.strip()
+            if not text:
+                return
+            args: dict = {}
+            if text.startswith("{"):
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError as e:
+                    log.warning(f"MQTT video/set: invalid JSON: {e}")
+                    return
+                args["url"] = str(data.get("url") or "")
+                if "duration_s" in data:
+                    args["duration_s"] = data["duration_s"]
+                if "loop" in data:
+                    args["loop"] = data["loop"]
+                if "muted" in data:
+                    args["muted"] = data["muted"]
+            elif text.startswith("http://") or text.startswith("https://"):
+                args["url"] = text
+            else:
+                log.warning("MQTT video/set: payload is neither http(s) URL nor JSON")
+                return
+            if not state.local_tools or not args.get("url"):
+                return
+            result = await state.local_tools.call_tool("play_video", args)
+            log.info(f"MQTT video: {result}")
+
         async def _mqtt_command(text: str):
             text = text.strip()
             conversation = state.conversation
@@ -1260,6 +1386,7 @@ async def lifespan(app: FastAPI):
         bridge.on_command = _mqtt_command
         bridge.on_image_set = _mqtt_image_set
         bridge.on_rtsp_set = _mqtt_rtsp_set
+        bridge.on_video_set = _mqtt_video_set
 
         await bridge.start()
         state.mqtt_bridge = bridge

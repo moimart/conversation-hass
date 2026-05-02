@@ -75,7 +75,7 @@ No cloud services. No subscriptions. All processing stays on your network.
    - **Wake word mode** (default): Transcribed text is monitored for the wake word (configurable). Only after detecting it does the system engage the LLM. A two-tone chime plays and the HAL eye flashes white as confirmation. A 10-second follow-up window allows natural back-and-forth conversation without repeating the wake word.
    - **Always-on mode**: Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM automatically.
 
-5. **LLM with multi-MCP tool calling** — The user's command is sent to Ollama (configurable context window, defaults to 32k) with tool definitions discovered at startup from one or more MCP servers (typically Home Assistant, plus a built-in `LocalTools` server that exposes `ui_set_theme`, `audio_set_volume`, `audio_toggle_mute`, `get_sun_times`, `speak_verbatim`, `show_camera`, `show_image`, `stream_camera`, `stream_rtsp`, and `stop_streaming`). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. Conversational replies are returned as plain text. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
+5. **LLM with multi-MCP tool calling** — The user's command is sent to Ollama (configurable context window, defaults to 32k) with tool definitions discovered at startup from one or more MCP servers (typically Home Assistant, plus a built-in `LocalTools` server that exposes `ui_set_theme`, `audio_set_volume`, `audio_toggle_mute`, `get_sun_times`, `speak_verbatim`, `show_camera`, `show_image`, `stream_camera`, `stream_rtsp`, `play_video`, and `stop_streaming`). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. Conversational replies are returned as plain text. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
 
 6. **Long-term memory** — Before each LLM call, relevant memories are recalled from [Shodh Memory](https://www.shodh-memory.com/) and injected into the prompt as context. After each exchange, the conversation is stored as a new memory. Shodh uses Hebbian learning (connections that fire together wire together) and natural decay, so frequently referenced facts strengthen over time while irrelevant ones fade — like biological memory.
 
@@ -134,6 +134,7 @@ When `MQTT_BROKER_HOST` is set, HAL appears in HA via auto-discovery as a single
 | `text.<id>_command` | text | Type a command → run through the conversation pipeline (LLM + tools) |
 | `text.<id>_show_image` | text | Paste a URL (or short JSON) → show on the orb for 60 s |
 | `text.<id>_stream_rtsp` | text | Paste an RTSP URL → live WebRTC stream in the orb (5 min default) |
+| `text.<id>_play_video` | text | Paste an HTTP video URL (MP4/WebM/HLS) → play in the orb |
 
 Set `HAL_DEVICE_ID` (slug) and `HAL_DEVICE_NAME` (display name) to identify the device. State is republished on reconnect; availability uses MQTT Last-Will-Testament.
 
@@ -162,6 +163,19 @@ modes, all mutually exclusive (newest replaces previous):
   SDP). Same `stop_streaming` ends it. Also exposed via MQTT topic
   `hal/<id>/rtsp/set` (URL or JSON `{"url":"...","duration_s":N}`)
   and the HA Discovery text entity `text.<id>_stream_rtsp`.
+- **HTTP video / HLS** — `play_video(url, duration_s, loop, muted)`
+  plays an MP4 / WebM / HLS playlist directly in the kiosk's
+  `<video>` element. No server-side fetching, no transcoding — the
+  browser handles playback. HLS is detected by `.m3u8` and routed
+  through hls.js; everything else uses native `<video src>`. Audio
+  plays by default and **auto-ducks while HAL is speaking**, then
+  restores the user's muted preference when HAL goes back to idle.
+  Optional `loop=true` for endless playback; optional `duration_s`
+  for a hard cap (otherwise playback ends naturally on the video's
+  end event). Mutually exclusive with all other orb modes. MQTT
+  topic `hal/<id>/video/set` (URL or JSON
+  `{"url":"...","loop":true,"muted":false,"duration_s":N}`); HA
+  Discovery text entity `text.<id>_play_video`.
 - **Arbitrary image push** — `show_image(url, duration_s=60)` from
   the LLM, **or** publish to MQTT `hal/<id>/image/set`, **or** write
   to the `text.<id>_show_image` HA entity. The MQTT topic accepts
@@ -543,6 +557,10 @@ the host's LAN IPs, reachable from the kiosk).
 {"type": "stream_stop", "session_id": "..."} // End live stream
 {"type": "webrtc_signal", "session_id": "...",
  "kind": "answer"|"candidate", ...}           // SDP/ICE forwarded from HA
+{"type": "play_video", "url": "https://...",
+ "loop": false, "muted": false,
+ "duration_s": 60}                            // Play HTTP video (MP4/WebM/HLS)
+{"type": "video_stop"}                        // Stop any active HTTP video
 ```
 
 **RPi → Server (`/ws/audio`):**
@@ -569,7 +587,7 @@ uv pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-All 236 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
+All 243 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
 
 ## License
 

@@ -547,9 +547,12 @@ class TestShowCamera:
         state.mcp_client.call_tool_content = AsyncMock(return_value=[item])
         result = await self._show_camera(state, {"entity_id": "camera.front", "duration_s": 60})
         assert "camera.front" in result
-        state.audio_websocket.send_json.assert_awaited_once()
-        msg = state.audio_websocket.send_json.await_args.args[0]
-        assert msg["type"] == "show_camera"
+        # show_camera also sends video_stop for mutual exclusion. Find the
+        # show_camera message in the call list.
+        msgs = [c.args[0] for c in state.audio_websocket.send_json.await_args_list]
+        show_msgs = [m for m in msgs if m.get("type") == "show_camera"]
+        assert len(show_msgs) == 1
+        msg = show_msgs[0]
         assert msg["image"] == "BASE64DATA"
         assert msg["mime"] == "image/jpeg"
         assert msg["duration_s"] == 60
@@ -646,7 +649,9 @@ class TestStreamCamera:
     async def test_stop_streaming_no_active(self, monkeypatch):
         state = self._state(monkeypatch)
         result = await self._stop(state)
-        assert "No active" in result
+        # stop_streaming now also clears any pushed video, so it returns a
+        # success-shaped message even with no active webrtc stream.
+        assert "Stopped" in result
 
     @pytest.mark.asyncio
     async def test_stop_streaming_clears_session_and_notifies_kiosk(self, monkeypatch):
@@ -657,8 +662,10 @@ class TestStreamCamera:
         assert "camera.x" in result
         assert state.active_stream is None
         state.audio_websocket.send_json.assert_awaited()
-        msg = state.audio_websocket.send_json.await_args.args[0]
-        assert msg["type"] == "stream_stop"
+        # stop_streaming sends both stream_stop and video_stop now.
+        types = [c.args[0]["type"] for c in state.audio_websocket.send_json.await_args_list]
+        assert "stream_stop" in types
+        assert "video_stop" in types
 
     @pytest.mark.asyncio
     async def test_new_stream_replaces_active_stream(self, monkeypatch):
@@ -707,9 +714,11 @@ class TestPushImage:
         state = AppState()
         state.audio_websocket = AsyncMock()
         await _dispatch_show_image(state, "Zm9v", "image/jpeg", 60, entity_id="external")
-        state.audio_websocket.send_json.assert_awaited_once()
-        msg = state.audio_websocket.send_json.await_args.args[0]
-        assert msg["type"] == "show_camera"
+        msgs = [c.args[0] for c in state.audio_websocket.send_json.await_args_list]
+        # _dispatch_show_image also sends video_stop for mutual exclusion.
+        show_msgs = [m for m in msgs if m.get("type") == "show_camera"]
+        assert len(show_msgs) == 1
+        msg = show_msgs[0]
         assert msg["image"] == "Zm9v"
         assert msg["mime"] == "image/jpeg"
         assert msg["duration_s"] == 60
@@ -966,6 +975,108 @@ class TestRtspNegotiation:
         await _negotiate_rtsp_offer(state, "stale", "v=0...")
         client.webrtc_offer.assert_not_awaited()
         state.active_stream["safety_task"].cancel()
+
+
+class TestPlayVideo:
+    """Local tool play_video — HTTP video / HLS playback in the orb."""
+
+    def _state(self):
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        return state
+
+    async def _play(self, state, args):
+        tools = _build_local_tools(state)
+        return await tools.call_tool("play_video", args)
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_http_url(self):
+        state = self._state()
+        result = await self._play(state, {"url": "rtsp://x"})
+        assert "http" in result
+        state.audio_websocket.send_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_pushes_play_video_message(self):
+        state = self._state()
+        result = await self._play(state, {"url": "https://example.com/clip.mp4"})
+        assert "Playing video" in result
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["type"] == "play_video"
+        assert msg["url"] == "https://example.com/clip.mp4"
+        assert msg["loop"] is False
+        assert msg["muted"] is False
+
+    @pytest.mark.asyncio
+    async def test_passes_through_loop_muted_duration(self):
+        state = self._state()
+        await self._play(state, {
+            "url": "https://example.com/x.m3u8",
+            "loop": True,
+            "muted": True,
+            "duration_s": 30,
+        })
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["loop"] is True
+        assert msg["muted"] is True
+        assert msg["duration_s"] == 30
+
+    @pytest.mark.asyncio
+    async def test_clamps_duration(self):
+        state = self._state()
+        await self._play(state, {"url": "https://x", "duration_s": 99999999})
+        msg = state.audio_websocket.send_json.await_args.args[0]
+        assert msg["duration_s"] == 7200
+
+    @pytest.mark.asyncio
+    async def test_play_video_stops_active_camera_stream(self, monkeypatch):
+        from server.app.go2rtc import Go2RTCClient
+        monkeypatch.setenv("GO2RTC_URL", "http://x")
+        state = self._state()
+        client = MagicMock(spec=Go2RTCClient)
+        client.delete_stream = AsyncMock(return_value=True)
+        state.go2rtc = client
+        state.active_stream = {
+            "session_id": "x", "kind": "rtsp",
+            "go2rtc_name": "hal_x", "rtsp_url": "rtsp://y",
+            "safety_task": asyncio.create_task(asyncio.sleep(60)),
+        }
+        await self._play(state, {"url": "https://example.com/clip.mp4"})
+        assert state.active_stream is None
+        client.delete_stream.assert_awaited_with("hal_x")
+
+    @pytest.mark.asyncio
+    async def test_show_image_stops_active_video(self):
+        # Reverse direction: a snapshot should send video_stop.
+        state = self._state()
+        state.mcp_client = MagicMock()
+        state.mcp_client.tool_names = ["ha_get_camera_image"]
+        item = MagicMock(); item.data = "Z"; item.mimeType = "image/jpeg"
+        state.mcp_client.call_tool_content = AsyncMock(return_value=[item])
+        tools = _build_local_tools(state)
+        await tools.call_tool("show_camera", {"entity_id": "camera.x"})
+        # Two messages should have been sent: stream_stop (no-op WS push from
+        # _stop_active_stream) and video_stop (from _stop_active_video), then
+        # show_camera. Filter for video_stop.
+        calls = [c.args[0] for c in state.audio_websocket.send_json.await_args_list]
+        types = [c["type"] for c in calls]
+        assert "video_stop" in types
+        assert "show_camera" in types
+
+
+class TestStopStreaming:
+    """The stop_streaming tool now also clears HTTP video."""
+
+    @pytest.mark.asyncio
+    async def test_stop_streaming_no_active_still_clears_video(self):
+        state = AppState()
+        state.audio_websocket = AsyncMock()
+        tools = _build_local_tools(state)
+        result = await tools.call_tool("stop_streaming", {})
+        assert "Stopped any active video" in result
+        # Should have sent at least a video_stop.
+        calls = [c.args[0] for c in state.audio_websocket.send_json.await_args_list]
+        assert any(c["type"] == "video_stop" for c in calls)
 
 
 class TestStreamSignalingHelpers:

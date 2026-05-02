@@ -15,6 +15,7 @@ Topic layout (with HAL_DEVICE_ID = "hal-default"):
     hal/hal-default/command                  <- HA writes (text -> conversation pipeline)
     hal/hal-default/image/set                <- HA writes (URL / JSON / binary JPEG)
     hal/hal-default/rtsp/set                 <- HA writes (RTSP URL / JSON)
+    hal/hal-default/video/set                <- HA writes (video URL / JSON)
     hal/hal-default/snapshot                 binary JPEG (published from RPi)
     hal/hal-default/availability             "online" / "offline"
 """
@@ -61,6 +62,8 @@ class MQTTBridge:
         self.on_image_set: Callable[[bytes | str], Awaitable[None]] | None = None
         # RTSP-set: text payload (RTSP URL or JSON {url, duration_s}).
         self.on_rtsp_set: Callable[[str], Awaitable[None]] | None = None
+        # Video-set: text payload (HTTP video URL or JSON wrapper).
+        self.on_video_set: Callable[[str], Awaitable[None]] | None = None
 
         self._client = None
         self._connected = False
@@ -233,6 +236,21 @@ class MQTTBridge:
             },
         ))
 
+        # Play Video — paste an HTTP video URL (MP4 / WebM / HLS) to play
+        # in the orb. JSON wrapper supports loop/muted/duration_s.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/play_video/config",
+            {
+                "name": "Play Video",
+                "unique_id": f"{self.device_id}_play_video",
+                "command_topic": f"{self.base}/video/set",
+                "icon": "mdi:play-circle",
+                "availability": avail,
+                "device": device,
+                "mode": "text",
+            },
+        ))
+
         return configs
 
     async def start(self):
@@ -299,6 +317,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/command")
                     await client.subscribe(f"{self.base}/image/set")
                     await client.subscribe(f"{self.base}/rtsp/set")
+                    await client.subscribe(f"{self.base}/video/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -369,6 +388,10 @@ class MQTTBridge:
             elif topic == f"{self.base}/rtsp/set":
                 if payload and self.on_rtsp_set:
                     await self.on_rtsp_set(payload)
+
+            elif topic == f"{self.base}/video/set":
+                if payload and self.on_video_set:
+                    await self.on_video_set(payload)
 
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")

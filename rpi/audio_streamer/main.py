@@ -346,6 +346,7 @@ class AudioManager:
         elif msg_type in (
             "transcription", "response", "wake", "state", "set_theme",
             "show_camera", "stream_start", "stream_stop", "webrtc_signal",
+            "play_video", "video_stop",
         ):
             await self.broadcast_to_ui(msg)
 

@@ -138,6 +138,12 @@
             case "webrtc_signal":
                 handleSignal(msg);
                 break;
+            case "play_video":
+                playVideo(msg);
+                break;
+            case "video_stop":
+                stopVideo();
+                break;
             default:
                 console.log("Unknown message:", msg);
         }
@@ -339,6 +345,67 @@
         }
     }
 
+    // --- HTTP video playback (MP4 / WebM / HLS) ---
+    // The kiosk owns the lifecycle entirely; the server just sends the
+    // play_video message and the optional video_stop dismissal. HAL TTS
+    // auto-ducks the audio while the assistant is speaking.
+    let videoTimer = null;
+    let videoHls = null;
+    let videoUserMuted = false;
+    function isHls(url) {
+        return /\.m3u8(?:\?|$)/i.test(url);
+    }
+    function playVideo(msg) {
+        const container = document.querySelector(".eye-container");
+        const video = document.getElementById("eye-stream");
+        if (!container || !video || !msg.url) return;
+        // Replace any other modality.
+        clearCamera();
+        stopStream();
+        stopVideo();
+        videoUserMuted = !!msg.muted;
+        video.muted = videoUserMuted;
+        video.loop = !!msg.loop;
+        const finish = () => {
+            if (!video.loop) stopVideo();
+        };
+        if (isHls(msg.url) && window.Hls && Hls.isSupported() && !video.canPlayType("application/vnd.apple.mpegurl")) {
+            videoHls = new Hls();
+            videoHls.loadSource(msg.url);
+            videoHls.attachMedia(video);
+            videoHls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+        } else {
+            video.src = msg.url;
+            video.play().catch(() => {});
+        }
+        video.addEventListener("ended", finish, { once: true });
+        container.classList.add("camera-active", "stream-active");
+        if (msg.duration_s) {
+            videoTimer = setTimeout(stopVideo, Number(msg.duration_s) * 1000);
+        }
+    }
+    function stopVideo() {
+        const container = document.querySelector(".eye-container");
+        const video = document.getElementById("eye-stream");
+        if (videoTimer) { clearTimeout(videoTimer); videoTimer = null; }
+        if (videoHls) {
+            try { videoHls.destroy(); } catch (e) { /* ignore */ }
+            videoHls = null;
+        }
+        if (video) {
+            try {
+                video.pause();
+                video.removeAttribute("src");
+                video.load();
+            } catch (e) { /* ignore */ }
+        }
+        videoUserMuted = false;
+        if (container) {
+            container.classList.remove("stream-active");
+            if (!cameraTimer) container.classList.remove("camera-active");
+        }
+    }
+
     // --- State Management ---
     function setState(state) {
         // Remove only state-* classes — preserve theme-* and any others
@@ -367,6 +434,17 @@
         // Cancel any pending fade (we want the response to linger)
         if (state === "speaking") {
             clearTimeout(setState._fadeTimer);
+        }
+
+        // Auto-duck a playing HTTP video when HAL is speaking; restore the
+        // user's original muted preference when HAL goes back to idle.
+        const video = document.getElementById("eye-stream");
+        if (video && (video.src || video.currentSrc)) {
+            if (state === "speaking") {
+                video.muted = true;
+            } else if (state === "idle") {
+                video.muted = videoUserMuted;
+            }
         }
     }
 
