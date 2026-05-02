@@ -16,6 +16,8 @@ Topic layout (with HAL_DEVICE_ID = "hal-default"):
     hal/hal-default/image/set                <- HA writes (URL / JSON / binary JPEG)
     hal/hal-default/rtsp/set                 <- HA writes (RTSP URL / JSON)
     hal/hal-default/video/set                <- HA writes (video URL / JSON)
+    hal/hal-default/last_response            sensor (truncated text of last HAL utterance)
+    hal/hal-default/last_response/attrs      JSON attributes (full_text, ts)
     hal/hal-default/snapshot                 binary JPEG (published from RPi)
     hal/hal-default/availability             "online" / "offline"
 """
@@ -75,6 +77,7 @@ class MQTTBridge:
         self._cached_volume: float = 0.7
         self._cached_muted: bool = False
         self._cached_theme: str = "dark"
+        self._cached_last_response: str = ""
 
     @property
     def connected(self) -> bool:
@@ -104,6 +107,23 @@ class MQTTBridge:
                 "icon": "mdi:robot",
                 "availability": avail,
                 "device": device,
+            },
+        ))
+
+        # Last response — read-only sensor exposing the last thing HAL said.
+        # HA caps sensor state at 255 chars; longer responses are
+        # truncated. The full text is stored in the json_attribute.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/sensor/{self.device_id}/last_response/config",
+            {
+                "name": "Last Response",
+                "unique_id": f"{self.device_id}_last_response",
+                "state_topic": f"{self.base}/last_response",
+                "json_attributes_topic": f"{self.base}/last_response/attrs",
+                "icon": "mdi:message-text",
+                "availability": avail,
+                "device": device,
+                "entity_category": "diagnostic",
             },
         ))
 
@@ -308,6 +328,8 @@ class MQTTBridge:
                     await self.publish_volume(self._cached_volume)
                     await self.publish_mute(self._cached_muted)
                     await self.publish_theme(self._cached_theme)
+                    if self._cached_last_response:
+                        await self.publish_last_response(self._cached_last_response)
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -423,6 +445,23 @@ class MQTTBridge:
     async def publish_theme(self, theme: str):
         self._cached_theme = theme
         await self._safe_publish(f"{self.base}/theme/state", theme)
+
+    async def publish_last_response(self, text: str):
+        """Publish HAL's most recent utterance.
+
+        State topic carries the truncated string (HA's 255-char limit on
+        sensor state); attributes topic carries the full text plus an
+        ISO timestamp for richer template access.
+        """
+        import datetime as _dt
+        self._cached_last_response = text
+        truncated = text if len(text) <= 250 else text[:247] + "..."
+        await self._safe_publish(f"{self.base}/last_response", truncated)
+        attrs = json.dumps({
+            "full_text": text,
+            "ts": _dt.datetime.utcnow().isoformat() + "Z",
+        })
+        await self._safe_publish(f"{self.base}/last_response/attrs", attrs)
 
     async def publish_snapshot(self, jpeg_bytes: bytes):
         """Publish a JPEG snapshot of the display."""

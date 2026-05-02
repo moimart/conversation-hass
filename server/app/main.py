@@ -821,6 +821,8 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         except Exception:
             pass
         await broadcast_to_ui(state, msg)
+        if state.mqtt_bridge:
+            await state.mqtt_bridge.publish_last_response(text)
 
         # Push audio to RPi using the same protocol as on_response
         try:
@@ -1281,6 +1283,7 @@ async def lifespan(app: FastAPI):
                 msg = {"type": "response", "text": text}
                 await ws.send_json(msg)
                 await broadcast_to_ui(state, msg)
+                await state.mqtt_bridge.publish_last_response(text)
                 await ws.send_json({"type": "tts_start", "size": len(audio_bytes)})
                 if state.pipeline:
                     state.pipeline.set_ai_speaking(True)
@@ -1465,6 +1468,8 @@ async def audio_endpoint(websocket: WebSocket):
         try:
             await websocket.send_json({"type": "response", "text": text})
             await broadcast_to_ui(state, {"type": "response", "text": text})
+            if state.mqtt_bridge:
+                await state.mqtt_bridge.publish_last_response(text)
             if audio_bytes:
                 await websocket.send_json({"type": "tts_start", "size": len(audio_bytes)})
                 pipeline.set_ai_speaking(True)
@@ -1828,6 +1833,8 @@ async def post_speak(req: SpeakRequest):
     except Exception:
         pass
     await broadcast_to_ui(state, msg)
+    if state.mqtt_bridge:
+        await state.mqtt_bridge.publish_last_response(text)
 
     # Stream audio to RPi
     try:

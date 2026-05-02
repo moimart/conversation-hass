@@ -1079,6 +1079,48 @@ class TestStopStreaming:
         assert any(c["type"] == "video_stop" for c in calls)
 
 
+class TestLastResponsePublish:
+    """publish_last_response truncates state and emits full text + ts in attrs."""
+
+    @pytest.mark.asyncio
+    async def test_publishes_truncated_state_and_full_attrs(self):
+        from server.app.mqtt_bridge import MQTTBridge
+        bridge = MQTTBridge(host="x", device_id="hal-default")
+        publisher = AsyncMock()
+        bridge._safe_publish = publisher
+        text = "x" * 400
+        await bridge.publish_last_response(text)
+        # Two publish calls: state (truncated) + attributes.
+        assert publisher.await_count == 2
+        topics = [c.args[0] for c in publisher.await_args_list]
+        payloads = [c.args[1] for c in publisher.await_args_list]
+        assert topics[0] == "hal/hal-default/last_response"
+        assert topics[1] == "hal/hal-default/last_response/attrs"
+        assert len(payloads[0]) <= 250
+        assert payloads[0].endswith("...")
+        attrs = json.loads(payloads[1])
+        assert attrs["full_text"] == text
+        assert "ts" in attrs
+
+    @pytest.mark.asyncio
+    async def test_short_text_state_is_full_text(self):
+        from server.app.mqtt_bridge import MQTTBridge
+        bridge = MQTTBridge(host="x", device_id="hal-default")
+        bridge._safe_publish = AsyncMock()
+        await bridge.publish_last_response("hello")
+        payloads = [c.args[1] for c in bridge._safe_publish.await_args_list]
+        assert payloads[0] == "hello"
+        assert json.loads(payloads[1])["full_text"] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_caches_for_republish(self):
+        from server.app.mqtt_bridge import MQTTBridge
+        bridge = MQTTBridge(host="x", device_id="hal-default")
+        bridge._safe_publish = AsyncMock()
+        await bridge.publish_last_response("cached text")
+        assert bridge._cached_last_response == "cached text"
+
+
 class TestStreamSignalingHelpers:
     """Internal signaling glue between HA events and the kiosk."""
 
