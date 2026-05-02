@@ -16,6 +16,32 @@ The base URL of the AI server is exposed as `$HAL_SERVER_URL` (set in OpenClaw c
 - The user asks to "tell HAL", "ask HAL", "command HAL", or anything addressed to HAL
 - The user asks to control the HAL UI (theme, volume, mute) without speaking
 - The user wants HAL to do something on their smart home (lights, climate, scenes) — HAL has the Home Assistant MCP tools wired in, so just send the natural-language command via `/api/command`
+- The user wants something shown inside HAL's orb (a camera snapshot, a live camera stream, an arbitrary image URL, an RTSP URL, an HTTP MP4/HLS video) — describe it in natural language to `/api/command` and HAL's LLM will pick the right tool
+
+## What HAL can do (via /api/command)
+
+When you POST a natural-language command to `/api/command`, HAL's LLM has these tools available — describe the intent and the LLM dispatches to the right one. You don't have to name the tool; just ask plainly.
+
+**Smart home (via Home Assistant MCP):**
+- Control devices: lights, climate, scenes, media players, scripts, automations, helpers
+- Query state: temperatures, sensor readings, device status, history
+- Anything Home Assistant exposes through its MCP server
+
+**HAL UI / hardware:**
+- Switch the kiosk theme: "switch the theme to japandi"
+- Set or adjust speaker volume: "turn the volume up", "set volume to 30%"
+- Toggle mic mute
+- Make HAL speak text exactly: "say out loud: dinner is ready"
+
+**Orb display (image / video / camera):**
+- Snapshot from a Home Assistant camera: "show me the front door camera" — paints a JPEG inside HAL's orb for ~2.5 minutes (`show_camera`)
+- Live WebRTC stream from a HA camera: "watch the kitchen camera live", "stream the porch" — opens a low-latency feed for up to 5 minutes (`stream_camera`)
+- Live RTSP URL (any IP cam, NVR, Frigate go2rtc, etc.): "stream the rtsp at rtsp://user:pass@host/path" — uses the bundled go2rtc sidecar (`stream_rtsp`)
+- Arbitrary image URL: "show the picture at https://example.com/x.jpg" or "put X on screen for 30 seconds" — fetches and displays for 60 s by default (`show_image`)
+- HTTP video / HLS playlist: "play the video at https://example.com/clip.mp4" or "play this looping silently: <url>" — auto-stops on end of file unless `loop=true`; auto-ducks audio when HAL speaks (`play_video`)
+- Stop any active orb display: "stop streaming", "stop the video", "don't show the camera anymore" (`stop_streaming` clears webrtc + video)
+
+The orb shows one thing at a time — starting any new display replaces whatever's there.
 
 ## Send a spoken command to the LLM
 
@@ -31,6 +57,12 @@ Examples:
 - `{"text": "turn on the table lamp"}`
 - `{"text": "what's the temperature in the bedroom?"}`
 - `{"text": "play some jazz on the living room speaker"}`
+- `{"text": "show me the front door camera"}`
+- `{"text": "stream the kitchen camera live"}`
+- `{"text": "stream the rtsp at rtsp://admin:pass@10.0.0.20:554/stream1"}`
+- `{"text": "put the picture at https://example.com/cat.jpg on screen for 2 minutes"}`
+- `{"text": "play https://example.com/clip.mp4 muted"}`
+- `{"text": "stop streaming"}`
 
 ## Speak text out loud verbatim (bypass the LLM)
 
@@ -95,6 +127,20 @@ Verify HAL is alive and which subsystems are connected:
 ```sh
 curl -sS "$HAL_SERVER_URL/health"
 # → {"status":"ok","pipeline_ready":true,"mcp_connected":true,"tts_available":true,"memory_available":true}
+```
+
+## Read what HAL last said
+
+Useful when you want to confirm or react to HAL's most recent reply. Two paths:
+
+```sh
+# REST: latest snapshot of the kiosk page (JPEG)
+curl -sS -o /tmp/hal.jpg "$HAL_SERVER_URL/api/snapshot.jpg"
+
+# Or: published on MQTT as a Home Assistant sensor entity
+#   sensor.<HAL_DEVICE_ID>_last_response
+# State = truncated text (≤250 chars), attribute "full_text" = full reply.
+# Read via HA's REST API or the homeassistant CLI if you have access.
 ```
 
 ## Theme control
