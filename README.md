@@ -321,16 +321,15 @@ The audio streamer auto-detects the USB speakerphone, probes its native sample r
 
 Navigate to `http://<rpi-ip>:8080` in a browser, ideally as a kiosk on a monitor attached to the Pi.
 
-For the HA camera entity to receive screenshots, launch the kiosk Chromium with the DevTools Protocol enabled and bound so the audio_streamer container can reach it:
+For the HA camera entity to receive screenshots, launch the kiosk Chromium with the DevTools Protocol enabled:
 
 ```
 chromium-browser --kiosk http://localhost:8080 \
   --autoplay-policy=no-user-gesture-required \
-  --remote-debugging-port=9222 \
-  --remote-debugging-address=0.0.0.0
+  --remote-debugging-port=9222
 ```
 
-The audio_streamer connects to that endpoint via `host.docker.internal:9222` and uploads a JPEG every `SNAPSHOT_INTERVAL_S` seconds (default 60).
+The audio_streamer container runs on host networking and reaches the kiosk Chromium via `127.0.0.1:9222`, then uploads a JPEG to the AI server every `SNAPSHOT_INTERVAL_S` seconds (default 60). Recent Chromium silently ignores `--remote-debugging-address` values other than `127.0.0.1`, which is why we use host networking instead of trying to bridge across `docker0`.
 
 ### 6. Desktop Command App (optional)
 
@@ -436,7 +435,7 @@ conversation-hass/
 | `AI_SERVER_HOST` | — | IP of the AI server (used by RPi to connect) |
 | `RPI_HOST` | — | IP of the RPi (informational; not consumed by code) |
 | `WEB_PORT` | `8080` | Port for the RPi web UI |
-| `CHROMIUM_DEBUG_URL` | `http://host.docker.internal:9222` | Kiosk Chromium's DevTools endpoint (audio_streamer reaches it for screenshots) |
+| `CHROMIUM_DEBUG_URL` | `http://127.0.0.1:9222` | Kiosk Chromium's DevTools endpoint (audio_streamer reaches it for screenshots; container runs on host networking) |
 | `SNAPSHOT_INTERVAL_S` | `60` | Seconds between CDP screenshots posted to the AI server |
 
 ### Speech & LLM
