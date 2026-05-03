@@ -404,6 +404,8 @@
         const container = document.querySelector(".eye-container");
         const video = document.getElementById("eye-stream");
         if (!container || !video || !msg.url) return;
+        // Echo so the user can see exactly what URL we're trying to play.
+        pushTranscriptLine(`Playing: ${msg.url}`, false);
         // Replace any other modality (snapshot, webrtc stream). Do the
         // video teardown inline WITHOUT calling video.load() — load()
         // aborts the play() we're about to call (the classic Chrome
