@@ -266,10 +266,10 @@ body {
     align-items: center;
     /* Anchor in-flow content (status, transcript, response, volume)
        below the absolutely-centered orb. Padding pushes the first
-       child past the orb's bottom edge. Tail trimmed from 230 to 216
-       to keep the gap consistent after the page-zoom bump. */
+       child past the orb's bottom edge. Both this and the orb's top
+       move together — change in lockstep. */
     justify-content: flex-start;
-    padding-top: calc(42vh + 216px);
+    padding-top: calc(30vh + 216px);
     box-sizing: border-box;
     position: relative;
 }
@@ -441,12 +441,12 @@ body.theme-japandi .ambient-grid::after {
 
 /* === Eye === */
 .eye-container {
-    /* Sit the orb a little above geometric center so it balances with
-       the transcript and response panels that flow below. The scale
+    /* Sit the orb above geometric center so it balances with the
+       transcript and response panels that flow below. The scale
        counters the bumped page zoom so the orb is +20% rather than
        +25% over the previous baseline. */
     position: absolute;
-    top: 42%;
+    top: 30%;
     left: 50%;
     transform: translate(-50%, -50%) scale(0.96);
     width: 406px;
