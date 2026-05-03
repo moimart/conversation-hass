@@ -269,7 +269,7 @@ body {
        child past the orb's bottom edge. Both this and the orb's top
        move together — change in lockstep. */
     justify-content: flex-start;
-    padding-top: calc(18vh + 216px);
+    padding-top: calc(22vh + 216px);
     box-sizing: border-box;
     position: relative;
 }
@@ -446,7 +446,7 @@ body.theme-japandi .ambient-grid::after {
        counters the bumped page zoom so the orb is +20% rather than
        +25% over the previous baseline. */
     position: absolute;
-    top: 18%;
+    top: 22%;
     left: 50%;
     transform: translate(-50%, -50%) scale(0.96);
     width: 406px;
