@@ -383,10 +383,18 @@
         const container = document.querySelector(".eye-container");
         const video = document.getElementById("eye-stream");
         if (!container || !video || !msg.url) return;
-        // Replace any other modality.
+        // Replace any other modality (snapshot, webrtc stream). Do the
+        // video teardown inline WITHOUT calling video.load() — load()
+        // aborts the play() we're about to call (the classic Chrome
+        // "play() request was interrupted" AbortError). Setting a new
+        // src below triggers a fresh load implicitly.
         clearCamera();
         stopStream();
-        stopVideo();
+        if (videoTimer) { clearTimeout(videoTimer); videoTimer = null; }
+        if (videoHls) {
+            try { videoHls.destroy(); } catch (e) { /* ignore */ }
+            videoHls = null;
+        }
         videoUserMuted = !!msg.muted;
         video.muted = videoUserMuted;
         video.loop = !!msg.loop;
@@ -394,8 +402,12 @@
         const finish = () => {
             if (!video.loop) stopVideo();
         };
-        const playFail = (e) =>
+        const playFail = (e) => {
+            // AbortError just means another play/pause/load came along —
+            // not a real failure. Anything else is worth surfacing.
+            if (e && e.name === "AbortError") return;
             showVideoError(`autoplay blocked or play() failed — ${e && (e.message || e.name) || e}`);
+        };
         if (isHls(msg.url) && window.Hls && Hls.isSupported() && !video.canPlayType("application/vnd.apple.mpegurl")) {
             videoHls = new Hls();
             videoHls.loadSource(msg.url);
