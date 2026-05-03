@@ -321,6 +321,7 @@ class AudioManager:
             self.tts_volume = max(0.0, min(1.0, self.tts_volume + step))
             log.info(f"Volume adjusted by {step:+.0%}: now {self.tts_volume:.0%}")
             await self.broadcast_to_ui({"type": "volume_sync", "level": self.tts_volume})
+            await ws.send(json.dumps({"type": "volume_sync", "level": self.tts_volume}))
 
         elif msg_type == "mute_toggle":
             self.mic_muted = not self.mic_muted
@@ -342,6 +343,7 @@ class AudioManager:
             self.tts_volume = max(0.0, min(1.0, level))
             log.info(f"Volume set to {self.tts_volume:.0%} (via server)")
             await self.broadcast_to_ui({"type": "volume_sync", "level": self.tts_volume})
+            await ws.send(json.dumps({"type": "volume_sync", "level": self.tts_volume}))
 
         elif msg_type in (
             "transcription", "response", "wake", "state", "set_theme",
@@ -462,9 +464,20 @@ class AudioManager:
                     elif msg_type == "volume":
                         self.tts_volume = max(0.0, min(1.0, float(data.get("level", 0.7))))
                         log.info(f"Volume set to {self.tts_volume:.0%}")
+                        # Echo upstream so the AI server can republish to MQTT/HA.
+                        if self._server_ws:
+                            try:
+                                await self._server_ws.send(json.dumps({"type": "volume_sync", "level": self.tts_volume}))
+                            except Exception as e:
+                                log.debug(f"volume_sync upstream forward failed: {e}")
                     elif msg_type == "mute":
                         self.mic_muted = bool(data.get("muted", False))
                         log.info(f"Mic {'muted' if self.mic_muted else 'unmuted'}")
+                        if self._server_ws:
+                            try:
+                                await self._server_ws.send(json.dumps({"type": "mute_sync", "muted": self.mic_muted}))
+                            except Exception as e:
+                                log.debug(f"mute_sync upstream forward failed: {e}")
                     elif msg_type == "webrtc_signal":
                         # Kiosk → server WebRTC signaling. Forward upstream as-is.
                         if self._server_ws:
@@ -538,6 +551,14 @@ class AudioManager:
                                 mgr.tts_volume = max(0.0, min(1.0, mgr.tts_volume + step))
                                 log.info(f"Hardware vol {'up' if step > 0 else 'down'}: {mgr.tts_volume:.0%}")
                                 await mgr.broadcast_to_ui({"type": "volume_sync", "level": mgr.tts_volume})
+                                # Echo upstream so the AI server republishes to MQTT/HA.
+                                if mgr._server_ws is not None:
+                                    try:
+                                        await mgr._server_ws.send(json.dumps(
+                                            {"type": "volume_sync", "level": mgr.tts_volume}
+                                        ))
+                                    except Exception as e:
+                                        log.debug(f"volume_sync upstream forward failed: {e}")
 
                 await asyncio.gather(*[read_device(dev) for dev in anker_devs])
 
