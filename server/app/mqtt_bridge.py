@@ -16,6 +16,7 @@ Topic layout (with HAL_DEVICE_ID = "hal-default"):
     hal/hal-default/image/set                <- HA writes (URL / JSON / binary JPEG)
     hal/hal-default/rtsp/set                 <- HA writes (RTSP URL / JSON)
     hal/hal-default/video/set                <- HA writes (video URL / JSON)
+    hal/hal-default/camera/set               <- HA writes (camera.* entity_id / JSON)
     hal/hal-default/last_response            sensor (truncated text of last HAL utterance)
     hal/hal-default/last_response/attrs      JSON attributes (full_text, ts)
     hal/hal-default/snapshot                 binary JPEG (published from RPi)
@@ -66,6 +67,10 @@ class MQTTBridge:
         self.on_rtsp_set: Callable[[str], Awaitable[None]] | None = None
         # Video-set: text payload (HTTP video URL or JSON wrapper).
         self.on_video_set: Callable[[str], Awaitable[None]] | None = None
+        # Camera-set: text payload (HA camera.* entity_id, or JSON
+        # {entity_id, live?, duration_s?}). Routes to show_camera
+        # (snapshot) or stream_camera (live WebRTC).
+        self.on_camera_set: Callable[[str], Awaitable[None]] | None = None
 
         self._client = None
         self._connected = False
@@ -270,6 +275,23 @@ class MQTTBridge:
             },
         ))
 
+        # Show Camera — paste a HA camera.* entity_id to show its
+        # snapshot in the orb (default 150 s). JSON wrapper supports
+        # `{"entity_id":"...", "live": true, "duration_s": N}` to open
+        # a live WebRTC stream instead.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/show_camera/config",
+            {
+                "name": "Show Camera",
+                "unique_id": f"{self.device_id}_show_camera",
+                "command_topic": f"{self.base}/camera/set",
+                "icon": "mdi:cctv",
+                "availability": avail,
+                "device": device,
+                "mode": "text",
+            },
+        ))
+
         return configs
 
     async def start(self):
@@ -341,6 +363,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/image/set")
                     await client.subscribe(f"{self.base}/rtsp/set")
                     await client.subscribe(f"{self.base}/video/set")
+                    await client.subscribe(f"{self.base}/camera/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -415,6 +438,10 @@ class MQTTBridge:
             elif topic == f"{self.base}/video/set":
                 if payload and self.on_video_set:
                     await self.on_video_set(payload)
+
+            elif topic == f"{self.base}/camera/set":
+                if payload and self.on_camera_set:
+                    await self.on_camera_set(payload)
 
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")

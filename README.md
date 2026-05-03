@@ -135,6 +135,7 @@ When `MQTT_BROKER_HOST` is set, HAL appears in HA via auto-discovery as a single
 | `text.<id>_show_image` | text | Paste a URL (or short JSON) → show on the orb for 60 s |
 | `text.<id>_stream_rtsp` | text | Paste an RTSP URL → live WebRTC stream in the orb (5 min default) |
 | `text.<id>_play_video` | text | Paste an HTTP video URL (MP4/WebM/HLS) → play in the orb |
+| `text.<id>_show_camera` | text | Paste a HA `camera.*` entity_id → snapshot in the orb. JSON `{"entity_id":"...","live":true,"duration_s":N}` for a live stream |
 | `sensor.<id>_last_response` | sensor | Last thing HAL said (state truncated to 250 chars; full text in `full_text` attribute) |
 
 Set `HAL_DEVICE_ID` (slug) and `HAL_DEVICE_NAME` (display name) to identify the device. State is republished on reconnect; availability uses MQTT Last-Will-Testament.

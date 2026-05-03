@@ -1332,6 +1332,40 @@ async def lifespan(app: FastAPI):
             )
             log.info(f"MQTT rtsp: {result}")
 
+        async def _mqtt_camera_set(payload: str):
+            text = payload.strip()
+            if not text:
+                return
+            entity_id = ""
+            live = False
+            duration_s: int | None = None
+            if text.startswith("{"):
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError as e:
+                    log.warning(f"MQTT camera/set: invalid JSON: {e}")
+                    return
+                entity_id = str(data.get("entity_id") or "").strip()
+                live = bool(data.get("live", False))
+                if "duration_s" in data:
+                    try:
+                        duration_s = int(data["duration_s"])
+                    except (TypeError, ValueError):
+                        pass
+            elif text.startswith("camera."):
+                entity_id = text
+            else:
+                log.warning("MQTT camera/set: payload is neither camera.* entity_id nor JSON")
+                return
+            if not entity_id.startswith("camera.") or not state.local_tools:
+                return
+            tool = "stream_camera" if live else "show_camera"
+            args: dict = {"entity_id": entity_id}
+            if duration_s is not None:
+                args["duration_s"] = duration_s
+            result = await state.local_tools.call_tool(tool, args)
+            log.info(f"MQTT camera ({tool}): {result}")
+
         async def _mqtt_video_set(payload: str):
             text = payload.strip()
             if not text:
@@ -1390,6 +1424,7 @@ async def lifespan(app: FastAPI):
         bridge.on_image_set = _mqtt_image_set
         bridge.on_rtsp_set = _mqtt_rtsp_set
         bridge.on_video_set = _mqtt_video_set
+        bridge.on_camera_set = _mqtt_camera_set
 
         await bridge.start()
         state.mqtt_bridge = bridge
