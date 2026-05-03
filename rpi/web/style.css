@@ -262,9 +262,9 @@ body {
     align-items: center;
     /* Anchor in-flow content (status, transcript, response, volume)
        below the absolutely-centered orb. Padding pushes the first
-       child past the orb's bottom edge. */
+       child past the orb's bottom edge. Matches the orb's 42% top. */
     justify-content: flex-start;
-    padding-top: calc(50vh + 230px);
+    padding-top: calc(42vh + 230px);
     box-sizing: border-box;
     position: relative;
 }
@@ -436,10 +436,10 @@ body.theme-japandi .ambient-grid::after {
 
 /* === Eye === */
 .eye-container {
-    /* Dead-center the orb in the viewport regardless of how much content
-       sits below it. #app pads its in-flow children below us. */
+    /* Sit the orb a little above geometric center so it balances with
+       the transcript and response panels that flow below. */
     position: absolute;
-    top: 50%;
+    top: 42%;
     left: 50%;
     transform: translate(-50%, -50%);
     width: 406px;
