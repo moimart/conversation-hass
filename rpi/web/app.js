@@ -355,23 +355,44 @@
     function isHls(url) {
         return /\.m3u8(?:\?|$)/i.test(url);
     }
-    function showVideoError(reason) {
-        // Surface playback failures as an accent-colored line in the
-        // transcript scroll so the user doesn't have to dig through
-        // DevTools to find out why a video won't play.
+    // Probe the kiosk Chromium's codec list. Exposed in transcript
+    // alongside any video error so the user can diagnose without
+    // opening DevTools (which the kiosk often hides).
+    function videoCapabilities() {
+        const v = document.createElement("video");
+        const probes = [
+            ["mp4", "video/mp4"],
+            ["mp4 h264", 'video/mp4; codecs="avc1.42E01E,mp4a.40.2"'],
+            ["webm vp9", 'video/webm; codecs="vp9,opus"'],
+            ["webm vp8", 'video/webm; codecs="vp8,vorbis"'],
+            ["webm av1", 'video/webm; codecs="av01.0.05M.08"'],
+        ];
+        return probes.map(([n, t]) => `${n}=${v.canPlayType(t) || "no"}`).join(", ");
+    }
+    function pushTranscriptLine(text, accent) {
         const placeholder = transcript.querySelector(".transcript-placeholder");
         if (placeholder) placeholder.remove();
         const line = document.createElement("div");
         line.className = "transcript-line latest";
-        line.style.color = "var(--accent)";
-        line.style.fontWeight = "500";
-        line.textContent = `Video error: ${reason}`;
+        if (accent) {
+            line.style.color = "var(--accent)";
+            line.style.fontWeight = "500";
+        }
+        line.textContent = text;
         transcript.appendChild(line);
         while (transcript.children.length > MAX_TRANSCRIPT_LINES) {
             transcript.removeChild(transcript.firstChild);
         }
         transcript.scrollTop = transcript.scrollHeight;
-        console.warn("Video error:", reason);
+    }
+    function showVideoError(reason) {
+        // Surface playback failures as an accent-colored line in the
+        // transcript scroll, with the codec capability list so the
+        // user can tell at a glance whether the build supports the
+        // format they're trying to play.
+        pushTranscriptLine(`Video error: ${reason}`, true);
+        pushTranscriptLine(`Can play: ${videoCapabilities()}`, true);
+        console.warn("Video error:", reason, "| canPlay:", videoCapabilities());
     }
     const MEDIA_ERROR_NAMES = ["UNKNOWN", "ABORTED", "NETWORK", "DECODE", "SRC_NOT_SUPPORTED"];
     function describeMediaError(err) {
@@ -615,5 +636,8 @@
     // --- Init ---
     setVolume(0.7);
     setState("idle");
+    // One-shot diagnostic so the user can see what video formats this
+    // browser build can decode without opening DevTools.
+    pushTranscriptLine(`Browser canPlay: ${videoCapabilities()}`, false);
     connect();
 })();
