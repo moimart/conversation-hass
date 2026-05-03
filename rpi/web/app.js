@@ -355,6 +355,30 @@
     function isHls(url) {
         return /\.m3u8(?:\?|$)/i.test(url);
     }
+    function showVideoError(reason) {
+        // Surface playback failures as an accent-colored line in the
+        // transcript scroll so the user doesn't have to dig through
+        // DevTools to find out why a video won't play.
+        const placeholder = transcript.querySelector(".transcript-placeholder");
+        if (placeholder) placeholder.remove();
+        const line = document.createElement("div");
+        line.className = "transcript-line latest";
+        line.style.color = "var(--accent)";
+        line.style.fontWeight = "500";
+        line.textContent = `Video error: ${reason}`;
+        transcript.appendChild(line);
+        while (transcript.children.length > MAX_TRANSCRIPT_LINES) {
+            transcript.removeChild(transcript.firstChild);
+        }
+        transcript.scrollTop = transcript.scrollHeight;
+        console.warn("Video error:", reason);
+    }
+    const MEDIA_ERROR_NAMES = ["UNKNOWN", "ABORTED", "NETWORK", "DECODE", "SRC_NOT_SUPPORTED"];
+    function describeMediaError(err) {
+        if (!err) return "unknown";
+        const code = MEDIA_ERROR_NAMES[err.code] || `code ${err.code}`;
+        return err.message ? `${code} — ${err.message}` : code;
+    }
     function playVideo(msg) {
         const container = document.querySelector(".eye-container");
         const video = document.getElementById("eye-stream");
@@ -366,17 +390,25 @@
         videoUserMuted = !!msg.muted;
         video.muted = videoUserMuted;
         video.loop = !!msg.loop;
+        video.onerror = () => showVideoError(describeMediaError(video.error));
         const finish = () => {
             if (!video.loop) stopVideo();
         };
+        const playFail = (e) =>
+            showVideoError(`autoplay blocked or play() failed — ${e && (e.message || e.name) || e}`);
         if (isHls(msg.url) && window.Hls && Hls.isSupported() && !video.canPlayType("application/vnd.apple.mpegurl")) {
             videoHls = new Hls();
             videoHls.loadSource(msg.url);
             videoHls.attachMedia(video);
-            videoHls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+            videoHls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(playFail));
+            videoHls.on(Hls.Events.ERROR, (_, data) => {
+                if (data && data.fatal) {
+                    showVideoError(`HLS ${data.type || ""} ${data.details || ""}`.trim());
+                }
+            });
         } else {
             video.src = msg.url;
-            video.play().catch(() => {});
+            video.play().catch(playFail);
         }
         video.addEventListener("ended", finish, { once: true });
         container.classList.add("camera-active", "stream-active");
@@ -394,6 +426,7 @@
         }
         if (video) {
             try {
+                video.onerror = null;  // suppress synthetic error from src removal
                 video.pause();
                 video.removeAttribute("src");
                 video.load();
