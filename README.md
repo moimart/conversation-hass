@@ -83,7 +83,7 @@ No cloud services. No subscriptions. All processing stays on your network.
 
 8. **Web UI with themes** — A modern HAL 9000-inspired interface with metallic bezel ring, animated red eye, live transcription, AI responses, and assistant state indicators. Four themes (`dark`, `birch`, `odyssey`, `japandi`); optional auto day/night switching driven by HA's `sun.sun` entity.
 
-9. **Home Assistant integration** — When MQTT is configured, the AI server publishes HA Discovery messages so HAL appears as a single device exposing state, volume, mute, theme, a camera (the latest UI snapshot), and a text input that speaks anything you write into it. The kiosk page rasterizes itself via `html2canvas` every 60s and POSTs the JPEG to the server.
+9. **Home Assistant integration** — When MQTT is configured, the AI server publishes HA Discovery messages so HAL appears as a single device exposing state, volume, mute, theme, a camera (the latest UI snapshot), and a text input that speaks anything you write into it. The audio_streamer captures the kiosk via the Chrome DevTools Protocol against the running kiosk Chromium and forwards the JPEG to the server every minute (live video frames, custom fonts, animations, masks, and filters all included — exact pixels, no html2canvas approximations).
 
 10. **Multi-room audio (optional)** — A Sendspin sidecar on the Pi registers an [Open Home Foundation](https://www.openhomefoundation.org/) multi-room player in Music Assistant. HAL TTS and Sendspin music share the same PulseAudio socket; HA announcements duck the music via `module-role-ducking` while HAL speaks. Hardware volume buttons on the Anker target MA when music is playing and HAL TTS otherwise.
 
@@ -319,7 +319,18 @@ The audio streamer auto-detects the USB speakerphone, probes its native sample r
 
 ### 5. Open the web UI
 
-Navigate to `http://<rpi-ip>:8080` in a browser, ideally as a kiosk on a monitor attached to the Pi (the snapshot publisher rasterizes the live page).
+Navigate to `http://<rpi-ip>:8080` in a browser, ideally as a kiosk on a monitor attached to the Pi.
+
+For the HA camera entity to receive screenshots, launch the kiosk Chromium with the DevTools Protocol enabled and bound so the audio_streamer container can reach it:
+
+```
+chromium-browser --kiosk http://localhost:8080 \
+  --autoplay-policy=no-user-gesture-required \
+  --remote-debugging-port=9222 \
+  --remote-debugging-address=0.0.0.0
+```
+
+The audio_streamer connects to that endpoint via `host.docker.internal:9222` and uploads a JPEG every `SNAPSHOT_INTERVAL_S` seconds (default 60).
 
 ### 6. Desktop Command App (optional)
 
@@ -384,12 +395,13 @@ conversation-hass/
 ├── rpi/
 │   ├── Dockerfile                     # Python 3.11 slim + PulseAudio + ALSA
 │   ├── audio_streamer/
-│   │   └── main.py                    # Mic capture, FIR resample, TTS playback,
-│   │                                  # snapshot proxy, music-state hook, HID buttons
+│   │   ├── main.py                    # Mic capture, FIR resample, TTS playback,
+│   │   │                              # CDP snapshot loop, music-state hook, HID buttons
+│   │   └── cdp_snapshot.py            # Chrome DevTools Protocol screenshot client
 │   ├── web/
 │   │   ├── index.html                 # HAL 9000 UI (4 themes)
 │   │   ├── style.css                  # Animations, theme variants
-│   │   └── app.js                     # WebSocket client, html2canvas snapshots
+│   │   └── app.js                     # WebSocket client (orb / overlays / video)
 │   └── sendspin/
 │       ├── Dockerfile                 # Python 3.12 slim + sendspin daemon
 │       ├── entrypoint.sh              # Daemon launcher with MA hooks
@@ -424,6 +436,8 @@ conversation-hass/
 | `AI_SERVER_HOST` | — | IP of the AI server (used by RPi to connect) |
 | `RPI_HOST` | — | IP of the RPi (informational; not consumed by code) |
 | `WEB_PORT` | `8080` | Port for the RPi web UI |
+| `CHROMIUM_DEBUG_URL` | `http://host.docker.internal:9222` | Kiosk Chromium's DevTools endpoint (audio_streamer reaches it for screenshots) |
+| `SNAPSHOT_INTERVAL_S` | `60` | Seconds between CDP screenshots posted to the AI server |
 
 ### Speech & LLM
 
@@ -588,7 +602,7 @@ uv pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-All 246 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
+All 251 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
 
 ## License
 

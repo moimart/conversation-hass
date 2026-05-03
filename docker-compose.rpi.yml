@@ -15,11 +15,15 @@ services:
       - CHUNK_SIZE=${CHUNK_SIZE:-4096}
       - PULSE_SERVER=unix:/run/user/1000/pulse/native
       - PULSE_PROP=media.role=phone
+      - CHROMIUM_DEBUG_URL=${CHROMIUM_DEBUG_URL:-http://host.docker.internal:9222}
+      - SNAPSHOT_INTERVAL_S=${SNAPSHOT_INTERVAL_S:-60}
     devices:
       - /dev/snd:/dev/snd
       - /dev/input:/dev/input
     group_add:
       - audio
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /run/dbus:/run/dbus:ro
       - /run/user/1000/pulse:/run/user/1000/pulse:ro

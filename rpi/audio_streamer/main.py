@@ -588,19 +588,53 @@ class AudioManager:
         body = await request.read()
         if not body:
             return web.Response(status=204)
+        return await self._upload_snapshot(body)
+
+    async def _upload_snapshot(self, jpeg: bytes) -> web.Response:
+        """POST a JPEG to the AI server's /api/snapshot endpoint."""
         url = f"http://{self.ai_server_host}:8765/api/snapshot"
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     url,
-                    data=body,
+                    data=jpeg,
                     headers={"Content-Type": "image/jpeg"},
                     timeout=aiohttp.ClientTimeout(total=10),
                 ) as resp:
                     return web.Response(status=resp.status)
         except Exception as e:
-            log.debug(f"snapshot proxy failed: {e}")
+            log.debug(f"snapshot upload failed: {e}")
             return web.Response(status=502)
+
+    async def cdp_snapshot_loop(self):
+        """Periodically capture the kiosk via CDP and post it upstream.
+
+        Replaces the old html2canvas/in-page publisher: the screenshot
+        comes straight from the running Chromium's compositor, so live
+        video frames, animations, custom fonts, masks, and filters are
+        all rendered exactly as the user sees them. Disabled when
+        CHROMIUM_DEBUG_URL is unset.
+        """
+        from .cdp_snapshot import capture_screenshot
+        debug_url = os.environ.get("CHROMIUM_DEBUG_URL", "").strip()
+        if not debug_url:
+            log.info("CDP snapshot disabled (CHROMIUM_DEBUG_URL not set)")
+            return
+        try:
+            interval = max(5, int(os.environ.get("SNAPSHOT_INTERVAL_S", "60")))
+        except ValueError:
+            interval = 60
+        log.info(f"CDP snapshot loop: {debug_url} every {interval}s")
+        # Brief startup delay so the kiosk page has time to settle.
+        await asyncio.sleep(5)
+        while True:
+            try:
+                jpeg = await capture_screenshot(debug_url)
+                if jpeg:
+                    await self._upload_snapshot(jpeg)
+            except Exception as e:
+                log.debug(f"cdp snapshot iteration failed: {e}")
+            await asyncio.sleep(interval)
 
     async def start_web_server(self):
         """Start the aiohttp web server for serving UI and WebSocket."""
@@ -627,6 +661,7 @@ class AudioManager:
         await asyncio.gather(
             self.audio_stream_handler(),
             self.hid_volume_listener(),
+            self.cdp_snapshot_loop(),
         )
 
 
