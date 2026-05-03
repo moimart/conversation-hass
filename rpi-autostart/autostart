@@ -1,0 +1,7 @@
+#rpi autostart with wayland
+#location: ~/.config/labwc 
+
+wlr-randr --output HDMI-A-2 --transform 270 &
+sleep 2
+chromium --enable-features=VaapiVideoDecoder,AcceleratedVideoDecodeLinuxGL --remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --no-first-run http://localhost:8080 &
+
