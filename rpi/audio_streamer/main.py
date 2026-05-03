@@ -636,9 +636,32 @@ class AudioManager:
                 log.debug(f"cdp snapshot iteration failed: {e}")
             await asyncio.sleep(interval)
 
+    @staticmethod
+    @web.middleware
+    async def _no_cache_middleware(request: web.Request, handler):
+        """Tell browsers never to cache the kiosk's UI assets.
+
+        The kiosk Chromium aggressively caches HTML/CSS/JS by default,
+        so deploys of new orb tweaks are invisible until the browser
+        is restarted. With these headers every refresh re-downloads
+        the assets and the kiosk picks up the latest build immediately.
+        """
+        response = await handler(request)
+        if isinstance(response, web.WebSocketResponse):
+            return response
+        ct = response.headers.get("Content-Type", "")
+        if any(t in ct for t in ("html", "css", "javascript", "json", "font")):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
     async def start_web_server(self):
         """Start the aiohttp web server for serving UI and WebSocket."""
-        app = web.Application(client_max_size=8 * 1024 * 1024)
+        app = web.Application(
+            client_max_size=8 * 1024 * 1024,
+            middlewares=[self._no_cache_middleware],
+        )
         app.router.add_get("/ws", self.websocket_handler)
         app.router.add_get("/", self._serve_index)
         app.router.add_post("/api/snapshot", self._proxy_snapshot)
