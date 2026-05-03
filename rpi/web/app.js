@@ -638,8 +638,5 @@
     // --- Init ---
     setVolume(0.7);
     setState("idle");
-    // One-shot diagnostic so the user can see what video formats this
-    // browser build can decode without opening DevTools.
-    pushTranscriptLine(`Browser canPlay: ${videoCapabilities()}`, false);
     connect();
 })();
