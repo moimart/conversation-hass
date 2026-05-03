@@ -238,12 +238,12 @@ body.theme-japandi {
 
 /* Whole-page zoom — auto-scales with the smaller viewport dimension so
    the kiosk looks proportionally identical at 1080p / 1440p / 2160p
-   and in either portrait or landscape orientation. The divisor 864
-   lands at ~1.25× on a 1080-wide viewport (the original tuning) and
-   ~2.5× on a 2160-wide viewport. clamp() guards against absurdly
-   small or huge screens. */
+   and in either portrait or landscape orientation. The divisor 691
+   lands at ~1.5625× on a 1080-wide viewport (text 25% bigger than the
+   864-divisor baseline) and ~3.125× on a 2160-wide viewport. The orb
+   is counter-scaled by 0.96 below so it nets to +20% rather than +25%. */
 html {
-    zoom: clamp(0.8, calc(100vmin / 864px), 2.5);
+    zoom: clamp(1.0, calc(100vmin / 691px), 3.125);
 }
 
 body {
@@ -266,9 +266,10 @@ body {
     align-items: center;
     /* Anchor in-flow content (status, transcript, response, volume)
        below the absolutely-centered orb. Padding pushes the first
-       child past the orb's bottom edge. Matches the orb's 42% top. */
+       child past the orb's bottom edge. Tail trimmed from 230 to 216
+       to keep the gap consistent after the page-zoom bump. */
     justify-content: flex-start;
-    padding-top: calc(42vh + 230px);
+    padding-top: calc(42vh + 216px);
     box-sizing: border-box;
     position: relative;
 }
@@ -441,11 +442,13 @@ body.theme-japandi .ambient-grid::after {
 /* === Eye === */
 .eye-container {
     /* Sit the orb a little above geometric center so it balances with
-       the transcript and response panels that flow below. */
+       the transcript and response panels that flow below. The scale
+       counters the bumped page zoom so the orb is +20% rather than
+       +25% over the previous baseline. */
     position: absolute;
     top: 42%;
     left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) scale(0.96);
     width: 406px;
     height: 406px;
     margin: 0;
