@@ -236,6 +236,12 @@ body.theme-japandi {
     box-sizing: border-box;
 }
 
+/* Whole-page zoom — equivalent to pressing Ctrl-+ once. Adjust here
+   to scale every layer (orb, transcript, controls, clock) together. */
+html {
+    zoom: 1.25;
+}
+
 body {
     background: var(--bg);
     color: var(--text);
