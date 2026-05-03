@@ -236,10 +236,14 @@ body.theme-japandi {
     box-sizing: border-box;
 }
 
-/* Whole-page zoom — equivalent to pressing Ctrl-+ once. Adjust here
-   to scale every layer (orb, transcript, controls, clock) together. */
+/* Whole-page zoom — auto-scales with the smaller viewport dimension so
+   the kiosk looks proportionally identical at 1080p / 1440p / 2160p
+   and in either portrait or landscape orientation. The divisor 864
+   lands at ~1.25× on a 1080-wide viewport (the original tuning) and
+   ~2.5× on a 2160-wide viewport. clamp() guards against absurdly
+   small or huge screens. */
 html {
-    zoom: 1.25;
+    zoom: clamp(0.8, calc(100vmin / 864px), 2.5);
 }
 
 body {
