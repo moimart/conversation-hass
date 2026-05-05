@@ -58,9 +58,11 @@ class ConversationManager:
         # State: idle, listening, processing, speaking
         self.state = "idle"
 
-        # Conversation history for context
+        # Conversation history for context. Long-term recall lives in
+        # Shodh; raw history just keeps the recent thread coherent, so
+        # 20 turns is plenty and keeps per-round prompt eval fast.
         self.history: list[dict] = []
-        self.max_history = 100
+        self.max_history = 20
 
         # Text buffer accumulated after wake word
         self._command_buffer: list[str] = []
@@ -269,7 +271,7 @@ class ConversationManager:
         memory_recall_s = 0.0
         if self.memory and self.memory.available:
             t_recall = time.monotonic()
-            memories = await self.memory.recall(user_text, limit=5)
+            memories = await self.memory.recall(user_text, limit=3)
             memory_recall_s = time.monotonic() - t_recall
             log.info(
                 f"[llm] memory.recall took {memory_recall_s:.2f}s "
