@@ -168,17 +168,21 @@ class ConversationManager:
             await self._set_state("idle")
             return
 
-        log.info(f"Processing: '{full_text}'")
+        log.info(f"[task] START processing: '{full_text}'")
+        t_task_start = time.monotonic()
         await self._set_state("processing")
         self._suppress_final_tts = False
 
         try:
             response_text = await self._run_llm_with_tools(full_text)
+            t_after_llm = time.monotonic()
 
             # Store conversation exchange in long-term memory
             if self.memory and self.memory.available:
                 memory_text = f"User said: {full_text}\nHAL responded: {response_text}"
+                t_remember = time.monotonic()
                 await self.memory.remember(memory_text, memory_type="conversation")
+                log.info(f"[task] memory.remember took {time.monotonic() - t_remember:.2f}s")
 
             # Synthesize speech (skip if speak_verbatim already handled audio)
             if self._suppress_final_tts:
@@ -186,7 +190,13 @@ class ConversationManager:
                 audio_bytes = None
             else:
                 await self._set_state("speaking")
+                t_tts = time.monotonic()
                 audio_bytes = await self.tts_engine.synthesize(response_text)
+                log.info(
+                    f"[task] tts.synthesize took {time.monotonic() - t_tts:.2f}s "
+                    f"({len(response_text)} chars -> "
+                    f"{len(audio_bytes) if audio_bytes else 0} bytes)"
+                )
 
             # Send response back (with audio_bytes=None when suppressed)
             if self.on_response:
@@ -196,6 +206,11 @@ class ConversationManager:
             if response_text.rstrip().endswith("?"):
                 self._awaiting_followup = True
                 log.info("LLM asked a question — awaiting follow-up")
+
+            log.info(
+                f"[task] END processing in {time.monotonic() - t_task_start:.2f}s "
+                f"(llm+tools {t_after_llm - t_task_start:.2f}s)"
+            )
 
         except Exception as e:
             log.error(f"Error processing command: {e}", exc_info=True)
@@ -220,16 +235,27 @@ class ConversationManager:
         # Recall relevant memories and inject into system prompt
         system_prompt = self._build_system_prompt()
         if self.memory and self.memory.available:
+            t_recall = time.monotonic()
             memories = await self.memory.recall(user_text, limit=5)
+            log.info(
+                f"[llm] memory.recall took {time.monotonic() - t_recall:.2f}s "
+                f"(returned {len(memories) if memories else 0} entries)"
+            )
             if memories:
                 memory_block = self.memory.format_memories_for_prompt(memories)
                 system_prompt = system_prompt + "\n\n" + memory_block
 
         messages = [{"role": "system", "content": system_prompt}] + self.history
 
-        # Tool-calling loop (max 5 rounds to prevent infinite loops)
+        # Tool-calling loop (max 8 rounds to prevent infinite loops)
+        t_llm_total = 0.0
+        t_tools_total = 0.0
+        rounds = 0
         for _ in range(8):
+            rounds += 1
+            t_round = time.monotonic()
             response = await self._chat_completion(messages)
+            t_llm_total += time.monotonic() - t_round
 
             # Check if the LLM wants to call a tool
             tool_calls = response.get("message", {}).get("tool_calls")
@@ -238,6 +264,10 @@ class ConversationManager:
             if not tool_calls:
                 # No tool call — final text response
                 self.history.append({"role": "assistant", "content": assistant_text})
+                log.info(
+                    f"[llm] DONE in {rounds} round(s) "
+                    f"(llm {t_llm_total:.2f}s, tools {t_tools_total:.2f}s)"
+                )
                 return assistant_text
 
             # Execute each tool call
@@ -250,7 +280,11 @@ class ConversationManager:
                 tool_args = fn.get("arguments", {})
 
                 log.info(f"LLM calling tool: {tool_name}({json.dumps(tool_args)})")
+                t_tool = time.monotonic()
                 result = await self.mcp.call_tool(tool_name, tool_args)
+                tool_elapsed = time.monotonic() - t_tool
+                t_tools_total += tool_elapsed
+                log.info(f"[llm] tool {tool_name} took {tool_elapsed:.2f}s")
 
                 # Feed tool result back into the conversation
                 messages.append({
@@ -259,6 +293,10 @@ class ConversationManager:
                 })
 
         # If we exhausted the loop, return last assistant message
+        log.warning(
+            f"[llm] hit 8-round cap "
+            f"(llm {t_llm_total:.2f}s, tools {t_tools_total:.2f}s)"
+        )
         fallback = "I've completed the action."
         self.history.append({"role": "assistant", "content": fallback})
         return fallback
@@ -281,15 +319,44 @@ class ConversationManager:
         tools = self.mcp.tools_for_llm
         if tools:
             payload["tools"] = tools
-            log.info(f"Sending {len(tools)} tools to Ollama")
+            log.debug(f"Sending {len(tools)} tools to Ollama")
 
+        t0 = time.monotonic()
         try:
             resp = await self._http.post(
                 f"{self.ollama_host}/api/chat",
                 json=payload,
             )
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
         except Exception as e:
-            log.error(f"Ollama error: {e}")
+            log.error(f"Ollama error after {time.monotonic() - t0:.2f}s: {e}")
             return {"message": {"content": "I'm having trouble thinking right now. Could you try again?"}}
+
+        # Wall clock from our side, plus Ollama's own breakdown if present.
+        # Ollama returns durations in nanoseconds; we convert to seconds and
+        # surface a tokens/sec figure so it's easy to spot a slow GPU vs slow
+        # network/HTTP.
+        wall = time.monotonic() - t0
+        load_s = data.get("load_duration", 0) / 1e9
+        prompt_n = data.get("prompt_eval_count", 0)
+        prompt_s = data.get("prompt_eval_duration", 0) / 1e9
+        gen_n = data.get("eval_count", 0)
+        gen_s = data.get("eval_duration", 0) / 1e9
+        prompt_tps = (prompt_n / prompt_s) if prompt_s else 0
+        gen_tps = (gen_n / gen_s) if gen_s else 0
+        msg_count = len(messages)
+        # Rough char count of the inbound context for sizing intuition.
+        ctx_chars = sum(
+            len(m.get("content") or "")
+            + sum(len(str(tc)) for tc in (m.get("tool_calls") or []))
+            for m in messages
+        )
+        log.info(
+            f"[ollama] {self.ollama_model} wall={wall:.2f}s "
+            f"load={load_s:.2f}s "
+            f"prompt={prompt_n}t/{prompt_s:.2f}s ({prompt_tps:.0f} t/s) "
+            f"gen={gen_n}t/{gen_s:.2f}s ({gen_tps:.0f} t/s) "
+            f"msgs={msg_count} ctx≈{ctx_chars}c"
+        )
+        return data
