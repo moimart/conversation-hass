@@ -19,6 +19,7 @@ Topic layout (with HAL_DEVICE_ID = "hal-default"):
     hal/hal-default/camera/set               <- HA writes (camera.* entity_id / JSON)
     hal/hal-default/last_response            sensor (truncated text of last HAL utterance)
     hal/hal-default/last_response/attrs      JSON attributes (full_text, ts)
+    hal/hal-default/task_metrics             JSON (timing breakdown of last command)
     hal/hal-default/snapshot                 binary JPEG (published from RPi)
     hal/hal-default/availability             "online" / "offline"
 """
@@ -83,6 +84,7 @@ class MQTTBridge:
         self._cached_muted: bool = False
         self._cached_theme: str = "dark"
         self._cached_last_response: str = ""
+        self._cached_task_metrics: dict | None = None
 
     @property
     def connected(self) -> bool:
@@ -292,6 +294,42 @@ class MQTTBridge:
             },
         ))
 
+        # Per-task timing diagnostics. All sensors read from one JSON
+        # topic via value_template — fewer publishes, easier to extend.
+        metrics_topic = f"{self.base}/task_metrics"
+        diag_sensors = [
+            ("task_total_s",      "Last Task Duration",     "mdi:timer-outline",      "s",       "duration"),
+            ("llm_total_s",       "Last LLM Duration",      "mdi:brain",              "s",       "duration"),
+            ("tools_total_s",     "Last Tools Duration",    "mdi:tools",              "s",       "duration"),
+            ("memory_recall_s",   "Last Memory Recall",     "mdi:book-search",        "s",       "duration"),
+            ("memory_remember_s", "Last Memory Remember",   "mdi:bookmark-plus",      "s",       "duration"),
+            ("tts_s",             "Last TTS Duration",      "mdi:account-voice",      "s",       "duration"),
+            ("rounds",            "Last LLM Rounds",        "mdi:rotate-3d-variant",  None,      None),
+            ("gen_n",             "Last Generated Tokens",  "mdi:counter",            "tokens",  None),
+            ("gen_tps",           "Last Generation Speed",  "mdi:speedometer",        "t/s",     None),
+            ("prompt_tps",        "Last Prompt Eval Speed", "mdi:speedometer",        "t/s",     None),
+            ("model",             "Last Model",             "mdi:chip",               None,      None),
+        ]
+        for key, name, icon, unit, device_class in diag_sensors:
+            payload = {
+                "name": name,
+                "unique_id": f"{self.device_id}_{key}",
+                "state_topic": metrics_topic,
+                "value_template": "{{ value_json." + key + " }}",
+                "icon": icon,
+                "availability": avail,
+                "device": device,
+                "entity_category": "diagnostic",
+            }
+            if unit:
+                payload["unit_of_measurement"] = unit
+            if device_class:
+                payload["device_class"] = device_class
+            configs.append((
+                f"{DISCOVERY_PREFIX}/sensor/{self.device_id}/{key}/config",
+                payload,
+            ))
+
         return configs
 
     async def start(self):
@@ -353,6 +391,8 @@ class MQTTBridge:
                     # appears in HA even before HAL has spoken. Empty string
                     # is fine — HA shows it as blank rather than "unknown".
                     await self.publish_last_response(self._cached_last_response)
+                    if self._cached_task_metrics:
+                        await self.publish_task_metrics(self._cached_task_metrics)
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -473,6 +513,15 @@ class MQTTBridge:
     async def publish_theme(self, theme: str):
         self._cached_theme = theme
         await self._safe_publish(f"{self.base}/theme/state", theme)
+
+    async def publish_task_metrics(self, metrics: dict):
+        """Publish the per-task timing breakdown for the diagnostic sensors.
+
+        Single JSON message; the discovery sensors fan out via
+        value_template. Cached for republish on reconnect.
+        """
+        self._cached_task_metrics = metrics
+        await self._safe_publish(f"{self.base}/task_metrics", json.dumps(metrics))
 
     async def publish_last_response(self, text: str):
         """Publish HAL's most recent utterance.

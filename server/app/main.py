@@ -1539,9 +1539,14 @@ async def audio_endpoint(websocket: WebSocket):
             elif new_state == "idle":
                 asyncio.create_task(_ma_resume_if_we_paused(state))
 
+    async def on_metrics(metrics: dict):
+        if state.mqtt_bridge:
+            await state.mqtt_bridge.publish_task_metrics(metrics)
+
     conversation.on_response = on_response
     conversation.on_wake_word = on_wake_word
     conversation.on_state_change = on_state_change
+    conversation.on_metrics = on_metrics
 
     # Keepalive: ping RPi every 15s, detect dead connections
     last_pong = time.monotonic()

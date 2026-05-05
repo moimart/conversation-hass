@@ -80,6 +80,12 @@ class ConversationManager:
         self.on_response: Callable[[str, bytes | None], Awaitable[None]] | None = None
         self.on_wake_word: Callable[[], Awaitable[None]] | None = None
         self.on_state_change: Callable[[str], Awaitable[None]] | None = None
+        # Fired with a timing/metrics dict at the end of every task.
+        self.on_metrics: Callable[[dict], Awaitable[None]] | None = None
+
+        # Per-task scratch space for timing collection.
+        self._llm_metrics_acc: dict = {}
+        self._last_ollama_metrics: dict = {}
 
         self._http = httpx.AsyncClient(timeout=120.0)
 
@@ -172,6 +178,10 @@ class ConversationManager:
         t_task_start = time.monotonic()
         await self._set_state("processing")
         self._suppress_final_tts = False
+        self._llm_metrics_acc = {}
+        self._last_ollama_metrics = {}
+        memory_remember_s = 0.0
+        tts_s = 0.0
 
         try:
             response_text = await self._run_llm_with_tools(full_text)
@@ -182,7 +192,8 @@ class ConversationManager:
                 memory_text = f"User said: {full_text}\nHAL responded: {response_text}"
                 t_remember = time.monotonic()
                 await self.memory.remember(memory_text, memory_type="conversation")
-                log.info(f"[task] memory.remember took {time.monotonic() - t_remember:.2f}s")
+                memory_remember_s = time.monotonic() - t_remember
+                log.info(f"[task] memory.remember took {memory_remember_s:.2f}s")
 
             # Synthesize speech (skip if speak_verbatim already handled audio)
             if self._suppress_final_tts:
@@ -192,8 +203,9 @@ class ConversationManager:
                 await self._set_state("speaking")
                 t_tts = time.monotonic()
                 audio_bytes = await self.tts_engine.synthesize(response_text)
+                tts_s = time.monotonic() - t_tts
                 log.info(
-                    f"[task] tts.synthesize took {time.monotonic() - t_tts:.2f}s "
+                    f"[task] tts.synthesize took {tts_s:.2f}s "
                     f"({len(response_text)} chars -> "
                     f"{len(audio_bytes) if audio_bytes else 0} bytes)"
                 )
@@ -207,10 +219,30 @@ class ConversationManager:
                 self._awaiting_followup = True
                 log.info("LLM asked a question — awaiting follow-up")
 
+            task_total_s = time.monotonic() - t_task_start
             log.info(
-                f"[task] END processing in {time.monotonic() - t_task_start:.2f}s "
+                f"[task] END processing in {task_total_s:.2f}s "
                 f"(llm+tools {t_after_llm - t_task_start:.2f}s)"
             )
+
+            if self.on_metrics:
+                metrics = {
+                    "task_total_s": round(task_total_s, 2),
+                    "llm_total_s": round(self._llm_metrics_acc.get("llm_total_s", 0.0), 2),
+                    "tools_total_s": round(self._llm_metrics_acc.get("tools_total_s", 0.0), 2),
+                    "memory_recall_s": round(self._llm_metrics_acc.get("memory_recall_s", 0.0), 2),
+                    "memory_remember_s": round(memory_remember_s, 2),
+                    "tts_s": round(tts_s, 2),
+                    "rounds": int(self._llm_metrics_acc.get("rounds", 0)),
+                    "model": self._last_ollama_metrics.get("model") or self.ollama_model,
+                    "gen_tps": round(self._last_ollama_metrics.get("gen_tps", 0.0), 1),
+                    "prompt_tps": round(self._last_ollama_metrics.get("prompt_tps", 0.0), 1),
+                    "gen_n": int(self._last_ollama_metrics.get("gen_n", 0)),
+                }
+                try:
+                    await self.on_metrics(metrics)
+                except Exception as e:
+                    log.debug(f"on_metrics callback failed: {e}")
 
         except Exception as e:
             log.error(f"Error processing command: {e}", exc_info=True)
@@ -234,11 +266,13 @@ class ConversationManager:
 
         # Recall relevant memories and inject into system prompt
         system_prompt = self._build_system_prompt()
+        memory_recall_s = 0.0
         if self.memory and self.memory.available:
             t_recall = time.monotonic()
             memories = await self.memory.recall(user_text, limit=5)
+            memory_recall_s = time.monotonic() - t_recall
             log.info(
-                f"[llm] memory.recall took {time.monotonic() - t_recall:.2f}s "
+                f"[llm] memory.recall took {memory_recall_s:.2f}s "
                 f"(returned {len(memories) if memories else 0} entries)"
             )
             if memories:
@@ -256,6 +290,12 @@ class ConversationManager:
             t_round = time.monotonic()
             response = await self._chat_completion(messages)
             t_llm_total += time.monotonic() - t_round
+            self._llm_metrics_acc = {
+                "rounds": rounds,
+                "llm_total_s": t_llm_total,
+                "tools_total_s": t_tools_total,
+                "memory_recall_s": memory_recall_s,
+            }
 
             # Check if the LLM wants to call a tool
             tool_calls = response.get("message", {}).get("tool_calls")
@@ -284,6 +324,7 @@ class ConversationManager:
                 result = await self.mcp.call_tool(tool_name, tool_args)
                 tool_elapsed = time.monotonic() - t_tool
                 t_tools_total += tool_elapsed
+                self._llm_metrics_acc["tools_total_s"] = t_tools_total
                 log.info(f"[llm] tool {tool_name} took {tool_elapsed:.2f}s")
 
                 # Feed tool result back into the conversation
@@ -359,4 +400,15 @@ class ConversationManager:
             f"gen={gen_n}t/{gen_s:.2f}s ({gen_tps:.0f} t/s) "
             f"msgs={msg_count} ctx≈{ctx_chars}c"
         )
+        self._last_ollama_metrics = {
+            "model": self.ollama_model,
+            "wall_s": wall,
+            "load_s": load_s,
+            "prompt_n": prompt_n,
+            "prompt_s": prompt_s,
+            "gen_n": gen_n,
+            "gen_s": gen_s,
+            "prompt_tps": prompt_tps,
+            "gen_tps": gen_tps,
+        }
         return data
