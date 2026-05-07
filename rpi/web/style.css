@@ -640,6 +640,9 @@ body.theme-japandi .ambient-grid::after {
 }
 
 .eye-pupil {
+    /* Kept for camera-mode CSS hooks but no longer paints a dark
+       recess — HAL's iconic look is a bright yellow center on the
+       red iris, with no black pupil. */
     position: absolute;
     top: 50%;
     left: 50%;
@@ -647,11 +650,7 @@ body.theme-japandi .ambient-grid::after {
     height: 48px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
-    background: radial-gradient(circle,
-        var(--pupil-1) 0%,
-        var(--pupil-2) 50%,
-        transparent 70%
-    );
+    background: transparent;
 }
 
 /* HAL's iconic yellow point of light at the very center of the pupil.
@@ -662,8 +661,8 @@ body.theme-japandi .ambient-grid::after {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
     background: radial-gradient(circle,
