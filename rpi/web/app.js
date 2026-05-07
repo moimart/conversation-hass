@@ -211,6 +211,16 @@
         if (!text) return;
 
         responseText.textContent = text;
+        // Stamp the moment HAL replied — kiosk-local time, UI-only, never
+        // part of the spoken text or stored response.
+        const ts = document.getElementById("response-timestamp");
+        if (ts) {
+            const now = new Date();
+            ts.textContent = now.toLocaleTimeString(undefined, {
+                hour: "2-digit",
+                minute: "2-digit",
+            });
+        }
         responseContainer.classList.add("visible");
         setState("speaking");
     }

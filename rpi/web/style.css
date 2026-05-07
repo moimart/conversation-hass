@@ -793,13 +793,28 @@ body.theme-japandi .ambient-grid::after {
     transform: translateY(0);
 }
 
+.response-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
 .response-label {
     font-family: 'JetBrains Mono', monospace;
     font-size: 9px;
     letter-spacing: 3px;
     color: var(--accent);
-    margin-bottom: 12px;
     opacity: 0.8;
+}
+
+.response-timestamp {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
 }
 
 .response-text {
