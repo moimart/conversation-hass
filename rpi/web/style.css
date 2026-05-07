@@ -533,6 +533,9 @@ body.theme-japandi .ambient-grid::after {
     background: transparent !important;
     box-shadow: none !important;
 }
+.eye-container.camera-active .eye-pupil-light {
+    display: none;
+}
 .eye-container.camera-active .eye-core::before,
 .eye-container.camera-active .eye-core::after {
     display: none;
@@ -649,6 +652,44 @@ body.theme-japandi .ambient-grid::after {
         var(--pupil-2) 50%,
         transparent 70%
     );
+}
+
+/* HAL's iconic yellow point of light at the very center of the pupil.
+   Continuously breathes while idle so the eye feels alive. */
+.eye-pupil-light {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 12px;
+    height: 12px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle,
+        #fff8c8 0%,
+        #ffd56a 35%,
+        rgba(255, 200, 80, 0.55) 65%,
+        transparent 100%
+    );
+    box-shadow:
+        0 0 6px rgba(255, 220, 120, 0.85),
+        0 0 14px rgba(255, 200, 80, 0.5),
+        0 0 26px rgba(255, 170, 50, 0.25);
+    pointer-events: none;
+    z-index: 4;
+    animation: pupil-breathe 3.6s ease-in-out infinite;
+}
+
+@keyframes pupil-breathe {
+    0%, 100% {
+        opacity: 0.82;
+        transform: translate(-50%, -50%) scale(1);
+        filter: brightness(0.95);
+    }
+    50% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1.18);
+        filter: brightness(1.15);
+    }
 }
 
 .eye-reflection {
