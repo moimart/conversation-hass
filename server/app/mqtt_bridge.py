@@ -72,6 +72,20 @@ class MQTTBridge:
         # {entity_id, live?, duration_s?}). Routes to show_camera
         # (snapshot) or stream_camera (live WebRTC).
         self.on_camera_set: Callable[[str], Awaitable[None]] | None = None
+        # Live runtime-config callbacks (theme_day/night, voice, model,
+        # wake_word, auto_theme) — wire from main.py.
+        self.on_config_theme_day: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_theme_night: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_tts_voice: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_wake_word: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_ollama_model: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_auto_theme: Callable[[bool], Awaitable[None]] | None = None
+        # Lists populated by main.py at startup so the select entities
+        # advertise the right options. Empty lists publish a "none found"
+        # placeholder so the entity still appears in HA.
+        self.voice_options: list[str] = []
+        self.model_options: list[str] = []
+        self.theme_options: list[str] = ["dark", "birch", "odyssey", "japandi"]
 
         self._client = None
         self._connected = False
@@ -85,6 +99,13 @@ class MQTTBridge:
         self._cached_theme: str = "dark"
         self._cached_last_response: str = ""
         self._cached_task_metrics: dict | None = None
+        # Live config caches for republish-on-reconnect.
+        self._cached_config_theme_day: str = ""
+        self._cached_config_theme_night: str = ""
+        self._cached_config_tts_voice: str = ""
+        self._cached_config_wake_word: str = ""
+        self._cached_config_ollama_model: str = ""
+        self._cached_config_auto_theme: bool = True
 
     @property
     def connected(self) -> bool:
@@ -331,6 +352,100 @@ class MQTTBridge:
                 payload,
             ))
 
+        # Live runtime-config controls: 6 entities under entity_category=
+        # "config" so HA groups them under the device's "Configuration"
+        # section. Selects for theme_day/night, tts_voice, ollama_model;
+        # text for wake_word; switch for auto_theme.
+
+        def _select_options(opts: list[str], placeholder: str) -> list[str]:
+            return list(opts) if opts else [placeholder]
+
+        configs.append((
+            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_theme_day/config",
+            {
+                "name": "Day Theme",
+                "unique_id": f"{self.device_id}_config_theme_day",
+                "state_topic":   f"{self.base}/config/theme_day/state",
+                "command_topic": f"{self.base}/config/theme_day/set",
+                "options": list(self.theme_options),
+                "icon": "mdi:weather-sunny",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_theme_night/config",
+            {
+                "name": "Night Theme",
+                "unique_id": f"{self.device_id}_config_theme_night",
+                "state_topic":   f"{self.base}/config/theme_night/state",
+                "command_topic": f"{self.base}/config/theme_night/set",
+                "options": list(self.theme_options),
+                "icon": "mdi:weather-night",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_tts_voice/config",
+            {
+                "name": "TTS Voice",
+                "unique_id": f"{self.device_id}_config_tts_voice",
+                "state_topic":   f"{self.base}/config/tts_voice/state",
+                "command_topic": f"{self.base}/config/tts_voice/set",
+                "options": _select_options(self.voice_options, "(no voices found)"),
+                "icon": "mdi:account-voice",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_ollama_model/config",
+            {
+                "name": "Ollama Model",
+                "unique_id": f"{self.device_id}_config_ollama_model",
+                "state_topic":   f"{self.base}/config/ollama_model/state",
+                "command_topic": f"{self.base}/config/ollama_model/set",
+                "options": _select_options(self.model_options, "(no models found)"),
+                "icon": "mdi:chip",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_wake_word/config",
+            {
+                "name": "Wake Word",
+                "unique_id": f"{self.device_id}_config_wake_word",
+                "state_topic":   f"{self.base}/config/wake_word/state",
+                "command_topic": f"{self.base}/config/wake_word/set",
+                "icon": "mdi:microphone-message",
+                "availability": avail,
+                "device": device,
+                "mode": "text",
+                "entity_category": "config",
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_auto_theme/config",
+            {
+                "name": "Auto Day/Night Theme",
+                "unique_id": f"{self.device_id}_config_auto_theme",
+                "state_topic":   f"{self.base}/config/auto_theme/state",
+                "command_topic": f"{self.base}/config/auto_theme/set",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "icon": "mdi:theme-light-dark",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+
         return configs
 
     async def start(self):
@@ -394,6 +509,19 @@ class MQTTBridge:
                     await self.publish_last_response(self._cached_last_response)
                     if self._cached_task_metrics:
                         await self.publish_task_metrics(self._cached_task_metrics)
+                    # Live runtime-config — publish the cached values so
+                    # the HA selects/text/switch start with their real
+                    # state, not "unknown".
+                    if self._cached_config_theme_day:
+                        await self.publish_config_theme_day(self._cached_config_theme_day)
+                    if self._cached_config_theme_night:
+                        await self.publish_config_theme_night(self._cached_config_theme_night)
+                    await self.publish_config_tts_voice(self._cached_config_tts_voice)
+                    if self._cached_config_wake_word:
+                        await self.publish_config_wake_word(self._cached_config_wake_word)
+                    if self._cached_config_ollama_model:
+                        await self.publish_config_ollama_model(self._cached_config_ollama_model)
+                    await self.publish_config_auto_theme(self._cached_config_auto_theme)
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -405,6 +533,12 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/rtsp/set")
                     await client.subscribe(f"{self.base}/video/set")
                     await client.subscribe(f"{self.base}/camera/set")
+                    await client.subscribe(f"{self.base}/config/theme_day/set")
+                    await client.subscribe(f"{self.base}/config/theme_night/set")
+                    await client.subscribe(f"{self.base}/config/tts_voice/set")
+                    await client.subscribe(f"{self.base}/config/ollama_model/set")
+                    await client.subscribe(f"{self.base}/config/wake_word/set")
+                    await client.subscribe(f"{self.base}/config/auto_theme/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -484,6 +618,30 @@ class MQTTBridge:
                 if payload and self.on_camera_set:
                     await self.on_camera_set(payload)
 
+            elif topic == f"{self.base}/config/theme_day/set":
+                if self.on_config_theme_day:
+                    await self.on_config_theme_day(payload.strip())
+
+            elif topic == f"{self.base}/config/theme_night/set":
+                if self.on_config_theme_night:
+                    await self.on_config_theme_night(payload.strip())
+
+            elif topic == f"{self.base}/config/tts_voice/set":
+                if self.on_config_tts_voice:
+                    await self.on_config_tts_voice(payload.strip())
+
+            elif topic == f"{self.base}/config/ollama_model/set":
+                if self.on_config_ollama_model:
+                    await self.on_config_ollama_model(payload.strip())
+
+            elif topic == f"{self.base}/config/wake_word/set":
+                if self.on_config_wake_word:
+                    await self.on_config_wake_word(payload.strip())
+
+            elif topic == f"{self.base}/config/auto_theme/set":
+                if self.on_config_auto_theme:
+                    await self.on_config_auto_theme(payload.strip().upper() == "ON")
+
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")
 
@@ -544,3 +702,32 @@ class MQTTBridge:
     async def publish_snapshot(self, jpeg_bytes: bytes):
         """Publish a JPEG snapshot of the display."""
         await self._safe_publish(f"{self.base}/snapshot", jpeg_bytes)
+
+    # Live runtime-config publishers ---------------------------------------
+
+    async def publish_config_theme_day(self, value: str):
+        self._cached_config_theme_day = value
+        await self._safe_publish(f"{self.base}/config/theme_day/state", value)
+
+    async def publish_config_theme_night(self, value: str):
+        self._cached_config_theme_night = value
+        await self._safe_publish(f"{self.base}/config/theme_night/state", value)
+
+    async def publish_config_tts_voice(self, value: str):
+        self._cached_config_tts_voice = value
+        await self._safe_publish(f"{self.base}/config/tts_voice/state", value or "")
+
+    async def publish_config_wake_word(self, value: str):
+        self._cached_config_wake_word = value
+        await self._safe_publish(f"{self.base}/config/wake_word/state", value)
+
+    async def publish_config_ollama_model(self, value: str):
+        self._cached_config_ollama_model = value
+        await self._safe_publish(f"{self.base}/config/ollama_model/state", value)
+
+    async def publish_config_auto_theme(self, value: bool):
+        self._cached_config_auto_theme = bool(value)
+        await self._safe_publish(
+            f"{self.base}/config/auto_theme/state",
+            "ON" if value else "OFF",
+        )

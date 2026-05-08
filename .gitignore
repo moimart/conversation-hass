@@ -2,6 +2,8 @@
 .env.real
 server/models/*
 !server/models/.gitkeep
+server/runtime/*
+!server/runtime/.gitkeep
 __pycache__/
 *.pyc
 .venv/

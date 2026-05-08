@@ -148,8 +148,40 @@ When `MQTT_BROKER_HOST` is set, HAL appears in HA via auto-discovery as a single
 | `sensor.<id>_gen_tps` | sensor (diagnostic) | Generation throughput, tokens/sec |
 | `sensor.<id>_prompt_tps` | sensor (diagnostic) | Prompt-eval throughput, tokens/sec |
 | `sensor.<id>_model` | sensor (diagnostic) | Model used for the last LLM call |
+| `select.<id>_config_theme_day` | select (config) | Live-edit the day theme |
+| `select.<id>_config_theme_night` | select (config) | Live-edit the night theme |
+| `select.<id>_config_tts_voice` | select (config) | Pick a Wyoming voice (options discovered at startup) |
+| `select.<id>_config_ollama_model` | select (config) | Pick the Ollama model (options discovered at startup) |
+| `text.<id>_config_wake_word` | text (config) | Live-edit the wake word |
+| `switch.<id>_config_auto_theme` | switch (config) | Toggle the dusk/dawn theme scheduler |
 
 Set `HAL_DEVICE_ID` (slug) and `HAL_DEVICE_NAME` (display name) to identify the device. State is republished on reconnect; availability uses MQTT Last-Will-Testament.
+
+### Live Runtime Config
+
+A handful of settings can be changed from HA without restarting the
+server. They live in **`server/runtime/config.json`** (created on first
+boot from the matching `.env` values). Once the file exists, **the file
+wins over `.env`** — `.env` is only consulted to bootstrap.
+
+Currently managed in the live config (and exposed as `entity_category=
+config` controls under HAL's device card in HA):
+
+| Key | Type | Source on first boot | HA control |
+|---|---|---|---|
+| `theme_day` | string (enum) | `THEME_DAY` env, default `birch` | select |
+| `theme_night` | string (enum) | `THEME_NIGHT` env, default `dark` | select |
+| `tts_voice` | string | `WYOMING_TTS_VOICE` env, default `""` (server default) | select (options queried from Wyoming TTS at startup) |
+| `wake_word` | string | `WAKE_WORD` env, default `hey hal` | text |
+| `ollama_model` | string | `OLLAMA_MODEL` env, default `llama3.2` | select (options queried from Ollama `/api/tags` at startup) |
+| `auto_theme` | bool | `AUTO_THEME` env, default `true` | switch |
+
+Changing any control from HA writes the file atomically, applies the
+change live (theme reapplied if it would currently be visible, TTS
+voice on the next utterance, model on the next LLM round, etc.) and
+publishes the new state back to MQTT so HA stays in sync.
+
+To reset to env defaults: stop the server, delete the file, restart.
 
 ### Images and cameras in the orb
 
@@ -400,6 +432,7 @@ conversation-hass/
 │       ├── local_tools.py             # In-process MCP server: theme/volume/mute/sun/speak
 │       ├── ha_ws.py                   # HA WebSocket client (WebRTC offer signaling)
 │       ├── go2rtc.py                  # go2rtc HTTP client (stream registration + WebRTC offer)
+│       ├── runtime_config.py          # File-backed live config (atomic JSON, env bootstrap)
 │       ├── mqtt_bridge.py             # HA Discovery + MQTT state/command bridge
 │       └── tts.py                     # Wyoming protocol TTS client
 │
@@ -427,7 +460,7 @@ conversation-hass/
 ├── openclaw-skill/                    # OpenClaw skill exposing HAL's REST API
 │   └── hal/SKILL.md
 │
-└── tests/                             # 179 pytest tests (mocked, no GPU needed)
+└── tests/                             # 262 pytest tests (mocked, no GPU needed)
     ├── test_audio_manager.py
     ├── test_audio_pipeline.py
     ├── test_conversation.py
@@ -613,7 +646,7 @@ uv pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-All 251 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices) are fully mocked.
+All 262 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices, runtime config) are fully mocked.
 
 ## License
 

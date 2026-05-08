@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import os
+import re
 import struct
 import time
 import wave
@@ -21,6 +22,7 @@ from .conversation import ConversationManager
 from .go2rtc import Go2RTCClient
 from .ha_ws import HAWSClient
 from .local_tools import LocalToolsClient
+from .runtime_config import RuntimeConfig
 from .mcp_client import MCPClient, MultiMCPClient
 from .memory import MemoryClient
 from .mqtt_bridge import MQTTBridge
@@ -47,6 +49,10 @@ class AppState:
     current_theme: str = "dark"
     theme_day: str = "birch"
     theme_night: str = "dark"
+    auto_theme: bool = True
+    runtime_config: object | None = None  # RuntimeConfig
+    voice_options: list = field(default_factory=list)
+    model_options: list = field(default_factory=list)
     theme_scheduler_task: object | None = None
     mqtt_bridge: MQTTBridge | None = None
     tts_volume: float = 0.7  # cached, mirrors RPi state
@@ -106,6 +112,31 @@ def _parse_iso(ts: str) -> "datetime | None":
         return datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+async def _query_sun_state(state: AppState) -> str | None:
+    """Fetch HA's sun.sun entity state ('above_horizon'/'below_horizon').
+
+    Returns None if HA MCP isn't connected or the response can't be parsed.
+    Shared by the theme scheduler and the live-config theme handlers.
+    """
+    if not state.mcp_client or "ha_get_state" not in state.mcp_client.tool_names:
+        return None
+    result = await state.mcp_client.call_tool("ha_get_state", {"entity_id": "sun.sun"})
+    data = None
+    try:
+        data = json.loads(result)
+    except (TypeError, ValueError):
+        m = re.search(r"\{[\s\S]*\}", result or "")
+        if m:
+            try:
+                data = json.loads(m.group(0))
+            except (TypeError, ValueError):
+                pass
+    if not isinstance(data, dict):
+        return None
+    entity = data.get("data", data)
+    return entity.get("state") if isinstance(entity, dict) else None
 
 
 async def _theme_scheduler(state: AppState):
@@ -510,6 +541,21 @@ async def _forward_kiosk_candidate(state: AppState, session_id: str, payload: di
 
 _IMAGE_MAX_BYTES = 8 * 1024 * 1024  # 8 MB
 _IMAGE_FETCH_TIMEOUT = 10.0
+
+
+async def _fetch_ollama_tags(host: str) -> list[str]:
+    """Return the model names Ollama has installed (empty list on failure)."""
+    import httpx
+    url = host.rstrip("/") + "/api/tags"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json() or {}
+            return sorted({m.get("name") for m in (data.get("models") or []) if m.get("name")})
+    except Exception as e:
+        log.warning(f"Ollama tags fetch failed: {e}")
+        return []
 
 
 async def _fetch_ha_image_entity(entity_id: str) -> tuple[bytes, str] | None:
@@ -1166,8 +1212,14 @@ async def lifespan(app: FastAPI):
     log.info("Initializing HAL voice server...")
 
     # Generate wake word chime
-    state.theme_day = os.environ.get("THEME_DAY", "birch")
-    state.theme_night = os.environ.get("THEME_NIGHT", "dark")
+    # Live config: file wins over env vars; bootstrapped from env on first run
+    runtime_config_path = os.environ.get("RUNTIME_CONFIG_PATH", "/app/runtime/config.json")
+    state.runtime_config = RuntimeConfig(runtime_config_path)
+    cfg = state.runtime_config.load()
+    log.info(f"Runtime config loaded from {runtime_config_path}: {cfg}")
+    state.theme_day = cfg.get("theme_day", "birch")
+    state.theme_night = cfg.get("theme_night", "dark")
+    state.auto_theme = bool(cfg.get("auto_theme", True))
     state.current_theme = state.theme_night  # start safe (dark)
     state.sendspin_player_entity = os.environ.get("SENDSPIN_PLAYER_ENTITY", "").strip()
     state.sendspin_pause_during_tts = (
@@ -1242,9 +1294,9 @@ async def lifespan(app: FastAPI):
     else:
         log.info("No system prompt file found, using default")
     state.conversation = ConversationManager(
-        wake_word=os.environ.get("WAKE_WORD", "hey hal"),
+        wake_word=cfg.get("wake_word", "hey hal"),
         ollama_host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
-        ollama_model=os.environ.get("OLLAMA_MODEL", "llama3.2"),
+        ollama_model=cfg.get("ollama_model", "llama3.2"),
         mcp_client=state.mcp_client,
         tts_engine=state.tts_engine,
         memory_client=state.memory_client,
@@ -1253,8 +1305,25 @@ async def lifespan(app: FastAPI):
         num_predict=int(os.environ.get("OLLAMA_NUM_PREDICT", "512")),
     )
 
+    # Apply tts_voice from runtime config (overrides whatever the engine
+    # was initialized with from env).
+    voice = cfg.get("tts_voice", "")
+    if state.tts_engine is not None:
+        state.tts_engine.voice = (voice or "").strip()
+
+    # Discover Wyoming voices and Ollama models for the HA select dropdowns.
+    if state.tts_engine is not None:
+        try:
+            state.voice_options = await state.tts_engine.list_voices()
+        except Exception as e:
+            log.debug(f"voice listing failed: {e}")
+            state.voice_options = []
+    state.model_options = await _fetch_ollama_tags(
+        os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    )
+
     # Daily dusk/dawn theme scheduler
-    if os.environ.get("AUTO_THEME", "true").lower() in ("true", "1", "yes"):
+    if state.auto_theme:
         state.theme_scheduler_task = asyncio.create_task(_theme_scheduler(state))
     else:
         state.theme_scheduler_task = None
@@ -1449,6 +1518,93 @@ async def lifespan(app: FastAPI):
             conversation._wake_detected = True
             asyncio.create_task(conversation.on_silence())
 
+        # --- Live runtime-config handlers ---
+
+        async def _persist(key: str, value):
+            if state.runtime_config is not None:
+                state.runtime_config.set(key, value)
+
+        async def _re_evaluate_active_theme():
+            """Recompute which theme should be active and push if changed."""
+            if not state.auto_theme:
+                return
+            sun_state = await _query_sun_state(state)
+            target = state.theme_night if sun_state == "below_horizon" else state.theme_day
+            if target and target != state.current_theme:
+                await apply_theme(state, target)
+
+        async def _cfg_theme_day(name: str):
+            if name not in VALID_THEMES:
+                log.warning(f"config theme_day rejected: {name!r}")
+                return
+            state.theme_day = name
+            await _persist("theme_day", name)
+            await bridge.publish_config_theme_day(name)
+            await _re_evaluate_active_theme()
+
+        async def _cfg_theme_night(name: str):
+            if name not in VALID_THEMES:
+                log.warning(f"config theme_night rejected: {name!r}")
+                return
+            state.theme_night = name
+            await _persist("theme_night", name)
+            await bridge.publish_config_theme_night(name)
+            await _re_evaluate_active_theme()
+
+        async def _cfg_tts_voice(name: str):
+            if state.voice_options and name not in state.voice_options:
+                log.warning(f"config tts_voice rejected: {name!r} not in {state.voice_options}")
+                return
+            if state.tts_engine is not None:
+                state.tts_engine.voice = name
+            await _persist("tts_voice", name)
+            await bridge.publish_config_tts_voice(name)
+
+        async def _cfg_ollama_model(name: str):
+            if state.model_options and name not in state.model_options:
+                log.warning(f"config ollama_model rejected: {name!r} not in {state.model_options}")
+                return
+            if state.conversation is not None:
+                state.conversation.ollama_model = name
+            await _persist("ollama_model", name)
+            await bridge.publish_config_ollama_model(name)
+
+        async def _cfg_wake_word(value: str):
+            value = (value or "").strip()
+            if state.conversation is not None:
+                state.conversation.wake_word = value.lower()
+            await _persist("wake_word", value)
+            await bridge.publish_config_wake_word(value)
+
+        async def _cfg_auto_theme(enabled: bool):
+            state.auto_theme = bool(enabled)
+            await _persist("auto_theme", state.auto_theme)
+            await bridge.publish_config_auto_theme(state.auto_theme)
+            # Start/stop the scheduler to match the new value.
+            existing = getattr(state, "theme_scheduler_task", None)
+            if state.auto_theme and (existing is None or existing.done()):
+                state.theme_scheduler_task = asyncio.create_task(_theme_scheduler(state))
+            elif not state.auto_theme and existing is not None and not existing.done():
+                existing.cancel()
+                state.theme_scheduler_task = None
+
+        bridge.voice_options = list(state.voice_options)
+        bridge.model_options = list(state.model_options)
+        # Seed the bridge's caches with the current values so the first
+        # publish on connect reflects reality.
+        bridge._cached_config_theme_day = state.theme_day
+        bridge._cached_config_theme_night = state.theme_night
+        bridge._cached_config_tts_voice = (
+            state.tts_engine.voice if state.tts_engine is not None else ""
+        )
+        bridge._cached_config_wake_word = (
+            state.conversation.wake_word if state.conversation is not None else ""
+        )
+        bridge._cached_config_ollama_model = (
+            state.conversation.ollama_model if state.conversation is not None else ""
+        )
+        bridge._cached_config_auto_theme = state.auto_theme
+
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
         bridge.on_theme_set = _mqtt_theme
@@ -1458,6 +1614,12 @@ async def lifespan(app: FastAPI):
         bridge.on_rtsp_set = _mqtt_rtsp_set
         bridge.on_video_set = _mqtt_video_set
         bridge.on_camera_set = _mqtt_camera_set
+        bridge.on_config_theme_day = _cfg_theme_day
+        bridge.on_config_theme_night = _cfg_theme_night
+        bridge.on_config_tts_voice = _cfg_tts_voice
+        bridge.on_config_ollama_model = _cfg_ollama_model
+        bridge.on_config_wake_word = _cfg_wake_word
+        bridge.on_config_auto_theme = _cfg_auto_theme
 
         await bridge.start()
         state.mqtt_bridge = bridge

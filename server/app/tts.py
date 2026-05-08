@@ -45,6 +45,45 @@ class TTSEngine:
             log.warning(f"Wyoming TTS not reachable at startup: {e}")
             log.warning("TTS will retry on first synthesis request")
 
+    async def list_voices(self) -> list[str]:
+        """Return the names of voices the Wyoming server advertises.
+
+        Sends a `describe` event and waits for the matching `info`
+        reply. Empty list on failure or unreachable server — caller
+        decides how to render that in the UI.
+        """
+        try:
+            reader, writer = await asyncio.open_connection(self.host, self.port)
+        except Exception as e:
+            log.warning(f"list_voices: TTS unreachable: {e}")
+            return []
+        try:
+            await self._send_event(writer, "describe", None)
+            voices: list[str] = []
+            try:
+                while True:
+                    event_type, data, _ = await asyncio.wait_for(
+                        self._recv_event(reader), timeout=2.0
+                    )
+                    if event_type is None:
+                        break
+                    if event_type == "info":
+                        for program in (data.get("tts") or []):
+                            for v in (program.get("voices") or []):
+                                name = v.get("name")
+                                if name:
+                                    voices.append(name)
+                        break
+            except asyncio.TimeoutError:
+                log.warning("list_voices: timed out waiting for info event")
+            return sorted(set(voices))
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
     async def synthesize(self, text: str) -> bytes | None:
         """
         Synthesize text to speech via Wyoming protocol.
