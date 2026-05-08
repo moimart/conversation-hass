@@ -573,8 +573,44 @@ class TestShowCamera:
         item = MagicMock(); item.data = "X"; item.mimeType = "image/jpeg"
         state.mcp_client.call_tool_content = AsyncMock(return_value=[item])
         await self._show_camera(state, {"entity_id": "camera.x"})
-        msg = state.audio_websocket.send_json.await_args.args[0]
-        assert msg["duration_s"] == 150
+        msgs = [c.args[0] for c in state.audio_websocket.send_json.await_args_list]
+        show_msgs = [m for m in msgs if m.get("type") == "show_camera"]
+        assert show_msgs[0]["duration_s"] == 150
+
+    @pytest.mark.asyncio
+    async def test_image_entity_routes_via_rest(self, monkeypatch):
+        from server.app import main as srv
+        state = self._state()
+        # Stub the REST fetcher; show_camera should use this for image.*
+        monkeypatch.setattr(
+            srv, "_fetch_ha_image_entity",
+            AsyncMock(return_value=(b"\xff\xd8\xff\xe0fake", "image/jpeg")),
+        )
+        result = await self._show_camera(state, {"entity_id": "image.weather_radar"})
+        assert "image.weather_radar" in result
+        srv._fetch_ha_image_entity.assert_awaited_once_with("image.weather_radar")
+        # MCP camera fetch should NOT have been called for an image entity
+        state.mcp_client.call_tool_content.assert_not_awaited()
+        msgs = [c.args[0] for c in state.audio_websocket.send_json.await_args_list]
+        show_msgs = [m for m in msgs if m.get("type") == "show_camera"]
+        assert show_msgs[0]["entity_id"] == "image.weather_radar"
+
+    @pytest.mark.asyncio
+    async def test_image_entity_returns_error_on_fetch_failure(self, monkeypatch):
+        from server.app import main as srv
+        state = self._state()
+        monkeypatch.setattr(srv, "_fetch_ha_image_entity", AsyncMock(return_value=None))
+        result = await self._show_camera(state, {"entity_id": "image.nope"})
+        assert "Could not fetch" in result
+        # No show_camera message was pushed.
+        msgs = [c.args[0] for c in state.audio_websocket.send_json.await_args_list]
+        assert all(m.get("type") != "show_camera" for m in msgs)
+
+    @pytest.mark.asyncio
+    async def test_rejects_other_domains(self):
+        state = self._state()
+        result = await self._show_camera(state, {"entity_id": "light.x"})
+        assert "must be a camera.* or image.* entity" in result
 
 
 class TestStreamCamera:

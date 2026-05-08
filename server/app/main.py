@@ -512,6 +512,20 @@ _IMAGE_MAX_BYTES = 8 * 1024 * 1024  # 8 MB
 _IMAGE_FETCH_TIMEOUT = 10.0
 
 
+async def _fetch_ha_image_entity(entity_id: str) -> tuple[bytes, str] | None:
+    """Fetch an HA image.* entity via /api/image_proxy/<entity_id>.
+
+    Uses HA_URL + HA_TOKEN. Returns (bytes, mime) or None. Reuses the
+    URL fetcher's caps (8 MB, 10 s, image/* content types).
+    """
+    ha_url = os.environ.get("HA_URL", "").strip().rstrip("/")
+    ha_token = os.environ.get("HA_TOKEN", "").strip()
+    if not ha_url or not ha_token:
+        log.warning("HA image fetch unavailable (HA_URL / HA_TOKEN unset)")
+        return None
+    return await _fetch_image_url(f"{ha_url}/api/image_proxy/{entity_id}")
+
+
 async def _fetch_image_url(url: str) -> tuple[bytes, str] | None:
     """Fetch an image URL with sane caps. Returns (bytes, mime) or None.
 
@@ -859,41 +873,52 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
 
     async def show_camera(args: dict) -> str:
         entity_id = (args.get("entity_id") or "").strip()
-        if not entity_id.startswith("camera."):
-            return "entity_id must be a camera.* entity"
+        if not (entity_id.startswith("camera.") or entity_id.startswith("image.")):
+            return "entity_id must be a camera.* or image.* entity"
         try:
             duration_s = int(args.get("duration_s", 150))
         except (TypeError, ValueError):
             duration_s = 150
         duration_s = max(5, min(900, duration_s))
 
-        if not state.mcp_client or "ha_get_camera_image" not in state.mcp_client.tool_names:
-            return "Camera fetch unavailable (Home Assistant MCP not connected)"
+        # camera.* — fetch via MCP (returns base64 already)
+        if entity_id.startswith("camera."):
+            if not state.mcp_client or "ha_get_camera_image" not in state.mcp_client.tool_names:
+                return "Camera fetch unavailable (Home Assistant MCP not connected)"
+            content = await state.mcp_client.call_tool_content(
+                "ha_get_camera_image", {"entity_id": entity_id}
+            )
+            image_b64 = ""
+            mime = "image/jpeg"
+            for item in content:
+                data = getattr(item, "data", None)
+                if data:
+                    image_b64 = data
+                    mime = getattr(item, "mimeType", None) or mime
+                    break
+            if not image_b64:
+                return f"No image returned for {entity_id}"
+            await _dispatch_show_image(state, image_b64, mime, duration_s, entity_id=entity_id)
+            return f"Showing {entity_id} on the orb for {duration_s} seconds"
 
-        content = await state.mcp_client.call_tool_content(
-            "ha_get_camera_image", {"entity_id": entity_id}
+        # image.* — fetch via HA REST /api/image_proxy + bearer
+        fetched = await _fetch_ha_image_entity(entity_id)
+        if not fetched:
+            return f"Could not fetch {entity_id}"
+        import base64
+        raw, mime = fetched
+        await _dispatch_show_image(
+            state, base64.b64encode(raw).decode("ascii"), mime, duration_s, entity_id=entity_id,
         )
-        image_b64 = ""
-        mime = "image/jpeg"
-        for item in content:
-            data = getattr(item, "data", None)
-            if data:
-                image_b64 = data
-                mime = getattr(item, "mimeType", None) or mime
-                break
-        if not image_b64:
-            return f"No image returned for {entity_id}"
-
-        await _dispatch_show_image(state, image_b64, mime, duration_s, entity_id=entity_id)
         return f"Showing {entity_id} on the orb for {duration_s} seconds"
 
     tools.register(
         "show_camera",
-        "Display a Home Assistant camera snapshot inside HAL's orb on the kiosk. Use when the user asks to 'show me the <camera>'. The image is shown for duration_s seconds (default 150) then the orb returns to normal. To find the right entity_id, use ha_search_entities with domain=camera first.",
+        "Display a Home Assistant camera snapshot OR image entity inside HAL's orb on the kiosk. Accepts both camera.* (fetched via MCP) and image.* (fetched via HA REST /api/image_proxy with bearer token). Use when the user asks to 'show me the <camera>' or 'show the <image entity>'. The image is shown for duration_s seconds (default 150) then the orb returns to normal. To find the right entity_id, use ha_search_entities with domain=camera or domain=image first.",
         {
             "type": "object",
             "properties": {
-                "entity_id": {"type": "string", "description": "Camera entity_id, e.g. camera.front_door"},
+                "entity_id": {"type": "string", "description": "camera.* or image.* entity_id, e.g. camera.front_door or image.weather_radar"},
                 "duration_s": {"type": "integer", "minimum": 5, "maximum": 900, "default": 150, "description": "How long to keep the image on screen, in seconds"},
             },
             "required": ["entity_id"],
@@ -1352,13 +1377,21 @@ async def lifespan(app: FastAPI):
                         duration_s = int(data["duration_s"])
                     except (TypeError, ValueError):
                         pass
-            elif text.startswith("camera."):
+            elif text.startswith("camera.") or text.startswith("image."):
                 entity_id = text
             else:
-                log.warning("MQTT camera/set: payload is neither camera.* entity_id nor JSON")
+                log.warning("MQTT camera/set: payload is neither camera.*/image.* entity_id nor JSON")
                 return
-            if not entity_id.startswith("camera.") or not state.local_tools:
+            if not state.local_tools:
                 return
+            if not (entity_id.startswith("camera.") or entity_id.startswith("image.")):
+                return
+            # Live streaming only makes sense for camera.* — ignore the
+            # `live` flag silently for image.* entities and fall back to
+            # the snapshot path.
+            if live and entity_id.startswith("image."):
+                log.info(f"MQTT camera/set: ignoring live=true for image entity {entity_id}")
+                live = False
             tool = "stream_camera" if live else "show_camera"
             args: dict = {"entity_id": entity_id}
             if duration_s is not None:

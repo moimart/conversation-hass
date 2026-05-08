@@ -277,10 +277,11 @@ class MQTTBridge:
             },
         ))
 
-        # Show Camera — paste a HA camera.* entity_id to show its
-        # snapshot in the orb (default 150 s). JSON wrapper supports
-        # `{"entity_id":"...", "live": true, "duration_s": N}` to open
-        # a live WebRTC stream instead.
+        # Show Camera — paste a HA camera.* OR image.* entity_id to show
+        # it in the orb (default 150 s). JSON wrapper supports
+        # `{"entity_id":"...", "live": true, "duration_s": N}` to open a
+        # live WebRTC stream instead (camera.* only; live=true on
+        # image.* entities is ignored — they're snapshots by nature).
         configs.append((
             f"{DISCOVERY_PREFIX}/text/{self.device_id}/show_camera/config",
             {
