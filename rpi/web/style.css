@@ -79,6 +79,56 @@
     --vol-hover-bg: rgba(255, 255, 255, 0.05);
 }
 
+/* === SAL theme — SAL 9000 (HAL's twin from 2010), cyan eye on black === */
+body.theme-sal {
+    --bg: #050810;              /* deep blue-black */
+    --surface: #0c1220;
+    --border: #14203a;
+    --text: #dde6f4;
+    --text-dim: #5e6e8a;
+    --accent: #2da3ff;           /* cyan-blue, SAL's iris */
+    --accent-rgb: 45, 163, 255;
+    --accent-glow: #6dc4ff;
+    --accent-glow-rgb: 109, 196, 255;
+    --accent-deep: #0a4a8c;
+    --accent-warm: #4dbcff;
+    --accent-warm-rgb: 77, 188, 255;
+    --success: #22c55e;
+
+    --speak-core-1: rgba(255, 255, 255, 0.95);
+    --speak-core-2: rgba(190, 230, 255, 0.8);
+    --speak-pupil: rgba(255, 255, 255, 0.6);
+    --speak-pupil-2: rgba(255, 255, 255, 0.2);
+    --speak-reflection: rgba(255, 255, 255, 0.5);
+    --speak-glow: rgba(180, 220, 255, 0.18);
+
+    --bezel-1: #4a4a4a;
+    --bezel-2: #7a7a7a;
+    --bezel-3: #b0b0b0;
+    --bezel-4: #e0e0e0;
+    --bezel-inner: #050810;
+    --bezel-inner-edge: #14203a;
+    --bezel-shadow: rgba(0, 0, 0, 0.6);
+    --lens-rim: #000000;
+
+    --core-deep-stop: #061730;
+    --core-shadow: rgba(0, 0, 0, 0.3);
+    --core-shadow-deep: rgba(0, 0, 0, 0.8);
+
+    --iris-highlight: rgba(120, 200, 255, 0.4);
+    --pupil-1: rgba(0, 0, 0, 0.8);
+    --pupil-2: rgba(0, 0, 0, 0.4);
+    --reflection: rgba(220, 240, 255, 0.25);
+
+    --scan-line: rgba(200, 230, 255, 0.3);
+    --grid-line: rgba(140, 180, 220, 0.012);
+    --ambient-radial: rgba(45, 163, 255, 0.04);
+
+    --status-speak: #fff;
+    --status-speak-glow: rgba(200, 230, 255, 0.8);
+    --vol-hover-bg: rgba(180, 220, 255, 0.05);
+}
+
 /* === BIRCH theme — egg-white walls + birch wood === */
 body.theme-birch {
     --bg: #d6c69e;            /* warm beige (matches the picker) */

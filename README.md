@@ -81,7 +81,7 @@ No cloud services. No subscriptions. All processing stays on your network.
 
 7. **Local TTS** — The response is synthesized via a Wyoming-protocol TTS service and streamed back to the Raspberry Pi for playback through the speaker (resampled to the device's native rate).
 
-8. **Web UI with themes** — A modern HAL 9000-inspired interface with metallic bezel ring, animated red eye, live transcription, AI responses, and assistant state indicators. Four themes (`dark`, `birch`, `odyssey`, `japandi`); optional auto day/night switching driven by HA's `sun.sun` entity.
+8. **Web UI with themes** — A modern HAL 9000-inspired interface with metallic bezel ring, animated eye, live transcription, AI responses, and assistant state indicators. Five themes (`dark`, `sal`, `birch`, `odyssey`, `japandi`); optional auto day/night switching driven by HA's `sun.sun` entity.
 
 9. **Home Assistant integration** — When MQTT is configured, the AI server publishes HA Discovery messages so HAL appears as a single device exposing state, volume, mute, theme, a camera (the latest UI snapshot), and a text input that speaks anything you write into it. The audio_streamer captures the kiosk via the Chrome DevTools Protocol against the running kiosk Chromium and forwards the JPEG to the server every minute (live video frames, custom fonts, animations, masks, and filters all included — exact pixels, no html2canvas approximations).
 
@@ -108,11 +108,12 @@ Both engines are included in the Docker image and share the same interface. Mode
 
 ## Themes
 
-Four built-in themes, switchable from the web UI's theme picker, the LLM (`ui_set_theme` tool), the MQTT theme select, or the auto day/night scheduler:
+Five built-in themes, switchable from the web UI's theme picker, the LLM (`ui_set_theme` tool), the MQTT theme select, or the auto day/night scheduler:
 
 | Theme | Vibe |
 |---|---|
 | `dark` | Classic 2001 — matte black panel, deep red eye, white-hot core when speaking |
+| `sal` | SAL 9000 — HAL's twin from 2010, cyan eye on deep blue-black |
 | `birch` | Warm beige Scandinavian wood tones — light room friendly |
 | `odyssey` | Bright white background, minimalist — for very bright rooms |
 | `japandi` | Earthy Japandi with subtle decorative background patterns |

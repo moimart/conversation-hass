@@ -100,7 +100,7 @@ def _generate_chime() -> bytes:
     return buf.getvalue()
 
 
-VALID_THEMES = {"dark", "birch", "odyssey", "japandi"}
+VALID_THEMES = {"dark", "birch", "odyssey", "japandi", "sal"}
 
 
 def _parse_iso(ts: str) -> "datetime | None":
