@@ -79,6 +79,23 @@
     --vol-hover-bg: rgba(255, 255, 255, 0.05);
 }
 
+/* Matrix digital-rain canvas — kept hidden except under theme-matrix.
+   pointer-events:none so it never steals clicks; z-index:0 puts it
+   behind the orb (which is z-index:1+) but above the page background. */
+#matrix-rain {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+}
+body.theme-matrix #matrix-rain {
+    opacity: 0.55;
+}
+
 /* === MATRIX theme — phosphor green on pitch black === */
 body.theme-matrix {
     --bg: #000806;

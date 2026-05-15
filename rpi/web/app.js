@@ -39,6 +39,79 @@
             document.body.classList.add(`theme-${name}`);
         }
         if (themeSelect) themeSelect.value = name;
+        // Matrix-only background animation.
+        if (name === "matrix") startMatrixRain(); else stopMatrixRain();
+    }
+
+    // --- Matrix digital rain (canvas, only runs while theme-matrix is active) ---
+    let matrixRainHandle = null;
+    let matrixDrops = null;
+    const MATRIX_CHARS = (
+        "アイウエオカキクケコサシスセソタチツテトナニヌネノ" +
+        "ハヒフヘホマミムメモヤユヨラリルレロワヲン" +
+        "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+    ).split("");
+    function _matrixSize(canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = window.innerWidth * dpr;
+        canvas.height = window.innerHeight * dpr;
+        const ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+        return ctx;
+    }
+    function startMatrixRain() {
+        if (matrixRainHandle) return;
+        const canvas = document.getElementById("matrix-rain");
+        if (!canvas) return;
+        let ctx = _matrixSize(canvas);
+        const fontSize = 18;
+        const columns = Math.floor(window.innerWidth / fontSize);
+        matrixDrops = new Array(columns).fill(0)
+            .map(() => Math.random() * -50);
+        const onResize = () => {
+            ctx = _matrixSize(canvas);
+            const c = Math.floor(window.innerWidth / fontSize);
+            matrixDrops = new Array(c).fill(0).map(() => Math.random() * -50);
+        };
+        window.addEventListener("resize", onResize);
+        matrixRainHandle = { onResize };
+        const tick = () => {
+            if (!matrixRainHandle) return;
+            // Trail fade: paint translucent black over the whole canvas
+            // so older characters dim out smoothly.
+            ctx.fillStyle = "rgba(0, 8, 6, 0.08)";
+            ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+            ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
+            ctx.textBaseline = "top";
+            for (let i = 0; i < matrixDrops.length; i++) {
+                const ch = MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)];
+                const y = matrixDrops[i] * fontSize;
+                // Head of the column is bright white; trail is phosphor green.
+                ctx.fillStyle = "#d8ffe0";
+                ctx.fillText(ch, i * fontSize, y);
+                ctx.fillStyle = "#00ff41";
+                ctx.fillText(ch, i * fontSize, y - fontSize);
+                if (y > window.innerHeight && Math.random() > 0.975) {
+                    matrixDrops[i] = 0;
+                }
+                matrixDrops[i] += 1;
+            }
+            matrixRainHandle.raf = requestAnimationFrame(tick);
+        };
+        matrixRainHandle.raf = requestAnimationFrame(tick);
+    }
+    function stopMatrixRain() {
+        if (!matrixRainHandle) return;
+        if (matrixRainHandle.raf) cancelAnimationFrame(matrixRainHandle.raf);
+        if (matrixRainHandle.onResize) {
+            window.removeEventListener("resize", matrixRainHandle.onResize);
+        }
+        matrixRainHandle = null;
+        const canvas = document.getElementById("matrix-rain");
+        if (canvas) {
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
     }
 
     const savedTheme = localStorage.getItem(THEME_KEY) || "dark";
