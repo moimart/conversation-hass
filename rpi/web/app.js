@@ -64,11 +64,10 @@
     }
 
     async function applyTheme(name) {
-        const known = themes.find(t => t.name === name);
-        if (!known) name = themes[0] && themes[0].name || "dark";
-        const theme = themes.find(t => t.name === name);
-        // Always lazy-load the new theme's CSS before swapping the class
-        // so the browser doesn't render an unstyled flash.
+        if (!name || typeof name !== "string") name = "dark";
+        // Trust the requested name — even if the catalog isn't loaded
+        // yet, lazy-loading the CSS via /themes/<name>/theme.css will
+        // either succeed (the theme exists server-side) or 404 silently.
         injectThemeCss(name);
         document.body.classList.forEach(c => {
             if (c.startsWith("theme-")) document.body.classList.remove(c);
@@ -76,6 +75,7 @@
         document.body.classList.add(`theme-${name}`);
         if (themeSelect) themeSelect.value = name;
         stopAllEffects();
+        const theme = themes.find(t => t.name === name);
         if (theme && theme.has_effect) {
             const ctrl = await ensureEffect(name);
             try { ctrl && ctrl.start && ctrl.start(); } catch (e) { console.warn(e); }
@@ -196,8 +196,11 @@
             case "pong":
                 break;
             case "set_theme":
-                if (msg.name && themes.some(t => t.name === msg.name)) {
+                if (typeof msg.name === "string" && msg.name) {
                     localStorage.setItem(THEME_KEY, msg.name);
+                    // Apply right away — if the catalog hasn't loaded
+                    // yet, applyTheme() will inject the CSS link and
+                    // pick up the manifest on the next loadThemes().
                     applyTheme(msg.name);
                 }
                 break;

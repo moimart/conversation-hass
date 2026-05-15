@@ -94,6 +94,71 @@
 }
 
 
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Whole-page zoom — auto-scales with the smaller viewport dimension so
+   the kiosk looks proportionally identical at 1080p / 1440p / 2160p
+   and in either portrait or landscape orientation. The divisor 691
+   lands at ~1.5625× on a 1080-wide viewport (text 25% bigger than the
+   864-divisor baseline) and ~3.125× on a 2160-wide viewport. The orb
+   is counter-scaled by 0.96 below so it nets to +20% rather than +25%. */
+html {
+    zoom: clamp(1.0, calc(100vmin / 691px), 3.125);
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.4s ease, color 0.4s ease;
+}
+
+#app {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* Anchor in-flow content (status, transcript, response, volume)
+       below the absolutely-centered orb. Padding pushes the first
+       child past the orb's bottom edge. Both this and the orb's top
+       move together — change in lockstep. */
+    justify-content: flex-start;
+    padding-top: calc(22vh + 216px);
+    box-sizing: border-box;
+    position: relative;
+}
+
+/* === Ambient Background === */
+.ambient-grid {
+    position: fixed;
+    inset: 0;
+    background-image:
+        radial-gradient(circle at 50% 40%, var(--ambient-radial) 0%, transparent 60%),
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 100% 100%, 60px 60px, 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ============================================================
+   JAPANDI THEME — decorative background
+   Layered, all CSS/SVG, sprinkled motifs in earthy wood tones.
+   Other themes are unaffected.
+   ============================================================ */
+
+
 /* === Eye === */
 .eye-container {
     /* Sit the orb above geometric center so it balances with the
