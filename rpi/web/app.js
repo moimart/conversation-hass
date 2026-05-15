@@ -22,100 +22,93 @@
     let currentPartialEl = null;
     const MAX_TRANSCRIPT_LINES = 50;
 
-    // --- Theme ---
+    // --- Theme registry (plug-in folders served from the server) ---
+    // The kiosk knows nothing about which themes exist at compile time —
+    // it fetches /api/themes on startup, lazy-loads each theme's CSS on
+    // first activation, and lazy-imports its optional effect.js module.
     const THEME_KEY = "hal-theme";
-    const THEMES = [
-        "dark", "sal", "glados", "matrix", "mother", "joi", "kitt",
-        "birch", "odyssey", "japandi", "forest", "sunset",
-    ];
+    let themes = [];                 // [{name, display_name, has_effect, kind, ...}]
+    let loadedCss = new Set();       // names whose stylesheet <link> we've already injected
+    let loadedEffects = new Map();   // name -> { start, stop } controller from effect.js
+    let currentTheme = null;
 
-    function applyTheme(name) {
-        if (!THEMES.includes(name)) name = "dark";
-        // Remove any existing theme-* class
+    function injectThemeCss(name) {
+        if (loadedCss.has(name)) return;
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = `/themes/${encodeURIComponent(name)}/theme.css`;
+        link.dataset.theme = name;
+        document.head.appendChild(link);
+        loadedCss.add(name);
+    }
+
+    async function ensureEffect(name) {
+        if (loadedEffects.has(name)) return loadedEffects.get(name);
+        try {
+            const mod = await import(`/themes/${encodeURIComponent(name)}/effect.js`);
+            const setup = mod.default;
+            if (typeof setup !== "function") return null;
+            const ctrl = setup({ root: document.body });
+            loadedEffects.set(name, ctrl);
+            return ctrl;
+        } catch (e) {
+            console.warn(`theme ${name}: effect.js failed to load:`, e);
+            return null;
+        }
+    }
+
+    function stopAllEffects() {
+        for (const ctrl of loadedEffects.values()) {
+            try { ctrl.stop && ctrl.stop(); } catch (e) { /* ignore */ }
+        }
+    }
+
+    async function applyTheme(name) {
+        const known = themes.find(t => t.name === name);
+        if (!known) name = themes[0] && themes[0].name || "dark";
+        const theme = themes.find(t => t.name === name);
+        // Always lazy-load the new theme's CSS before swapping the class
+        // so the browser doesn't render an unstyled flash.
+        injectThemeCss(name);
         document.body.classList.forEach(c => {
             if (c.startsWith("theme-")) document.body.classList.remove(c);
         });
-        if (name !== "dark") {
-            document.body.classList.add(`theme-${name}`);
-        }
+        document.body.classList.add(`theme-${name}`);
         if (themeSelect) themeSelect.value = name;
-        // Matrix-only background animation.
-        if (name === "matrix") startMatrixRain(); else stopMatrixRain();
+        stopAllEffects();
+        if (theme && theme.has_effect) {
+            const ctrl = await ensureEffect(name);
+            try { ctrl && ctrl.start && ctrl.start(); } catch (e) { console.warn(e); }
+        }
+        currentTheme = name;
     }
 
-    // --- Matrix digital rain (canvas, only runs while theme-matrix is active) ---
-    let matrixRainHandle = null;
-    let matrixDrops = null;
-    const MATRIX_CHARS = (
-        "アイウエオカキクケコサシスセソタチツテトナニヌネノ" +
-        "ハヒフヘホマミムメモヤユヨラリルレロワヲン" +
-        "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
-    ).split("");
-    function _matrixSize(canvas) {
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
-        const ctx = canvas.getContext("2d");
-        ctx.scale(dpr, dpr);
-        return ctx;
-    }
-    function startMatrixRain() {
-        if (matrixRainHandle) return;
-        const canvas = document.getElementById("matrix-rain");
-        if (!canvas) return;
-        let ctx = _matrixSize(canvas);
-        const fontSize = 18;
-        const columns = Math.floor(window.innerWidth / fontSize);
-        matrixDrops = new Array(columns).fill(0)
-            .map(() => Math.random() * -50);
-        const onResize = () => {
-            ctx = _matrixSize(canvas);
-            const c = Math.floor(window.innerWidth / fontSize);
-            matrixDrops = new Array(c).fill(0).map(() => Math.random() * -50);
-        };
-        window.addEventListener("resize", onResize);
-        matrixRainHandle = { onResize };
-        const tick = () => {
-            if (!matrixRainHandle) return;
-            // Trail fade: paint translucent black over the whole canvas
-            // so older characters dim out smoothly.
-            ctx.fillStyle = "rgba(0, 8, 6, 0.08)";
-            ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
-            ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
-            ctx.textBaseline = "top";
-            for (let i = 0; i < matrixDrops.length; i++) {
-                const ch = MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)];
-                const y = matrixDrops[i] * fontSize;
-                // Head of the column is bright white; trail is phosphor green.
-                ctx.fillStyle = "#d8ffe0";
-                ctx.fillText(ch, i * fontSize, y);
-                ctx.fillStyle = "#00ff41";
-                ctx.fillText(ch, i * fontSize, y - fontSize);
-                if (y > window.innerHeight && Math.random() > 0.975) {
-                    matrixDrops[i] = 0;
-                }
-                matrixDrops[i] += 1;
-            }
-            matrixRainHandle.raf = requestAnimationFrame(tick);
-        };
-        matrixRainHandle.raf = requestAnimationFrame(tick);
-    }
-    function stopMatrixRain() {
-        if (!matrixRainHandle) return;
-        if (matrixRainHandle.raf) cancelAnimationFrame(matrixRainHandle.raf);
-        if (matrixRainHandle.onResize) {
-            window.removeEventListener("resize", matrixRainHandle.onResize);
+    function rebuildThemeDropdown() {
+        if (!themeSelect) return;
+        const currentValue = themeSelect.value;
+        themeSelect.innerHTML = "";
+        for (const t of themes) {
+            const opt = document.createElement("option");
+            opt.value = t.name;
+            opt.textContent = t.display_name || t.name;
+            themeSelect.appendChild(opt);
         }
-        matrixRainHandle = null;
-        const canvas = document.getElementById("matrix-rain");
-        if (canvas) {
-            const ctx = canvas.getContext("2d");
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (currentValue && themes.some(t => t.name === currentValue)) {
+            themeSelect.value = currentValue;
         }
     }
 
-    const savedTheme = localStorage.getItem(THEME_KEY) || "dark";
-    applyTheme(savedTheme);
+    async function loadThemes() {
+        try {
+            const r = await fetch("/api/themes", { cache: "no-store" });
+            const data = await r.json();
+            themes = Array.isArray(data.themes) ? data.themes : [];
+        } catch (e) {
+            console.warn("theme list fetch failed:", e);
+            themes = [{ name: "dark", display_name: "HAL — Dark", has_effect: false, kind: "dark" }];
+        }
+        rebuildThemeDropdown();
+    }
 
     if (themeSelect) {
         themeSelect.addEventListener("change", (e) => {
@@ -124,6 +117,12 @@
             applyTheme(choice);
         });
     }
+
+    // Fetch the catalog, then apply the saved theme (or dark by default).
+    loadThemes().then(() => {
+        const saved = localStorage.getItem(THEME_KEY) || "dark";
+        applyTheme(saved);
+    });
 
     // --- WebSocket ---
     function connect() {
@@ -197,10 +196,20 @@
             case "pong":
                 break;
             case "set_theme":
-                if (msg.name && THEMES.includes(msg.name)) {
+                if (msg.name && themes.some(t => t.name === msg.name)) {
                     localStorage.setItem(THEME_KEY, msg.name);
                     applyTheme(msg.name);
                 }
+                break;
+            case "themes_changed":
+                // Plug-in catalog changed on the server (theme added /
+                // removed / manifest edited). Re-fetch and rebuild.
+                loadThemes().then(() => {
+                    if (currentTheme && !themes.some(t => t.name === currentTheme)) {
+                        // Active theme was uninstalled — fall back to dark.
+                        applyTheme("dark");
+                    }
+                });
                 break;
             case "show_camera":
                 showCamera(msg);

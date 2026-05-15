@@ -1,0 +1,55 @@
+body.theme-birch {
+    --bg: #d6c69e;            /* warm beige (matches the picker) */
+    --surface: #c9b88c;        /* deeper beige panels */
+    --border: #d8c5a3;         /* light birch */
+    --text: #2c1f10;
+    --text-dim: #6b5b42;
+    --accent: #b25a1c;         /* warm copper/birch tone */
+    --accent-rgb: 178, 90, 28;
+    --accent-glow: #d97a35;
+    --accent-glow-rgb: 217, 122, 53;
+    --accent-deep: #7a3a0e;
+    --accent-warm: #c96e1f;
+    --accent-warm-rgb: 201, 110, 31;
+    --success: #4a7c2f;
+
+    --speak-core-1: rgba(255, 250, 235, 0.95);
+    --speak-core-2: rgba(255, 225, 180, 0.8);
+    --speak-pupil: rgba(100, 60, 30, 0.5);
+    --speak-pupil-2: rgba(100, 60, 30, 0.2);
+    --speak-reflection: rgba(255, 252, 240, 0.6);
+    --speak-glow: rgba(255, 235, 190, 0.18);
+
+    --bezel-1: #8a7a5e;
+    --bezel-2: #b8a682;
+    --bezel-3: #d4c19a;
+    --bezel-4: #ede0c4;
+    /* Cavity stays dark across themes — the lens sits in a deep recess */
+    --bezel-inner: #15110b;
+    --bezel-inner-edge: #2a2218;
+    --bezel-shadow: rgba(80, 60, 30, 0.3);
+    --lens-rim: #000000;
+
+    --core-deep-stop: #5e2a08;
+    --core-shadow: rgba(0, 0, 0, 0.4);
+    --core-shadow-deep: rgba(0, 0, 0, 0.7);
+
+    --iris-highlight: rgba(255, 180, 100, 0.4);
+    --pupil-1: rgba(60, 30, 10, 0.6);
+    --pupil-2: rgba(60, 30, 10, 0.3);
+    --reflection: rgba(255, 252, 240, 0.45);
+
+    --scan-line: rgba(120, 80, 40, 0.3);
+    --grid-line: rgba(120, 80, 40, 0.025);
+    --ambient-radial: rgba(178, 90, 28, 0.05);
+
+    --status-speak: #b25a1c;
+    --status-speak-glow: rgba(178, 90, 28, 0.6);
+    --vol-hover-bg: rgba(120, 80, 40, 0.08);
+}
+
+/* During "processing" the dark themes do a red-pulse on the core;
+   the lighter themes do a gentler warm pulse instead. */
+body.theme-birch.state-processing .eye-core {
+    animation: core-warm-pulse 2.4s ease-in-out infinite alternate;
+}

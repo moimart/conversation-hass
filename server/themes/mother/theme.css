@@ -1,0 +1,48 @@
+body.theme-mother {
+    --bg: #050706;
+    --surface: #0e1310;
+    --border: #1c2418;
+    --text: #d6b890;
+    --text-dim: #6a5a3a;
+    --accent: #f47720;
+    --accent-rgb: 244, 119, 32;
+    --accent-glow: #ff9540;
+    --accent-glow-rgb: 255, 149, 64;
+    --accent-deep: #7a3a0a;
+    --accent-warm: #d56a18;
+    --accent-warm-rgb: 213, 106, 24;
+    --success: #c0a060;
+
+    --speak-core-1: rgba(255, 240, 200, 0.95);
+    --speak-core-2: rgba(255, 200, 130, 0.8);
+    --speak-pupil: rgba(255, 240, 200, 0.6);
+    --speak-pupil-2: rgba(255, 220, 160, 0.2);
+    --speak-reflection: rgba(255, 240, 200, 0.5);
+    --speak-glow: rgba(255, 180, 100, 0.16);
+
+    --bezel-1: #2a261c;
+    --bezel-2: #46402e;
+    --bezel-3: #6a6042;
+    --bezel-4: #968866;
+    --bezel-inner: #050706;
+    --bezel-inner-edge: #1c2418;
+    --bezel-shadow: rgba(0, 0, 0, 0.7);
+    --lens-rim: #000000;
+
+    --core-deep-stop: #2a1408;
+    --core-shadow: rgba(0, 0, 0, 0.4);
+    --core-shadow-deep: rgba(0, 0, 0, 0.85);
+
+    --iris-highlight: rgba(255, 170, 80, 0.4);
+    --pupil-1: rgba(0, 0, 0, 0.8);
+    --pupil-2: rgba(0, 0, 0, 0.4);
+    --reflection: rgba(255, 220, 160, 0.25);
+
+    --scan-line: rgba(255, 150, 60, 0.3);
+    --grid-line: rgba(244, 119, 32, 0.012);
+    --ambient-radial: rgba(244, 119, 32, 0.03);
+
+    --status-speak: #ffeac0;
+    --status-speak-glow: rgba(255, 200, 130, 0.85);
+    --vol-hover-bg: rgba(244, 119, 32, 0.05);
+}

@@ -127,6 +127,65 @@ Twelve built-in themes, switchable from the web UI's theme picker, the LLM (`ui_
 
 **Auto day/night switching** (default on): the server polls `sun.sun` every 5 minutes and swaps `THEME_NIGHT` ↔ `THEME_DAY` at dusk/dawn. Disable with `AUTO_THEME=false`.
 
+### Writing a theme
+
+Themes are plug-in folders under `server/themes/`. The server scans the
+directory on startup *and* every `THEMES_POLL_INTERVAL_S` seconds
+(default 10), so dropping in a new folder gets picked up live —
+MQTT discovery is republished, the kiosk dropdown refreshes, no
+restart needed.
+
+A theme is one to three files:
+
+```
+server/themes/<your-theme>/
+├── manifest.json          # required
+├── theme.css              # required — CSS variable overrides
+└── effect.js              # optional — animated background / overlay
+```
+
+**manifest.json**
+
+```json
+{
+    "name": "your-theme",
+    "display_name": "Your Theme — Description",
+    "description": "One-line description shown in the picker tooltip.",
+    "version": "1.0.0",
+    "kind": "dark",
+    "effect": "effect.js"
+}
+```
+
+- `name`: must match the directory name. Used as the CSS selector (`body.theme-<name>`) and the MQTT/voice/HA value.
+- `kind`: `"dark"` or `"light"` — controls grouping in the HA selects.
+- `effect` is optional. Omit if your theme is colors-only.
+
+**theme.css**
+
+A single `body.theme-<name> { … }` block overriding any of the CSS
+custom properties declared in the kiosk's `:root`. Copy `themes/dark/theme.css`
+as a starter; only override what differs.
+
+**effect.js** (optional, ES module)
+
+Exports a default function called when the theme activates:
+
+```js
+export default function setup({ root }) {
+    // `root` is the kiosk's <body>. Free to mount canvases / DOM.
+    return {
+        start() { /* called when theme activates */ },
+        stop()  { /* called when theme deactivates — must clean up */ },
+    };
+}
+```
+
+The kiosk imports the module on first activation, calls `setup()` once
+for the lifetime of the page, then `start()`/`stop()` on each theme
+swap. Built-in example: `themes/matrix/effect.js` runs the digital-rain
+canvas animation.
+
 ## Home Assistant Integration
 
 When `MQTT_BROKER_HOST` is set, HAL appears in HA via auto-discovery as a single device with:
@@ -441,6 +500,8 @@ conversation-hass/
 │       ├── ha_ws.py                   # HA WebSocket client (WebRTC offer signaling)
 │       ├── go2rtc.py                  # go2rtc HTTP client (stream registration + WebRTC offer)
 │       ├── runtime_config.py          # File-backed live config (atomic JSON, env bootstrap)
+│       ├── themes.py                  # Plug-in theme registry (scan + polling reload)
+│   ├── themes/                            # Plug-in theme folders (manifest+theme.css+optional effect.js)
 │       ├── mqtt_bridge.py             # HA Discovery + MQTT state/command bridge
 │       └── tts.py                     # Wyoming protocol TTS client
 │
@@ -654,7 +715,7 @@ uv pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-All 262 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices, runtime config) are fully mocked.
+All 276 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices, runtime config) are fully mocked.
 
 ## License
 

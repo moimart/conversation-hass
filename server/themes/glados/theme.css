@@ -1,0 +1,48 @@
+body.theme-glados {
+    --bg: #0a0907;              /* warm near-black, faintly amber */
+    --surface: #14110b;
+    --border: #2a2515;
+    --text: #f0e9d6;
+    --text-dim: #7a6f55;
+    --accent: #ffb000;           /* Aperture amber */
+    --accent-rgb: 255, 176, 0;
+    --accent-glow: #ffd24a;
+    --accent-glow-rgb: 255, 210, 74;
+    --accent-deep: #8c5800;
+    --accent-warm: #ffce4d;
+    --accent-warm-rgb: 255, 206, 77;
+    --success: #b8d340;          /* portal-green sliver */
+
+    --speak-core-1: rgba(255, 255, 255, 0.95);
+    --speak-core-2: rgba(255, 235, 180, 0.85);
+    --speak-pupil: rgba(255, 255, 255, 0.6);
+    --speak-pupil-2: rgba(255, 255, 255, 0.2);
+    --speak-reflection: rgba(255, 255, 255, 0.55);
+    --speak-glow: rgba(255, 215, 130, 0.18);
+
+    --bezel-1: #4a4a4a;
+    --bezel-2: #7a7a7a;
+    --bezel-3: #b0b0b0;
+    --bezel-4: #e0e0e0;
+    --bezel-inner: #0a0907;
+    --bezel-inner-edge: #2a2515;
+    --bezel-shadow: rgba(0, 0, 0, 0.6);
+    --lens-rim: #000000;
+
+    --core-deep-stop: #2a1d05;
+    --core-shadow: rgba(0, 0, 0, 0.3);
+    --core-shadow-deep: rgba(0, 0, 0, 0.8);
+
+    --iris-highlight: rgba(255, 215, 130, 0.45);
+    --pupil-1: rgba(0, 0, 0, 0.8);
+    --pupil-2: rgba(0, 0, 0, 0.4);
+    --reflection: rgba(255, 245, 220, 0.3);
+
+    --scan-line: rgba(255, 215, 130, 0.3);
+    --grid-line: rgba(255, 180, 60, 0.014);
+    --ambient-radial: rgba(255, 176, 0, 0.04);
+
+    --status-speak: #fff;
+    --status-speak-glow: rgba(255, 215, 130, 0.85);
+    --vol-hover-bg: rgba(255, 200, 100, 0.06);
+}

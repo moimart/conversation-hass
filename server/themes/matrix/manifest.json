@@ -1,0 +1,8 @@
+{
+    "name": "matrix",
+    "display_name": "Matrix — Phosphor green",
+    "description": "Phosphor green on pitch black — old-CRT terminal feel with cascading digital rain.",
+    "version": "1.0.0",
+    "kind": "dark",
+    "effect": "effect.js"
+}

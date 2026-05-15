@@ -1,0 +1,51 @@
+/* HAL — classic 2001 dark theme. Mirrors the structural :root defaults
+   in the kiosk base stylesheet so the theme.* registry treats every
+   theme symmetrically. */
+body.theme-dark {
+    --bg: #0a0a0c;
+    --surface: #111114;
+    --border: #1a1a20;
+    --text: #e8e8ec;
+    --text-dim: #6b6b78;
+    --accent: #ff2d2d;
+    --accent-rgb: 255, 45, 45;
+    --accent-glow: #ff4444;
+    --accent-glow-rgb: 255, 68, 68;
+    --accent-deep: #991111;
+    --accent-warm: #ff6633;
+    --accent-warm-rgb: 255, 102, 51;
+    --success: #22c55e;
+
+    --speak-core-1: rgba(255, 255, 255, 0.95);
+    --speak-core-2: rgba(255, 200, 180, 0.8);
+    --speak-pupil: rgba(255, 255, 255, 0.6);
+    --speak-pupil-2: rgba(255, 255, 255, 0.2);
+    --speak-reflection: rgba(255, 255, 255, 0.5);
+    --speak-glow: rgba(255, 255, 255, 0.12);
+
+    --bezel-1: #4a4a4a;
+    --bezel-2: #7a7a7a;
+    --bezel-3: #b0b0b0;
+    --bezel-4: #e0e0e0;
+    --bezel-inner: #050507;
+    --bezel-inner-edge: #1a1a1e;
+    --bezel-shadow: rgba(0, 0, 0, 0.6);
+    --lens-rim: #000000;
+
+    --core-deep-stop: #330808;
+    --core-shadow: rgba(0, 0, 0, 0.3);
+    --core-shadow-deep: rgba(0, 0, 0, 0.8);
+
+    --iris-highlight: rgba(255, 100, 50, 0.4);
+    --pupil-1: rgba(0, 0, 0, 0.8);
+    --pupil-2: rgba(0, 0, 0, 0.4);
+    --reflection: rgba(255, 255, 255, 0.25);
+
+    --scan-line: rgba(255, 255, 255, 0.3);
+    --grid-line: rgba(255, 255, 255, 0.01);
+    --ambient-radial: rgba(255, 45, 45, 0.03);
+
+    --status-speak: #fff;
+    --status-speak-glow: rgba(255, 255, 255, 0.8);
+    --vol-hover-bg: rgba(255, 255, 255, 0.05);
+}

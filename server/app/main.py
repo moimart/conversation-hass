@@ -23,6 +23,7 @@ from .go2rtc import Go2RTCClient
 from .ha_ws import HAWSClient
 from .local_tools import LocalToolsClient
 from .runtime_config import RuntimeConfig
+from .themes import ThemeRegistry
 from .mcp_client import MCPClient, MultiMCPClient
 from .memory import MemoryClient
 from .mqtt_bridge import MQTTBridge
@@ -53,6 +54,7 @@ class AppState:
     runtime_config: object | None = None  # RuntimeConfig
     voice_options: list = field(default_factory=list)
     model_options: list = field(default_factory=list)
+    themes: object | None = None  # ThemeRegistry
     theme_scheduler_task: object | None = None
     mqtt_bridge: MQTTBridge | None = None
     tts_volume: float = 0.7  # cached, mirrors RPi state
@@ -104,6 +106,18 @@ VALID_THEMES = {
     "dark", "birch", "odyssey", "japandi", "sal", "glados",
     "matrix", "mother", "joi", "kitt", "forest", "sunset",
 }
+
+
+def _theme_names(state: "AppState") -> list[str]:
+    """Names of themes the registry knows about. Falls back to the static
+    set if the registry hasn't loaded yet (or is empty for some reason)."""
+    if isinstance(state.themes, ThemeRegistry) and state.themes.names:
+        return state.themes.names
+    return sorted(VALID_THEMES)
+
+
+def _is_valid_theme(state: "AppState", name: str) -> bool:
+    return name in _theme_names(state)
 
 
 def _parse_iso(ts: str) -> "datetime | None":
@@ -726,7 +740,7 @@ async def _push_image_payload(state: AppState, raw: bytes | str, default_duratio
 
 async def apply_theme(state: AppState, theme: str) -> bool:
     """Update server-side theme and push to RPi web UI."""
-    if theme not in VALID_THEMES:
+    if not _is_valid_theme(state, theme):
         return False
     state.current_theme = theme
     msg = {"type": "set_theme", "name": theme}
@@ -744,8 +758,9 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
 
     async def set_theme(args: dict) -> str:
         name = (args.get("name") or "").lower().strip()
-        if name not in VALID_THEMES:
-            return f"Invalid theme '{name}'. Valid: {', '.join(sorted(VALID_THEMES))}"
+        valid = _theme_names(state)
+        if name not in valid:
+            return f"Invalid theme '{name}'. Valid: {', '.join(valid)}"
         ok = await apply_theme(state, name)
         return f"Theme set to {name}" if ok else "Failed to apply theme"
 
@@ -755,7 +770,7 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "enum": sorted(VALID_THEMES), "description": "Theme name"},
+                "name": {"type": "string", "enum": _theme_names(state), "description": "Theme name"},
             },
             "required": ["name"],
         },
@@ -1215,6 +1230,12 @@ async def lifespan(app: FastAPI):
     log.info("Initializing HAL voice server...")
 
     # Generate wake word chime
+    # Plug-in theme registry: scan the mounted themes dir.
+    themes_dir = os.environ.get("THEMES_DIR", "/app/themes")
+    state.themes = ThemeRegistry(themes_dir)
+    state.themes.scan()
+    log.info(f"Loaded {len(state.themes.themes)} themes from {themes_dir}: {state.themes.names}")
+
     # Live config: file wins over env vars; bootstrapped from env on first run
     runtime_config_path = os.environ.get("RUNTIME_CONFIG_PATH", "/app/runtime/config.json")
     state.runtime_config = RuntimeConfig(runtime_config_path)
@@ -1330,6 +1351,12 @@ async def lifespan(app: FastAPI):
         state.theme_scheduler_task = asyncio.create_task(_theme_scheduler(state))
     else:
         state.theme_scheduler_task = None
+
+    # Theme registry: poll for added/removed plug-ins. The on_change
+    # callback is wired further down (after the MQTT bridge is up) so
+    # both the bridge republish and the kiosk notification can fire.
+    poll_interval = float(os.environ.get("THEMES_POLL_INTERVAL_S", "10"))
+    await state.themes.start_polling(poll_interval)
 
     # MQTT bridge → expose HAL as a HA device
     mqtt_host = os.environ.get("MQTT_BROKER_HOST", "")
@@ -1537,7 +1564,7 @@ async def lifespan(app: FastAPI):
                 await apply_theme(state, target)
 
         async def _cfg_theme_day(name: str):
-            if name not in VALID_THEMES:
+            if not _is_valid_theme(state, name):
                 log.warning(f"config theme_day rejected: {name!r}")
                 return
             state.theme_day = name
@@ -1546,7 +1573,7 @@ async def lifespan(app: FastAPI):
             await _re_evaluate_active_theme()
 
         async def _cfg_theme_night(name: str):
-            if name not in VALID_THEMES:
+            if not _is_valid_theme(state, name):
                 log.warning(f"config theme_night rejected: {name!r}")
                 return
             state.theme_night = name
@@ -1593,6 +1620,36 @@ async def lifespan(app: FastAPI):
 
         bridge.voice_options = list(state.voice_options)
         bridge.model_options = list(state.model_options)
+        # Theme options come straight from the plug-in registry. Order
+        # them so dark themes sit before light themes; alphabetic within
+        # each kind.
+        def _ordered_theme_names() -> list[str]:
+            if not isinstance(state.themes, ThemeRegistry):
+                return sorted(VALID_THEMES)
+            dark = sorted(t.name for t in state.themes.themes if t.kind == "dark")
+            light = sorted(t.name for t in state.themes.themes if t.kind != "dark")
+            return dark + light
+
+        bridge.theme_options = _ordered_theme_names()
+
+        async def _on_themes_changed(_themes_list):
+            """Refresh bridge options + republish discovery + tell kiosks."""
+            bridge.theme_options = _ordered_theme_names()
+            try:
+                await bridge.publish_discovery()
+            except Exception as e:
+                log.warning(f"themes: republish discovery failed: {e}")
+            msg = {"type": "themes_changed"}
+            ws = state.audio_websocket
+            if ws:
+                try:
+                    await ws.send_json(msg)
+                except Exception:
+                    pass
+            await broadcast_to_ui(state, msg)
+
+        if isinstance(state.themes, ThemeRegistry):
+            state.themes.add_listener(_on_themes_changed)
         # Seed the bridge's caches with the current values so the first
         # publish on connect reflects reality.
         bridge._cached_config_theme_day = state.theme_day
@@ -2111,3 +2168,35 @@ async def get_mute_status():
     """Get current RPi mic mute state."""
     state = _get_state(app)
     return {"muted": state.mic_muted}
+
+
+# --- Theme plug-in endpoints -------------------------------------------------
+
+@app.get("/api/themes")
+async def list_themes_endpoint():
+    """JSON list of installed themes. Kiosk fetches this on startup
+    and on `themes_changed` to build the picker dropdown."""
+    state = _get_state(app)
+    if not isinstance(state.themes, ThemeRegistry):
+        return {"themes": []}
+    return {"themes": [t.to_public() for t in state.themes.themes]}
+
+
+@app.get("/themes/{name}/{filename}")
+async def get_theme_file(name: str, filename: str):
+    """Serve a theme's static asset (theme.css or effect.js)."""
+    from fastapi.responses import FileResponse, Response
+    state = _get_state(app)
+    if not isinstance(state.themes, ThemeRegistry):
+        return Response(status_code=404)
+    path = state.themes.static_path(name, filename)
+    if not path:
+        return Response(status_code=404)
+    media_type = "text/css" if filename.endswith(".css") else (
+        "application/javascript" if filename.endswith(".js") else "application/octet-stream"
+    )
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )

@@ -38,6 +38,11 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Application code
 COPY app/ ./app/
 
+# Bundled themes — get baked in so the registry has the built-in set
+# available even before users mount their own. The compose bind mount
+# overlays this directory at deploy time; the registry handles either.
+COPY themes/ ./themes/
+
 # Create directories for models
 RUN mkdir -p /app/models
 

@@ -1,0 +1,54 @@
+body.theme-odyssey {
+    --bg: #f4f4f3;
+    --surface: #ebebe8;
+    --border: #c0c0bc;
+    --text: #1a1a18;
+    --text-dim: #707070;
+    --accent: #d92020;
+    --accent-rgb: 217, 32, 32;
+    --accent-glow: #ff3838;
+    --accent-glow-rgb: 255, 56, 56;
+    --accent-deep: #8a1010;
+    --accent-warm: #ff5530;
+    --accent-warm-rgb: 255, 85, 48;
+    --success: #1f7a3a;
+
+    --speak-core-1: rgba(255, 255, 255, 0.98);
+    --speak-core-2: rgba(255, 230, 220, 0.85);
+    --speak-pupil: rgba(80, 80, 80, 0.5);
+    --speak-pupil-2: rgba(80, 80, 80, 0.2);
+    --speak-reflection: rgba(255, 255, 255, 0.7);
+    --speak-glow: rgba(255, 255, 255, 0.2);
+
+    --bezel-1: #707070;
+    --bezel-2: #a0a0a0;
+    --bezel-3: #d0d0d0;
+    --bezel-4: #f0f0f0;
+    --bezel-inner: #0c0c0e;
+    --bezel-inner-edge: #1f1f24;
+    --bezel-shadow: rgba(0, 0, 0, 0.35);
+    --lens-rim: #000000;
+
+    --core-deep-stop: #4a0808;
+    --core-shadow: rgba(0, 0, 0, 0.18);
+    --core-shadow-deep: rgba(0, 0, 0, 0.4);
+
+    --iris-highlight: rgba(255, 100, 80, 0.4);
+    --pupil-1: rgba(0, 0, 0, 0.5);
+    --pupil-2: rgba(0, 0, 0, 0.25);
+    --reflection: rgba(255, 255, 255, 0.6);
+
+    --scan-line: rgba(0, 0, 0, 0.25);
+    --grid-line: rgba(0, 0, 0, 0.02);
+    --ambient-radial: rgba(217, 32, 32, 0.04);
+
+    --status-speak: #d92020;
+    --status-speak-glow: rgba(217, 32, 32, 0.6);
+    --vol-hover-bg: rgba(0, 0, 0, 0.05);
+}
+
+/* During "processing" the dark themes do a red-pulse on the core;
+   the lighter themes do a gentler warm pulse instead. */
+body.theme-odyssey.state-processing .eye-core {
+    animation: core-warm-pulse 2.4s ease-in-out infinite alternate;
+}

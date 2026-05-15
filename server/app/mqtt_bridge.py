@@ -494,9 +494,7 @@ class MQTTBridge:
                     log.info("MQTT connected")
 
                     # Publish HA discovery messages
-                    for topic, payload in self._discovery_payloads():
-                        await client.publish(topic, json.dumps(payload), qos=1, retain=True)
-                    log.info(f"Published {len(self._discovery_payloads())} HA discovery messages")
+                    await self.publish_discovery()
 
                     # Mark online
                     await client.publish(self.availability_topic, "online", qos=1, retain=True)
@@ -647,6 +645,18 @@ class MQTTBridge:
 
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")
+
+    async def publish_discovery(self):
+        """Re-emit every HA Discovery config payload (retained).
+
+        Called on connect and any time the catalog of theme/voice/model
+        options changes — HA re-reads the retained configs and
+        refreshes the entity options.
+        """
+        payloads = self._discovery_payloads()
+        for topic, payload in payloads:
+            await self._safe_publish(topic, json.dumps(payload))
+        log.info(f"Published {len(payloads)} HA discovery messages")
 
     async def _safe_publish(self, topic: str, payload, retain: bool = True):
         """Publish to MQTT, swallow errors if disconnected."""

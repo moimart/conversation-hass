@@ -348,7 +348,7 @@ class AudioManager:
         elif msg_type in (
             "transcription", "response", "wake", "state", "set_theme",
             "show_camera", "stream_start", "stream_stop", "webrtc_signal",
-            "play_video", "video_stop",
+            "play_video", "video_stop", "themes_changed",
         ):
             await self.broadcast_to_ui(msg)
 
@@ -606,6 +606,30 @@ class AudioManager:
             log.debug(f"snapshot upload failed: {e}")
             return web.Response(status=502)
 
+    async def _proxy_to_ai_server(self, request: web.Request) -> web.Response:
+        """Forward a GET request to the AI server transparently.
+
+        Used for theme catalog and per-theme static files so the kiosk
+        can keep talking only to localhost:8080.
+        """
+        path = request.path  # e.g. /api/themes or /themes/matrix/effect.js
+        if request.query_string:
+            path = f"{path}?{request.query_string}"
+        url = f"http://{self.ai_server_host}:8765{path}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as up:
+                    body = await up.read()
+                    return web.Response(
+                        status=up.status,
+                        body=body,
+                        content_type=up.content_type or "application/octet-stream",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+                    )
+        except Exception as e:
+            log.debug(f"proxy {path} failed: {e}")
+            return web.Response(status=502)
+
     async def cdp_snapshot_loop(self):
         """Periodically capture the kiosk via CDP and post it upstream.
 
@@ -666,6 +690,9 @@ class AudioManager:
         app.router.add_get("/", self._serve_index)
         app.router.add_post("/api/snapshot", self._proxy_snapshot)
         app.router.add_post("/api/music/state", self._set_music_state)
+        # Theme plug-in passthrough: list + per-theme assets forward to the AI server.
+        app.router.add_get("/api/themes", self._proxy_to_ai_server)
+        app.router.add_get(r"/themes/{name}/{filename}", self._proxy_to_ai_server)
         app.router.add_static("/", "/app/web")
 
         runner = web.AppRunner(app)

@@ -1,0 +1,54 @@
+body.theme-matrix {
+    --bg: #000806;
+    --surface: #051a10;
+    --border: #0a2a18;
+    --text: #b8ffc4;
+    --text-dim: #4a7a55;
+    --accent: #00ff41;
+    --accent-rgb: 0, 255, 65;
+    --accent-glow: #66ff99;
+    --accent-glow-rgb: 102, 255, 153;
+    --accent-deep: #003311;
+    --accent-warm: #44dd55;
+    --accent-warm-rgb: 68, 221, 85;
+    --success: #00ff41;
+
+    --speak-core-1: rgba(220, 255, 230, 0.95);
+    --speak-core-2: rgba(120, 255, 160, 0.8);
+    --speak-pupil: rgba(255, 255, 255, 0.6);
+    --speak-pupil-2: rgba(180, 255, 200, 0.2);
+    --speak-reflection: rgba(220, 255, 230, 0.55);
+    --speak-glow: rgba(80, 255, 130, 0.18);
+
+    --bezel-1: #2a3a2a;
+    --bezel-2: #4a6a4a;
+    --bezel-3: #80a080;
+    --bezel-4: #b8d8b8;
+    --bezel-inner: #000806;
+    --bezel-inner-edge: #0a2a18;
+    --bezel-shadow: rgba(0, 0, 0, 0.6);
+    --lens-rim: #000000;
+
+    --core-deep-stop: #001a08;
+    --core-shadow: rgba(0, 0, 0, 0.3);
+    --core-shadow-deep: rgba(0, 0, 0, 0.8);
+
+    --iris-highlight: rgba(120, 255, 160, 0.45);
+    --pupil-1: rgba(0, 0, 0, 0.8);
+    --pupil-2: rgba(0, 0, 0, 0.4);
+    --reflection: rgba(180, 255, 200, 0.3);
+
+    --scan-line: rgba(120, 255, 160, 0.35);
+    --grid-line: rgba(0, 255, 65, 0.014);
+    --ambient-radial: rgba(0, 255, 65, 0.04);
+
+    --status-speak: #fff;
+    --status-speak-glow: rgba(120, 255, 160, 0.85);
+    --vol-hover-bg: rgba(0, 255, 65, 0.06);
+}
+
+/* Show the matrix digital-rain canvas only under this theme; the
+   canvas element + base styling live in the kiosk's base CSS. */
+body.theme-matrix #matrix-rain {
+    opacity: 0.55;
+}
