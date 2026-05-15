@@ -198,7 +198,7 @@ class MQTTBridge:
                 "unique_id": f"{self.device_id}_theme",
                 "state_topic": f"{self.base}/theme/state",
                 "command_topic": f"{self.base}/theme/set",
-                "options": ["dark", "birch", "odyssey", "japandi"],
+                "options": list(self.theme_options),
                 "icon": "mdi:palette",
                 "availability": avail,
                 "device": device,
