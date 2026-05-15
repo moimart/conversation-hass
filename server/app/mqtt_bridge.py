@@ -85,7 +85,10 @@ class MQTTBridge:
         # placeholder so the entity still appears in HA.
         self.voice_options: list[str] = []
         self.model_options: list[str] = []
-        self.theme_options: list[str] = ["dark", "sal", "glados", "birch", "odyssey", "japandi"]
+        self.theme_options: list[str] = [
+            "dark", "sal", "glados", "matrix", "mother", "joi", "kitt",
+            "birch", "odyssey", "japandi", "forest", "sunset",
+        ]
 
         self._client = None
         self._connected = False
