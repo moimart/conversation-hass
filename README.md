@@ -129,6 +129,10 @@ Twelve built-in themes, switchable from the web UI's theme picker, the LLM (`ui_
 
 ### Writing a theme
 
+See **[THEMES.md](./THEMES.md)** for the full theme-author guide: every
+CSS variable, the `effect.js` API contract, packaging conventions,
+and the REST endpoints that drive theme discovery.
+
 Themes are plug-in folders under `server/themes/`. The server scans the
 directory on startup *and* every `THEMES_POLL_INTERVAL_S` seconds
 (default 10), so dropping in a new folder gets picked up live —
