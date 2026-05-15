@@ -24,7 +24,7 @@
 
     // --- Theme ---
     const THEME_KEY = "hal-theme";
-    const THEMES = ["dark", "birch", "odyssey", "japandi", "sal"];
+    const THEMES = ["dark", "birch", "odyssey", "japandi", "sal", "glados"];
 
     function applyTheme(name) {
         if (!THEMES.includes(name)) name = "dark";
