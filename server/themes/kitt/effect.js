@@ -6,13 +6,17 @@
 export default function setup({ root }) {
     const canvas = root.ownerDocument.createElement("canvas");
     canvas.id = "kitt-fx";
+    // Sized to live in the centre-bottom strip, between the volume
+    // control (bottom-left) and the connection indicator
+    // (bottom-right). Width is capped so it never reaches either.
+    const HEIGHT_PX = 28;
     Object.assign(canvas.style, {
         position: "fixed",
-        left: "0",
-        right: "0",
-        bottom: "0",
-        width: "100vw",
-        height: "64px",
+        left: "50%",
+        bottom: "28px",
+        transform: "translateX(-50%)",
+        width: "min(540px, 50vw)",
+        height: HEIGHT_PX + "px",
         zIndex: "5",
         pointerEvents: "none",
         opacity: "0",
@@ -33,10 +37,17 @@ export default function setup({ root }) {
     const RED_DIM = "rgba(180, 0, 0, 0.55)";
     const RED_TAIL = "rgba(120, 0, 0, 0.0)";
 
+    function cssSize() {
+        // Read computed CSS size so canvas internal pixels match.
+        const rect = canvas.getBoundingClientRect();
+        return { w: Math.max(1, Math.round(rect.width)), h: HEIGHT_PX };
+    }
+
     function resize() {
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = 64 * dpr;
+        const { w, h } = cssSize();
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -53,10 +64,10 @@ export default function setup({ root }) {
         ctx.fillStyle = housing;
         ctx.fillRect(0, 0, w, h);
 
-        // Eight faint vertical "cell" dividers — references the
-        // segmented look of the original prop without being too literal.
-        ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
-        const cells = 8;
+        // Faint vertical "cell" dividers — references the segmented
+        // look of the original prop without being too literal.
+        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+        const cells = 6;
         for (let i = 1; i < cells; i++) {
             const x = (w / cells) * i;
             ctx.fillRect(x - 0.5, h * 0.25, 1, h * 0.5);
@@ -66,48 +77,47 @@ export default function setup({ root }) {
     function drawScanner(w, h) {
         // Position of the bright head along the bar (in px), with a
         // bit of margin so the head doesn't get clipped at the edges.
-        const margin = 24;
+        const margin = 14;
         const span = w - margin * 2;
         const headX = margin + span * phase;
         const cy = h / 2;
 
-        // The head: a very bright radial gradient.
-        const headR = 28;
+        // The head: a bright radial gradient, scaled to fit the
+        // shorter strip height.
+        const headR = 14;
         const head = ctx.createRadialGradient(headX, cy, 0, headX, cy, headR);
         head.addColorStop(0, "rgba(255, 220, 200, 1)");
         head.addColorStop(0.18, RED_CORE);
         head.addColorStop(0.55, RED_MID);
         head.addColorStop(1, "rgba(255, 30, 10, 0)");
 
-        // The trailing tail behind the head — a horizontal gradient
-        // pointing opposite the direction of travel.
-        const tailLen = 240;
-        const tailStart = headX - direction * tailLen;
-        const tail = ctx.createLinearGradient(tailStart, cy, headX, cy);
+        // The trailing tail behind the head.
+        const tailLen = Math.min(160, span * 0.55);
+        const tail = ctx.createLinearGradient(
+            direction === 1 ? headX - tailLen : headX + tailLen, cy,
+            headX, cy,
+        );
         tail.addColorStop(0, RED_TAIL);
         tail.addColorStop(0.55, RED_DIM);
         tail.addColorStop(1, RED_MID);
-
-        // Draw tail first (a thinner band) so the head sits on top.
         ctx.fillStyle = tail;
         const tailX = direction === 1 ? headX - tailLen : headX;
-        ctx.fillRect(tailX, cy - 8, tailLen, 16);
+        ctx.fillRect(tailX, cy - 4, tailLen, 8);
 
-        // Draw the bright head glow.
+        // Bright head glow.
         ctx.fillStyle = head;
         ctx.fillRect(headX - headR * 1.5, cy - headR, headR * 3, headR * 2);
 
-        // A thin solid-red core line inside the housing for a hard edge.
+        // Thin solid-red core line for a hard edge inside the housing.
         ctx.fillStyle = "rgba(255, 40, 20, 0.55)";
-        ctx.fillRect(margin, cy - 1.5, span, 3);
+        ctx.fillRect(margin, cy - 1, span, 2);
 
-        // Soft outer bloom under the housing — bleeds the red glow
-        // upward into the page a little.
-        const bloom = ctx.createRadialGradient(headX, cy, 0, headX, cy, 120);
-        bloom.addColorStop(0, "rgba(255, 30, 10, 0.35)");
+        // Soft bloom that bleeds the red glow vertically.
+        const bloom = ctx.createRadialGradient(headX, cy, 0, headX, cy, 60);
+        bloom.addColorStop(0, "rgba(255, 30, 10, 0.32)");
         bloom.addColorStop(1, "rgba(255, 30, 10, 0)");
         ctx.fillStyle = bloom;
-        ctx.fillRect(headX - 120, 0, 240, h);
+        ctx.fillRect(headX - 60, 0, 120, h);
     }
 
     function tick(now) {
@@ -127,8 +137,7 @@ export default function setup({ root }) {
             direction = 1;
         }
 
-        const w = window.innerWidth;
-        const h = 64;
+        const { w, h } = cssSize();
         ctx.clearRect(0, 0, w, h);
         drawBackdrop(w, h);
         drawScanner(w, h);
