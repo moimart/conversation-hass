@@ -12,18 +12,24 @@
 .scene-3d {
     position: fixed;
     inset: 0;
-    perspective: 1600px;
+    perspective: 1800px;
     overflow: hidden;
-    /* Sit above the matrix canvas (z:0) and clock (z:50) need to
-       be inside or above this — the clock is fine because the cube
-       contents are inside .face which has its own z. */
     z-index: 1;
     pointer-events: none;        /* faces re-enable as needed */
 }
+
+/* Standard 4-face cube pattern: the cube is recessed by half the
+   viewport depth so that each face — pushed forward by the same
+   amount along its own local Z — sits on the viewport plane. The
+   front face (orb) is at the camera, the right face (calendar) is
+   perpendicular off to the right. body.show-calendar rotates the
+   cube -90deg around Y, which swings the right face into the
+   camera position. */
 .scene-3d > .cube {
     position: absolute;
     inset: 0;
     transform-style: preserve-3d;
+    transform: translateZ(-50vw);
     transition: transform 700ms cubic-bezier(.7, .05, .25, 1);
     will-change: transform;
 }
@@ -34,20 +40,17 @@
     -webkit-backface-visibility: hidden;
 }
 .face-orb {
-    transform: rotateY(0deg);
+    transform: rotateY(0deg) translateZ(50vw);
     pointer-events: auto;
 }
 .face-calendar {
-    transform: rotateY(90deg) translateZ(0);
-    transform-origin: right center;
+    transform: rotateY(90deg) translateZ(50vw);
     pointer-events: none;
     background: var(--bg);    /* solid backdrop so the orb doesn't bleed through */
 }
 
-/* When the calendar is shown, rotate the whole cube. The calendar
-   face becomes interactive, the orb face stops eating events. */
 body.show-calendar .scene-3d > .cube {
-    transform: rotateY(-90deg);
+    transform: translateZ(-50vw) rotateY(-90deg);
 }
 body.show-calendar .face-calendar { pointer-events: auto; }
 body.show-calendar .face-orb      { pointer-events: none; }
