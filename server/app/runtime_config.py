@@ -26,16 +26,24 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "wake_word":    ("WAKE_WORD", "hey hal"),
     "ollama_model": ("OLLAMA_MODEL", "llama3.2"),
     "auto_theme":   ("AUTO_THEME", True),
+    "calendar_dismiss_seconds":  ("CALENDAR_DISMISS_SECONDS", 30),
+    "calendar_default_source":   ("CALENDAR_DEFAULT_SOURCE", ""),
 }
 
 
 def _coerce_default(env_var: str, fallback: Any) -> Any:
-    """Read env_var; if absent, use fallback. Coerce booleans from strings."""
+    """Read env_var; if absent, use fallback. Coerce booleans/ints from strings."""
     raw = os.environ.get(env_var)
     if raw is None or raw == "":
         return fallback
     if isinstance(fallback, bool):
         return raw.strip().lower() in ("true", "1", "yes", "on")
+    if isinstance(fallback, int):
+        try:
+            return int(raw.strip())
+        except ValueError:
+            log.warning(f"{env_var}={raw!r} is not an int, using fallback {fallback!r}")
+            return fallback
     return raw
 
 

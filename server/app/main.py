@@ -18,6 +18,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .audio_pipeline import AudioPipeline
+from .calendar_ha import (
+    fetch_calendar_events,
+    list_calendars,
+    resolve_calendars,
+)
 from .conversation import ConversationManager
 from .go2rtc import Go2RTCClient
 from .ha_ws import HAWSClient
@@ -752,6 +757,107 @@ async def apply_theme(state: AppState, theme: str) -> bool:
     return True
 
 
+# === Calendar overlay ========================================================
+
+_VALID_CAL_VIEWS = ("month", "week", "day")
+
+
+def _calendar_range(view: str, now: "datetime | None" = None) -> "tuple[datetime, datetime]":
+    """Return (start, end) UTC datetimes covering the requested view.
+
+    month: first → last day of the current month
+    week:  Monday → Sunday end-of-day of the current week
+    day:   today 00:00 → tomorrow 00:00
+    """
+    from datetime import datetime, timedelta, timezone
+    now = now or datetime.now(timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if view == "day":
+        return today, today + timedelta(days=1)
+    if view == "week":
+        # ISO weekday: Mon=1, Sun=7
+        start = today - timedelta(days=today.weekday())
+        return start, start + timedelta(days=7)
+    # month — first to first-of-next-month
+    first = today.replace(day=1)
+    if first.month == 12:
+        next_first = first.replace(year=first.year + 1, month=1)
+    else:
+        next_first = first.replace(month=first.month + 1)
+    return first, next_first
+
+
+async def _show_calendar(
+    state: AppState,
+    view: str = "month",
+    calendar_name: str = "",
+    duration_s: int | None = None,
+) -> dict:
+    """Resolve calendar(s), fetch events, push show_calendar to kiosk + UI clients.
+
+    Returns the same payload that was pushed (useful for tests / LLM tool reply).
+    `calendar_name` empty / no match → merged view of all HA calendars.
+    """
+    view = (view or "month").lower().strip()
+    if view not in _VALID_CAL_VIEWS:
+        view = "month"
+
+    if duration_s is None:
+        duration_s = int(state.runtime_config.get("calendar_dismiss_seconds", 30) or 30)
+    duration_s = max(5, min(600, int(duration_s)))
+
+    name_query = (calendar_name or "").strip() or str(
+        state.runtime_config.get("calendar_default_source", "") or ""
+    ).strip()
+
+    available = await list_calendars()
+    chosen = resolve_calendars(name_query or None, available)
+
+    start, end = _calendar_range(view)
+    events = await fetch_calendar_events([c["entity_id"] for c in chosen], start, end)
+
+    if not chosen:
+        source_label = "(no calendars)"
+    elif name_query and len(chosen) == 1:
+        source_label = chosen[0]["name"]
+    else:
+        source_label = "All calendars"
+
+    payload = {
+        "type": "show_calendar",
+        "view": view,
+        "title": _format_range_title(view, start),
+        "source_label": source_label,
+        "range": {"start": start.isoformat(), "end": end.isoformat()},
+        "events": events,
+        "duration_s": duration_s,
+    }
+    await _push_to_rpi(state, payload)
+    await broadcast_to_ui(state, payload)
+    log.info(
+        f"calendar shown: view={view} source={source_label!r} "
+        f"events={len(events)} duration={duration_s}s"
+    )
+    return payload
+
+
+async def _hide_calendar(state: AppState) -> bool:
+    msg = {"type": "hide_calendar"}
+    pushed = await _push_to_rpi(state, msg)
+    await broadcast_to_ui(state, msg)
+    log.info("calendar hidden")
+    return pushed
+
+
+def _format_range_title(view: str, start: "datetime") -> str:
+    """e.g. 'May 2026' / 'Week of 11 May 2026' / 'Saturday 16 May 2026'."""
+    if view == "month":
+        return start.strftime("%B %Y")
+    if view == "week":
+        return "Week of " + start.strftime("%d %B %Y")
+    return start.strftime("%A %d %B %Y")
+
+
 def _build_local_tools(state: AppState) -> LocalToolsClient:
     """Construct the LocalToolsClient with all tools wired to AppState."""
     tools = LocalToolsClient()
@@ -1218,6 +1324,46 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         stop_streaming,
     )
 
+    async def show_calendar_tool(args: dict) -> str:
+        view = (args.get("view") or "month").lower().strip()
+        if view not in _VALID_CAL_VIEWS:
+            return f"view must be one of {_VALID_CAL_VIEWS}"
+        calendar_name = (args.get("calendar_name") or "").strip()
+        duration_s = args.get("duration_s")
+        try:
+            duration_s = int(duration_s) if duration_s is not None else None
+        except (TypeError, ValueError):
+            duration_s = None
+        payload = await _show_calendar(state, view=view, calendar_name=calendar_name, duration_s=duration_s)
+        n = len(payload.get("events") or [])
+        src = payload.get("source_label") or "all calendars"
+        return f"Showing {view} calendar from {src} ({n} events) for {payload['duration_s']}s"
+
+    tools.register(
+        "show_calendar",
+        "Display a full-screen calendar overlay on the kiosk (month, week, or day view) and pull events from Home Assistant. Use when the user asks to 'show me my <name> calendar', 'show the calendar', 'what's on this week', etc. Pass calendar_name with the source name (e.g. 'Family', 'Work') — partial / case-insensitive match against HA calendar entities. Empty calendar_name shows all calendars merged. The overlay rotates back to the orb after duration_s (default from runtime_config) and is preempted by show_camera/show_image/play_video/stream_camera.",
+        {
+            "type": "object",
+            "properties": {
+                "view": {"type": "string", "enum": list(_VALID_CAL_VIEWS), "default": "month", "description": "Calendar view"},
+                "calendar_name": {"type": "string", "description": "Optional source calendar name. Empty = merge all HA calendars."},
+                "duration_s": {"type": "integer", "minimum": 5, "maximum": 600, "description": "How long to show before auto-dismissing"},
+            },
+        },
+        show_calendar_tool,
+    )
+
+    async def hide_calendar_tool(_args: dict) -> str:
+        await _hide_calendar(state)
+        return "Calendar hidden"
+
+    tools.register(
+        "hide_calendar",
+        "Dismiss the calendar overlay if it is currently shown on the kiosk. Use when the user says 'hide the calendar', 'close the calendar', 'go back to the orb', etc.",
+        {"type": "object", "properties": {}},
+        hide_calendar_tool,
+    )
+
     return tools
 
 
@@ -1664,6 +1810,43 @@ async def lifespan(app: FastAPI):
             state.conversation.ollama_model if state.conversation is not None else ""
         )
         bridge._cached_config_auto_theme = state.auto_theme
+        bridge._cached_config_calendar_default_source = str(
+            state.runtime_config.get("calendar_default_source", "") or ""
+        )
+        bridge._cached_config_calendar_dismiss_seconds = int(
+            state.runtime_config.get("calendar_dismiss_seconds", 30) or 30
+        )
+
+        async def _mqtt_calendar_show(args: dict):
+            view = (args.get("view") or "month").lower()
+            calendar_name = (args.get("calendar_name") or "").strip()
+            duration_s = args.get("duration_s")
+            try:
+                duration_s = int(duration_s) if duration_s is not None else None
+            except (TypeError, ValueError):
+                duration_s = None
+            await _show_calendar(
+                state,
+                view=view,
+                calendar_name=calendar_name,
+                duration_s=duration_s,
+            )
+
+        async def _mqtt_calendar_hide():
+            await _hide_calendar(state)
+
+        async def _cfg_calendar_default_source(value: str):
+            value = (value or "").strip()
+            await _persist("calendar_default_source", value)
+            await bridge.publish_config_calendar_default_source(value)
+
+        async def _cfg_calendar_dismiss_seconds(seconds: int):
+            try:
+                seconds = max(5, min(600, int(seconds)))
+            except (TypeError, ValueError):
+                seconds = 30
+            await _persist("calendar_dismiss_seconds", seconds)
+            await bridge.publish_config_calendar_dismiss_seconds(seconds)
 
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
@@ -1680,6 +1863,10 @@ async def lifespan(app: FastAPI):
         bridge.on_config_ollama_model = _cfg_ollama_model
         bridge.on_config_wake_word = _cfg_wake_word
         bridge.on_config_auto_theme = _cfg_auto_theme
+        bridge.on_calendar_show = _mqtt_calendar_show
+        bridge.on_calendar_hide = _mqtt_calendar_hide
+        bridge.on_config_calendar_default_source = _cfg_calendar_default_source
+        bridge.on_config_calendar_dismiss_seconds = _cfg_calendar_dismiss_seconds
 
         await bridge.start()
         state.mqtt_bridge = bridge

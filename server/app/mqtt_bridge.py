@@ -80,6 +80,13 @@ class MQTTBridge:
         self.on_config_wake_word: Callable[[str], Awaitable[None]] | None = None
         self.on_config_ollama_model: Callable[[str], Awaitable[None]] | None = None
         self.on_config_auto_theme: Callable[[bool], Awaitable[None]] | None = None
+        # Calendar overlay callbacks. on_calendar_show receives a dict like
+        # {"view": "month"|"week"|"day", "calendar_name"?: str, "duration_s"?: int}.
+        self.on_calendar_show: Callable[[dict], Awaitable[None]] | None = None
+        self.on_calendar_hide: Callable[[], Awaitable[None]] | None = None
+        # Calendar runtime-config callbacks (default source name + dismiss timeout).
+        self.on_config_calendar_default_source: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_calendar_dismiss_seconds: Callable[[int], Awaitable[None]] | None = None
         # Lists populated by main.py at startup so the select entities
         # advertise the right options. Empty lists publish a "none found"
         # placeholder so the entity still appears in HA.
@@ -109,6 +116,9 @@ class MQTTBridge:
         self._cached_config_wake_word: str = ""
         self._cached_config_ollama_model: str = ""
         self._cached_config_auto_theme: bool = True
+        # Calendar config caches
+        self._cached_config_calendar_default_source: str = ""
+        self._cached_config_calendar_dismiss_seconds: int = 30
 
     @property
     def connected(self) -> bool:
@@ -449,6 +459,76 @@ class MQTTBridge:
             },
         ))
 
+        # Calendar overlay — three buttons (month/week/day) + a "Hide
+        # Calendar" button, plus a text entity for the default calendar
+        # source and a number for the auto-dismiss timeout. The buttons
+        # all publish to a single command topic; the view is encoded in
+        # the payload via `command_template` so HA's button entity (which
+        # has no payload field by itself) can carry it.
+        for view, label, icon in (
+            ("month", "Show Calendar — Month", "mdi:calendar-month"),
+            ("week",  "Show Calendar — Week",  "mdi:calendar-week"),
+            ("day",   "Show Calendar — Day",   "mdi:calendar-today"),
+        ):
+            configs.append((
+                f"{DISCOVERY_PREFIX}/button/{self.device_id}/show_calendar_{view}/config",
+                {
+                    "name": label,
+                    "unique_id": f"{self.device_id}_show_calendar_{view}",
+                    "command_topic": f"{self.base}/calendar/show/set",
+                    "payload_press": json.dumps({"view": view}),
+                    "icon": icon,
+                    "availability": avail,
+                    "device": device,
+                },
+            ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/button/{self.device_id}/hide_calendar/config",
+            {
+                "name": "Hide Calendar",
+                "unique_id": f"{self.device_id}_hide_calendar",
+                "command_topic": f"{self.base}/calendar/hide/set",
+                "payload_press": "",
+                "icon": "mdi:calendar-remove",
+                "availability": avail,
+                "device": device,
+            },
+        ))
+        # Default calendar source — empty = merge all HA calendars.
+        # No `max` field (HA's text entity caps at 255 silently if the
+        # value is set higher; the default fits any reasonable name).
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_calendar_default_source/config",
+            {
+                "name": "Calendar Default Source",
+                "unique_id": f"{self.device_id}_config_calendar_default_source",
+                "state_topic":   f"{self.base}/config/calendar_default_source/state",
+                "command_topic": f"{self.base}/config/calendar_default_source/set",
+                "icon": "mdi:calendar-text",
+                "availability": avail,
+                "device": device,
+                "mode": "text",
+                "entity_category": "config",
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/number/{self.device_id}/config_calendar_dismiss_seconds/config",
+            {
+                "name": "Calendar Dismiss Seconds",
+                "unique_id": f"{self.device_id}_config_calendar_dismiss_seconds",
+                "state_topic":   f"{self.base}/config/calendar_dismiss_seconds/state",
+                "command_topic": f"{self.base}/config/calendar_dismiss_seconds/set",
+                "min": 5,
+                "max": 600,
+                "step": 5,
+                "unit_of_measurement": "s",
+                "icon": "mdi:timer-sand",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+
         return configs
 
     async def start(self):
@@ -523,6 +603,12 @@ class MQTTBridge:
                     if self._cached_config_ollama_model:
                         await self.publish_config_ollama_model(self._cached_config_ollama_model)
                     await self.publish_config_auto_theme(self._cached_config_auto_theme)
+                    await self.publish_config_calendar_default_source(
+                        self._cached_config_calendar_default_source
+                    )
+                    await self.publish_config_calendar_dismiss_seconds(
+                        self._cached_config_calendar_dismiss_seconds
+                    )
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -540,6 +626,10 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/config/ollama_model/set")
                     await client.subscribe(f"{self.base}/config/wake_word/set")
                     await client.subscribe(f"{self.base}/config/auto_theme/set")
+                    await client.subscribe(f"{self.base}/calendar/show/set")
+                    await client.subscribe(f"{self.base}/calendar/hide/set")
+                    await client.subscribe(f"{self.base}/config/calendar_default_source/set")
+                    await client.subscribe(f"{self.base}/config/calendar_dismiss_seconds/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -643,6 +733,42 @@ class MQTTBridge:
                 if self.on_config_auto_theme:
                     await self.on_config_auto_theme(payload.strip().upper() == "ON")
 
+            elif topic == f"{self.base}/calendar/show/set":
+                args: dict = {}
+                stripped = payload.strip()
+                if stripped:
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, dict):
+                            args = parsed
+                        elif isinstance(parsed, str):
+                            args = {"view": parsed}
+                    except json.JSONDecodeError:
+                        # Bare string payload like "month" or "Family"
+                        if stripped.lower() in ("month", "week", "day"):
+                            args = {"view": stripped.lower()}
+                        else:
+                            args = {"calendar_name": stripped}
+                if self.on_calendar_show:
+                    await self.on_calendar_show(args)
+
+            elif topic == f"{self.base}/calendar/hide/set":
+                if self.on_calendar_hide:
+                    await self.on_calendar_hide()
+
+            elif topic == f"{self.base}/config/calendar_default_source/set":
+                if self.on_config_calendar_default_source:
+                    await self.on_config_calendar_default_source(payload.strip())
+
+            elif topic == f"{self.base}/config/calendar_dismiss_seconds/set":
+                if self.on_config_calendar_dismiss_seconds:
+                    try:
+                        seconds = int(float(payload.strip()))
+                    except ValueError:
+                        seconds = 30
+                    seconds = max(5, min(600, seconds))
+                    await self.on_config_calendar_dismiss_seconds(seconds)
+
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")
 
@@ -743,4 +869,23 @@ class MQTTBridge:
         await self._safe_publish(
             f"{self.base}/config/auto_theme/state",
             "ON" if value else "OFF",
+        )
+
+    async def publish_config_calendar_default_source(self, value: str):
+        self._cached_config_calendar_default_source = value or ""
+        await self._safe_publish(
+            f"{self.base}/config/calendar_default_source/state",
+            value or "",
+        )
+
+    async def publish_config_calendar_dismiss_seconds(self, value: int):
+        try:
+            v = int(value)
+        except (TypeError, ValueError):
+            v = 30
+        v = max(5, min(600, v))
+        self._cached_config_calendar_dismiss_seconds = v
+        await self._safe_publish(
+            f"{self.base}/config/calendar_dismiss_seconds/state",
+            str(v),
         )

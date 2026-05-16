@@ -349,6 +349,7 @@ class AudioManager:
             "transcription", "response", "wake", "state", "set_theme",
             "show_camera", "stream_start", "stream_stop", "webrtc_signal",
             "play_video", "video_stop", "themes_changed",
+            "show_calendar", "hide_calendar",
         ):
             await self.broadcast_to_ui(msg)
 

@@ -166,6 +166,40 @@
         reconnectTimer = setTimeout(connect, 3000);
     }
 
+    // --- Calendar overlay state (lazy-loaded on first show_calendar) ---
+    let calendarController = null;     // returned by mountCalendar()
+    let calendarLoading = null;        // dynamic import promise
+
+    async function getCalendar() {
+        if (calendarController) return calendarController;
+        if (!calendarLoading) {
+            calendarLoading = import("./calendar.js").then((mod) => {
+                const root = document.getElementById("calendar-root");
+                calendarController = mod.mountCalendar(root);
+                return calendarController;
+            }).catch((e) => {
+                console.error("[calendar] module load failed:", e);
+                calendarLoading = null;
+                throw e;
+            });
+        }
+        return calendarLoading;
+    }
+
+    // Wrap any orb-takeover handler so the calendar dismisses first.
+    // Returns a Promise that resolves once the takeover handler has been
+    // invoked (after the cube has rotated back, if it was up).
+    async function withCalendarPreempt(runFn) {
+        if (calendarController && calendarController.isShown()) {
+            try {
+                await calendarController.dismiss("preempt");
+            } catch (e) {
+                console.warn("[calendar] preempt dismiss failed, continuing:", e);
+            }
+        }
+        return runFn();
+    }
+
     // --- Message Handling ---
     function handleMessage(msg) {
         switch (msg.type) {
@@ -198,39 +232,47 @@
             case "set_theme":
                 if (typeof msg.name === "string" && msg.name) {
                     localStorage.setItem(THEME_KEY, msg.name);
-                    // Apply right away — if the catalog hasn't loaded
-                    // yet, applyTheme() will inject the CSS link and
-                    // pick up the manifest on the next loadThemes().
                     applyTheme(msg.name);
                 }
                 break;
             case "themes_changed":
-                // Plug-in catalog changed on the server (theme added /
-                // removed / manifest edited). Re-fetch and rebuild.
                 loadThemes().then(() => {
                     if (currentTheme && !themes.some(t => t.name === currentTheme)) {
-                        // Active theme was uninstalled — fall back to dark.
                         applyTheme("dark");
                     }
                 });
                 break;
             case "show_camera":
-                showCamera(msg);
+                withCalendarPreempt(() => showCamera(msg));
                 break;
             case "stream_start":
-                startStream(msg);
+                withCalendarPreempt(() => startStream(msg));
                 break;
             case "stream_stop":
                 stopStream();
                 break;
             case "webrtc_signal":
+                // Signaling messages must NOT block on calendar dismiss —
+                // they only matter once a stream is active, and the
+                // stream_start that opens the session already preempts.
                 handleSignal(msg);
                 break;
             case "play_video":
-                playVideo(msg);
+                withCalendarPreempt(() => playVideo(msg));
                 break;
             case "video_stop":
                 stopVideo();
+                break;
+            case "show_calendar":
+                getCalendar().then((cal) => {
+                    if (cal.isShown()) cal.update(msg);
+                    else cal.show(msg);
+                }).catch((e) => console.error("[calendar] show failed:", e));
+                break;
+            case "hide_calendar":
+                if (calendarController) {
+                    calendarController.dismiss("explicit").catch(() => {});
+                }
                 break;
             default:
                 console.log("Unknown message:", msg);
