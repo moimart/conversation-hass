@@ -19,6 +19,9 @@ export function mountCalendar(root) {
     let currentPayload = null;
     let pendingDismissPromise = null;
     let pendingDismissResolve = null;
+    let dismissSafetyTimeout = null;
+    let dismissTransitionListener = null;
+    let dismissTransitionTarget = null;
 
     // Build the static overlay shell once. show()/update() repaint .cal-body.
     root.innerHTML = "";
@@ -65,6 +68,29 @@ export function mountCalendar(root) {
     function clearTimers() {
         if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
         if (countdownRaf) { cancelAnimationFrame(countdownRaf); countdownRaf = null; }
+    }
+
+    /* Clear any in-flight dismiss state (called from show() to cancel
+       a dismiss that's mid-flight, and from the dismiss completion
+       handler itself). Guarantees that pendingDismissPromise and
+       pendingDismissResolve are always cleared together so the
+       dismiss() guard `if (pendingDismissPromise) return ...` never
+       returns a stale-and-resolved promise. */
+    function clearDismissState(reason) {
+        if (dismissSafetyTimeout) {
+            clearTimeout(dismissSafetyTimeout);
+            dismissSafetyTimeout = null;
+        }
+        if (dismissTransitionTarget && dismissTransitionListener) {
+            dismissTransitionTarget.removeEventListener("transitionend", dismissTransitionListener);
+        }
+        dismissTransitionTarget = null;
+        dismissTransitionListener = null;
+        if (pendingDismissResolve) {
+            try { pendingDismissResolve(reason || "cleared"); } catch (_) {}
+            pendingDismissResolve = null;
+        }
+        pendingDismissPromise = null;
     }
 
     function startCountdown(durationS) {
@@ -114,11 +140,7 @@ export function mountCalendar(root) {
     function show(payload) {
         // Cancel any pending dismiss (we're showing fresh content).
         clearTimers();
-        if (pendingDismissResolve) {
-            pendingDismissResolve("cancelled");
-            pendingDismissResolve = null;
-            pendingDismissPromise = null;
-        }
+        clearDismissState("cancelled");
         render(payload);
         document.body.classList.add("show-calendar");
         scheduleAutoDismiss(payload.duration_s || 30);
@@ -134,26 +156,28 @@ export function mountCalendar(root) {
     function dismiss(reason = "explicit") {
         clearTimers();
         if (!document.body.classList.contains("show-calendar")) {
-            // Already hidden — resolve any pending promise immediately.
+            // Already hidden — clear any stale dismiss state and resolve.
+            clearDismissState("already-hidden");
             return Promise.resolve(reason);
         }
         if (pendingDismissPromise) return pendingDismissPromise;
 
         pendingDismissPromise = new Promise((resolve) => {
             pendingDismissResolve = resolve;
-            const appEl = document.getElementById("app");
+            // Listen on .calendar-stage — that's the element whose
+            // transform actually transitions back to rotateY(90deg).
+            // (#app no longer has any transition.)
+            const stage = document.querySelector(".calendar-stage");
             const onEnd = (ev) => {
                 if (ev && ev.propertyName && ev.propertyName !== "transform") return;
-                appEl && appEl.removeEventListener("transitionend", onEnd);
-                if (pendingDismissResolve) {
-                    pendingDismissResolve(reason);
-                    pendingDismissResolve = null;
-                    pendingDismissPromise = null;
-                }
+                clearDismissState(reason);
             };
-            if (appEl) appEl.addEventListener("transitionend", onEnd);
-            // Safety: resolve after 1s even if transitionend doesn't fire.
-            setTimeout(onEnd, 1000);
+            dismissTransitionListener = onEnd;
+            dismissTransitionTarget = stage;
+            if (stage) stage.addEventListener("transitionend", onEnd);
+            // Safety: resolve after 1s if transitionend doesn't fire
+            // (slow GPU, no transition triggered, etc.).
+            dismissSafetyTimeout = setTimeout(() => onEnd(null), 1000);
             document.body.classList.remove("show-calendar");
         });
         return pendingDismissPromise;
