@@ -6,16 +6,17 @@
 export default function setup({ root }) {
     const canvas = root.ownerDocument.createElement("canvas");
     canvas.id = "kitt-fx";
-    // Sized to live in the centre-bottom strip, between the volume
-    // control (bottom-left) and the connection indicator
-    // (bottom-right). Width is capped so it never reaches either.
+    // Sized to live above the bottom UI row (volume control on the
+    // left spans bottom 24-80px; connection indicator on the right
+    // also sits at bottom 24px). Strip is centred and pushed well
+    // above either, so it never overlaps.
     const HEIGHT_PX = 28;
     Object.assign(canvas.style, {
         position: "fixed",
         left: "50%",
-        bottom: "28px",
+        bottom: "110px",
         transform: "translateX(-50%)",
-        width: "min(540px, 50vw)",
+        width: "min(540px, 60vw)",
         height: HEIGHT_PX + "px",
         zIndex: "5",
         pointerEvents: "none",
