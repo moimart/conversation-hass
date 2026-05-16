@@ -9,24 +9,15 @@
 
 /* === The 3D wrapper ===================================================== */
 
-/* The cube illusion is done with two sibling panels at body level so
-   #app's containing block stays exactly as style.css set it up. body
-   supplies the shared perspective; the orb hinges on its left edge
-   and swings backward to the left, while the calendar starts hinged
-   on its right edge (perpendicular, edge-on, invisible) and swings
-   forward to fill the viewport. */
+/* The calendar swings into view from the right while the orb stays
+   put. #app is intentionally not given any transform / 3D properties
+   so its containing block remains the viewport for the volume control,
+   connection indicator, theme picker, and clock — which all rely on
+   position:fixed. Perspective lives only on .calendar-stage's parent
+   wrapper (body) so it doesn't apply to #app's 2D rendering. */
 body {
     perspective: 1800px;
     perspective-origin: 50% 50%;
-}
-
-#app {
-    transform-style: preserve-3d;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    transition: transform 700ms cubic-bezier(.7, .05, .25, 1);
-    transform-origin: 0% 50%;
-    will-change: transform;
 }
 
 .calendar-stage {
@@ -34,19 +25,15 @@ body {
     inset: 0;
     background: var(--bg);
     z-index: 5;
-    transform-style: preserve-3d;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
     transform-origin: 100% 50%;
     transform: rotateY(90deg);
     transition: transform 700ms cubic-bezier(.7, .05, .25, 1);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
     pointer-events: none;
     will-change: transform;
 }
 
-body.show-calendar #app {
-    transform: rotateY(-90deg);
-}
 body.show-calendar .calendar-stage {
     transform: rotateY(0deg);
     pointer-events: auto;
@@ -176,9 +163,14 @@ body.state-speaking .cal-status-dot {
 .cal-month-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    grid-auto-rows: 1fr;
+    /* Explicit rows: header takes its natural height, 6 week rows
+       share the remainder evenly so the last week never overflows.
+       minmax(0, 1fr) lets rows shrink below their min-content height
+       if necessary (prevents 6th row from being pushed off-screen). */
+    grid-template-rows: auto repeat(6, minmax(0, 1fr));
     gap: 4px;
     height: 100%;
+    min-height: 0;
 }
 .cal-weekday-header {
     grid-column: span 7;
@@ -281,9 +273,10 @@ body.state-speaking .cal-status-dot {
 .cal-week-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    grid-auto-rows: 1fr;
+    grid-template-rows: minmax(0, 1fr);
     gap: 6px;
     height: 100%;
+    min-height: 0;
 }
 .cal-week-day {
     border: 1px solid var(--border);
