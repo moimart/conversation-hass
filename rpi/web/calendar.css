@@ -71,7 +71,7 @@ body.show-calendar .face-orb      { pointer-events: none; }
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    font-family: 'Inter', sans-serif;
+    font-family: 'Berlin Type', 'Inter', sans-serif;
     opacity: 0;
     transition: opacity 320ms ease 280ms;  /* fade in once cube is mostly rotated */
 }
@@ -95,7 +95,7 @@ body.show-calendar .calendar-overlay { opacity: 1; }
     letter-spacing: 4px;
     text-transform: uppercase;
     color: var(--text-dim);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Berlin Type', 'Inter', sans-serif; font-variant-numeric: tabular-nums;
 }
 .cal-title {
     font-size: 28px;
@@ -112,7 +112,7 @@ body.show-calendar .calendar-overlay { opacity: 1; }
     display: flex;
     align-items: center;
     gap: 8px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Berlin Type', 'Inter', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 10px;
     letter-spacing: 2px;
     color: var(--text-dim);
@@ -190,7 +190,7 @@ body.state-speaking .cal-status-dot {
     border-bottom: 1px solid var(--border);
 }
 .cal-weekday {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Berlin Type', 'Inter', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 10px;
     letter-spacing: 2px;
     text-transform: uppercase;
@@ -220,6 +220,7 @@ body.state-speaking .cal-status-dot {
     font-weight: 400;
     color: var(--text);
     margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
 }
 .cal-day-cell.today .cal-day-num {
     color: var(--accent);
@@ -304,7 +305,7 @@ body.state-speaking .cal-status-dot {
     letter-spacing: 2px;
     text-transform: uppercase;
     margin-bottom: 6px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Berlin Type', 'Inter', sans-serif; font-variant-numeric: tabular-nums;
 }
 .cal-week-day.today .cal-week-day-header { color: var(--accent); }
 .cal-week-day-num {
@@ -312,6 +313,7 @@ body.state-speaking .cal-status-dot {
     font-weight: 300;
     margin-bottom: 8px;
     color: var(--text);
+    font-variant-numeric: tabular-nums;
 }
 .cal-week-day-events {
     flex: 1 1 auto;
@@ -330,7 +332,7 @@ body.state-speaking .cal-status-dot {
     overflow: hidden;
 }
 .cal-week-event-time {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Berlin Type', 'Inter', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 9px;
     color: var(--text-dim);
     letter-spacing: 1px;
@@ -355,7 +357,7 @@ body.state-speaking .cal-status-dot {
 }
 .cal-hour-row:last-child { border-bottom: none; }
 .cal-hour-label {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Berlin Type', 'Inter', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 11px;
     color: var(--text-dim);
     text-align: right;
@@ -374,7 +376,7 @@ body.state-speaking .cal-status-dot {
     font-size: 13px;
 }
 .cal-day-event-time {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Berlin Type', 'Inter', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 10px;
     color: var(--text-dim);
     letter-spacing: 1px;
