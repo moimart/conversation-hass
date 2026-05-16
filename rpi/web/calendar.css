@@ -10,15 +10,12 @@
 /* === The 3D wrapper ===================================================== */
 
 /* The calendar swings into view from the right while the orb stays
-   put. #app is intentionally not given any transform / 3D properties
-   so its containing block remains the viewport for the volume control,
-   connection indicator, theme picker, and clock — which all rely on
-   position:fixed. Perspective lives only on .calendar-stage's parent
-   wrapper (body) so it doesn't apply to #app's 2D rendering. */
-body {
-    perspective: 1800px;
-    perspective-origin: 50% 50%;
-}
+   put. Perspective is applied as a transform function on the stage
+   itself (not as a `perspective` property on body) — because the
+   `perspective` property creates a containing block for ALL
+   position:fixed descendants of the element it's set on, which was
+   pushing the orb's UI controls (volume, mute, theme picker,
+   connection indicator) out of the viewport. */
 
 .calendar-stage {
     position: fixed;
@@ -26,7 +23,7 @@ body {
     background: var(--bg);
     z-index: 5;
     transform-origin: 100% 50%;
-    transform: rotateY(90deg);
+    transform: perspective(1800px) rotateY(90deg);
     transition: transform 700ms cubic-bezier(.7, .05, .25, 1);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
@@ -35,7 +32,7 @@ body {
 }
 
 body.show-calendar .calendar-stage {
-    transform: rotateY(0deg);
+    transform: perspective(1800px) rotateY(0deg);
     pointer-events: auto;
 }
 
