@@ -19,12 +19,6 @@
         <div class="clock-date" id="clock-date">---</div>
     </div>
 
-    <!-- 3D cube wrapper: orb on the front face, calendar on the right face.
-         Adding body.show-calendar rotates -90deg so the calendar face is
-         visible. Calendar.css owns all the perspective/transform CSS. -->
-    <div class="scene-3d">
-      <div class="cube">
-        <div class="face face-orb">
     <div id="app">
         <!-- Ambient background -->
         <div class="ambient-grid"></div>
@@ -117,12 +111,14 @@
             <span>DISCONNECTED</span>
         </div>
     </div>
-        </div><!-- /.face-orb -->
-        <div class="face face-calendar" id="calendar-root" aria-hidden="true">
-          <!-- Populated by calendar.js on first show_calendar -->
-        </div>
-      </div><!-- /.cube -->
-    </div><!-- /.scene-3d -->
+
+    <!-- Calendar overlay — a sibling of #app, not a wrapper around it.
+         Both panels share body's perspective and rotate in opposite
+         directions around their own edges to give the cube-rotate
+         feel without changing the orb's containing block. -->
+    <div class="calendar-stage" id="calendar-root" aria-hidden="true">
+      <!-- Populated by calendar.js on first show_calendar -->
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5/dist/hls.min.js" defer></script>
     <script src="app.js"></script>

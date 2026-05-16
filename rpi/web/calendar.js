@@ -141,17 +141,17 @@ export function mountCalendar(root) {
 
         pendingDismissPromise = new Promise((resolve) => {
             pendingDismissResolve = resolve;
-            const cube = document.querySelector(".scene-3d > .cube");
+            const appEl = document.getElementById("app");
             const onEnd = (ev) => {
                 if (ev && ev.propertyName && ev.propertyName !== "transform") return;
-                cube && cube.removeEventListener("transitionend", onEnd);
+                appEl && appEl.removeEventListener("transitionend", onEnd);
                 if (pendingDismissResolve) {
                     pendingDismissResolve(reason);
                     pendingDismissResolve = null;
                     pendingDismissPromise = null;
                 }
             };
-            if (cube) cube.addEventListener("transitionend", onEnd);
+            if (appEl) appEl.addEventListener("transitionend", onEnd);
             // Safety: resolve after 1s even if transitionend doesn't fire.
             setTimeout(onEnd, 1000);
             document.body.classList.remove("show-calendar");
