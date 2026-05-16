@@ -1,0 +1,107 @@
+/* CYBERPUNK theme — high-contrast neon yellow + electric cyan on
+   black. The iconic CP2077 yellow drives the iris; cyan tints the
+   highlights and HUD corner brackets. */
+body.theme-cyberpunk {
+    --bg: #000511;
+    --surface: #0a1424;
+    --border: #1a2b3a;
+    --text: #e8faff;
+    --text-dim: #486078;
+    --accent: #fcee0a;
+    --accent-rgb: 252, 238, 10;
+    --accent-glow: #fff85a;
+    --accent-glow-rgb: 255, 248, 90;
+    --accent-deep: #8a7d00;
+    --accent-warm: #00f0ff;
+    --accent-warm-rgb: 0, 240, 255;
+    --success: #00ff85;
+
+    --speak-core-1: rgba(255, 255, 255, 0.95);
+    --speak-core-2: rgba(255, 245, 130, 0.85);
+    --speak-pupil: rgba(255, 255, 255, 0.6);
+    --speak-pupil-2: rgba(255, 240, 80, 0.2);
+    --speak-reflection: rgba(255, 250, 200, 0.55);
+    --speak-glow: rgba(252, 238, 10, 0.2);
+
+    --bezel-1: #15161a;
+    --bezel-2: #2a2d35;
+    --bezel-3: #6a6d78;
+    --bezel-4: #a8b0c0;
+    --bezel-inner: #000511;
+    --bezel-inner-edge: #14203a;
+    --bezel-shadow: rgba(0, 0, 0, 0.85);
+    --lens-rim: #000000;
+
+    --core-deep-stop: #2a2200;
+    --core-shadow: rgba(0, 0, 0, 0.35);
+    --core-shadow-deep: rgba(0, 0, 0, 0.9);
+
+    --iris-highlight: rgba(255, 240, 80, 0.55);
+    --pupil-1: rgba(0, 0, 0, 0.8);
+    --pupil-2: rgba(0, 0, 0, 0.4);
+    --reflection: rgba(0, 240, 255, 0.32);
+
+    --scan-line: rgba(252, 238, 10, 0.35);
+    --grid-line: rgba(0, 240, 255, 0.015);
+    --ambient-radial: rgba(252, 238, 10, 0.05);
+
+    --status-speak: #fcee0a;
+    --status-speak-glow: rgba(252, 238, 10, 0.9);
+    --vol-hover-bg: rgba(0, 240, 255, 0.08);
+}
+
+/* Four neon-yellow corner brackets, fixed to the viewport. Static
+   chrome so the glitch canvas can layer animated effects on top. */
+body.theme-cyberpunk::before,
+body.theme-cyberpunk::after,
+body.theme-cyberpunk .ambient-grid::before,
+body.theme-cyberpunk .ambient-grid::after {
+    content: '';
+    position: fixed;
+    width: 48px;
+    height: 48px;
+    border-color: #fcee0a;
+    pointer-events: none;
+    z-index: 5;
+    filter: drop-shadow(0 0 4px rgba(252, 238, 10, 0.6));
+}
+body.theme-cyberpunk::before {
+    top: 24px;
+    left: 24px;
+    border-top: 2px solid;
+    border-left: 2px solid;
+}
+body.theme-cyberpunk::after {
+    top: 24px;
+    right: 24px;
+    border-top: 2px solid;
+    border-right: 2px solid;
+}
+body.theme-cyberpunk .ambient-grid::before {
+    bottom: 24px;
+    left: 24px;
+    border-bottom: 2px solid;
+    border-left: 2px solid;
+}
+body.theme-cyberpunk .ambient-grid::after {
+    bottom: 24px;
+    right: 24px;
+    border-bottom: 2px solid;
+    border-right: 2px solid;
+}
+
+/* Subtle CRT-style horizontal scanlines across the whole viewport.
+   These are static (drawn by a repeating-linear-gradient) — the
+   moving sweep + glitch bars come from effect.js. */
+body.theme-cyberpunk .ambient-grid {
+    background-image:
+        radial-gradient(circle at 50% 40%, var(--ambient-radial) 0%, transparent 60%),
+        repeating-linear-gradient(
+            to bottom,
+            transparent 0,
+            transparent 2px,
+            rgba(0, 240, 255, 0.025) 2px,
+            rgba(0, 240, 255, 0.025) 3px
+        );
+    background-size: 100% 100%, 100% 3px;
+}

@@ -1,0 +1,8 @@
+{
+    "name": "cyberpunk",
+    "display_name": "Cyberpunk — Neon yellow & cyan",
+    "description": "Night City vibes — high-contrast neon yellow + electric cyan on black with animated scanlines and occasional glitch bars.",
+    "version": "1.0.0",
+    "kind": "dark",
+    "effect": "effect.js"
+}
