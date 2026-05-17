@@ -22,20 +22,20 @@ export default function setup({ root }) {
         pointerEvents: "none",
         opacity: "0",
         transition: "opacity 1.2s ease",
-        filter: "blur(56px)",
+        filter: "blur(32px)",
     });
     root.appendChild(canvas);
     const ctx = canvas.getContext("2d");
 
-    // Google brand palette. Alpha kept moderate — the heavy CSS blur
-    // amplifies coverage, and we want the wash to be visible without
-    // overwhelming the surface or competing with the orb.
+    // Google brand palette. Alpha pushed near-full at the core so the
+    // wash stays visible after the CSS blur diffuses it across ~32 px,
+    // even when sitting on the theme's warm off-white surface.
     const COLORS = [
-        { core: "rgba( 66, 133, 244, 0.55)", mid: "rgba( 66, 133, 244, 0.16)" },  // Google Blue
-        { core: "rgba(234,  67,  53, 0.45)", mid: "rgba(234,  67,  53, 0.14)" },  // Google Red
-        { core: "rgba(251, 188,   4, 0.45)", mid: "rgba(251, 188,   4, 0.14)" },  // Google Yellow
-        { core: "rgba( 52, 168,  83, 0.45)", mid: "rgba( 52, 168,  83, 0.14)" },  // Google Green
-        { core: "rgba(132, 168, 235, 0.40)", mid: "rgba(132, 168, 235, 0.12)" },  // Soft secondary blue
+        { core: "rgba( 66, 133, 244, 0.95)", mid: "rgba( 66, 133, 244, 0.32)" },  // Google Blue
+        { core: "rgba(234,  67,  53, 0.88)", mid: "rgba(234,  67,  53, 0.28)" },  // Google Red
+        { core: "rgba(251, 188,   4, 0.88)", mid: "rgba(251, 188,   4, 0.28)" },  // Google Yellow
+        { core: "rgba( 52, 168,  83, 0.88)", mid: "rgba( 52, 168,  83, 0.28)" },  // Google Green
+        { core: "rgba(132, 168, 235, 0.80)", mid: "rgba(132, 168, 235, 0.24)" },  // Soft secondary blue
     ];
 
     let blobs = [];
@@ -62,7 +62,7 @@ export default function setup({ root }) {
             y: rand(0, h),
             vx: rand(-8, 8),                       // px/sec — very slow
             vy: rand(-8, 8),
-            r: rand(base * 0.35, base * 0.55),     // huge, soft
+            r: rand(base * 0.22, base * 0.38),     // tighter blobs — show more colour
             phase: rand(0, Math.PI * 2),
             color: c,
         }));
@@ -121,7 +121,7 @@ export default function setup({ root }) {
             onResize = () => resize();
             window.addEventListener("resize", onResize);
             spawn();
-            requestAnimationFrame(() => { canvas.style.opacity = "0.8"; });
+            requestAnimationFrame(() => { canvas.style.opacity = "0.9"; });
             lastFrame = performance.now();
             raf = requestAnimationFrame(tick);
         },
