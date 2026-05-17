@@ -108,22 +108,24 @@ Both engines are included in the Docker image and share the same interface. Mode
 
 ## Themes
 
-Twelve built-in themes, switchable from the web UI's theme picker, the LLM (`ui_set_theme` tool), the MQTT theme select, or the auto day/night scheduler:
+Fourteen built-in themes, switchable from the web UI's theme picker, the LLM (`ui_set_theme` tool), the MQTT theme select, or the auto day/night scheduler:
 
-| Theme | Vibe |
-|---|---|
-| `dark` | Classic 2001 HAL — matte black panel, deep red eye, white-hot core when speaking |
-| `sal` | SAL 9000 — HAL's twin from 2010, cyan eye on deep blue-black |
-| `glados` | Portal 2 — Aperture Science amber optic on warm black |
-| `matrix` | Phosphor green on pitch black — old-CRT terminal feel |
-| `mother` | Alien *Nostromo* — industrial dim amber on grimy near-black |
-| `joi` | Blade Runner 2049 — hot pink/magenta on deep teal-blue |
-| `kitt` | Knight Rider — saturated crimson on chrome-edged black dashboard |
-| `birch` | Warm beige Scandinavian wood tones — light room friendly |
-| `odyssey` | Bright white background, minimalist — for very bright rooms |
-| `japandi` | Earthy Japandi with subtle decorative background patterns |
-| `forest` | Moss green + amber on dark walnut — calm and organic |
-| `sunset` | Coral + peach on dusk plum — warm and gentle |
+| Preview | Theme | Vibe |
+|---|---|---|
+| <img src="docs/themes/dark.jpg" width="200"> | `dark` | Classic 2001 HAL — matte black panel, deep red eye, white-hot core when speaking |
+| <img src="docs/themes/sal.jpg" width="200"> | `sal` | SAL 9000 — HAL's twin from 2010, cyan eye on deep blue-black |
+| <img src="docs/themes/glados.jpg" width="200"> | `glados` | Portal 2 — Aperture Science amber optic on warm black |
+| <img src="docs/themes/matrix.jpg" width="200"> | `matrix` | Phosphor green on pitch black — old-CRT terminal with digital-rain canvas |
+| <img src="docs/themes/mother.jpg" width="200"> | `mother` | Alien *Nostromo* — industrial dim amber on grimy near-black |
+| <img src="docs/themes/joi.jpg" width="200"> | `joi` | Blade Runner 2049 — hot pink/magenta on deep teal-blue |
+| <img src="docs/themes/kitt.jpg" width="200"> | `kitt` | Knight Rider — saturated crimson on chrome-edged black, with the iconic red scanner sweeping along the bottom |
+| <img src="docs/themes/cyberpunk.jpg" width="200"> | `cyberpunk` | Night City — high-contrast neon yellow + electric cyan on black with animated scanlines and occasional glitch bars |
+| <img src="docs/themes/birch.jpg" width="200"> | `birch` | Warm beige Scandinavian wood tones — light room friendly |
+| <img src="docs/themes/odyssey.jpg" width="200"> | `odyssey` | Bright white background, minimalist — for very bright rooms |
+| <img src="docs/themes/japandi.jpg" width="200"> | `japandi` | Earthy Japandi with subtle decorative background patterns |
+| <img src="docs/themes/material_you.jpg" width="200"> | `material_you` | Material You light theme tuned for birch wood + white furniture, with a slow lava-lamp drift of the Google brand colours in the background |
+| <img src="docs/themes/forest.jpg" width="200"> | `forest` | Moss green + amber on dark walnut — calm and organic |
+| <img src="docs/themes/sunset.jpg" width="200"> | `sunset` | Coral + peach on dusk plum — warm and gentle, with drifting golden-hour bokeh |
 
 **Auto day/night switching** (default on): the server polls `sun.sun` every 5 minutes and swaps `THEME_NIGHT` ↔ `THEME_DAY` at dusk/dawn. Disable with `AUTO_THEME=false`.
 
