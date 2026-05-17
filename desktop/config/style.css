@@ -113,3 +113,39 @@ window {
     box-shadow: 0 0 8px rgba(255, 45, 45, 0.25),
                 inset 0 1px 3px rgba(0, 0, 0, 0.3);
 }
+
+/* Push-to-Talk button — hold to talk, release to send.
+   .active class is toggled by main.rs on mouse press/release so the
+   visual reads as "currently transmitting" while the button is held. */
+.hal-ptt-btn {
+    background: linear-gradient(180deg, rgba(40, 40, 46, 0.95) 0%, rgba(22, 22, 26, 0.95) 100%);
+    color: rgba(255, 45, 45, 0.75);
+    border: 1px solid rgba(255, 45, 45, 0.18);
+    border-radius: 8px;
+    padding: 4px 10px;
+    margin-left: 10px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    min-height: 34px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: all 120ms ease;
+}
+
+.hal-ptt-btn:hover {
+    background: linear-gradient(180deg, rgba(60, 30, 30, 0.95) 0%, rgba(40, 15, 15, 0.95) 100%);
+    color: #ff4444;
+    border-color: rgba(255, 45, 45, 0.4);
+}
+
+/* Held = currently transmitting — bright red, glowing, white text. */
+.hal-ptt-btn.active {
+    background: linear-gradient(180deg, rgba(180, 30, 30, 0.95) 0%, rgba(210, 20, 20, 0.95) 100%);
+    color: #ffffff;
+    border-color: rgba(255, 100, 100, 0.7);
+    text-shadow: 0 0 8px rgba(255, 120, 120, 0.85);
+    box-shadow: 0 0 14px rgba(255, 45, 45, 0.55),
+                inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}

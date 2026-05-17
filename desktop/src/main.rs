@@ -113,6 +113,21 @@ fn send_volume(url: &str, direction: &str) {
     });
 }
 
+/// POST to a bodyless trigger endpoint (used by PTT start/end/cancel).
+/// Runs in its own tiny tokio runtime — matches the existing
+/// thread-per-call pattern in this file. Failures are silently ignored;
+/// the server-side 20 s safety timeout cleans up a stuck session if our
+/// `end` POST drops on the floor.
+fn send_trigger(url: &str, path: &str) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let _ = reqwest::Client::new()
+            .post(format!("{url}{path}"))
+            .send()
+            .await;
+    });
+}
+
 fn main() {
     // Ensure Wayland backend
     // SAFETY: called before any GTK/GLib init, single-threaded at this point
@@ -246,6 +261,39 @@ fn build_ui(
         std::thread::spawn(move || send_mute_toggle(&u));
     });
     container.append(&mute_btn);
+
+    // Push-to-Talk button — hold down to talk, release to send.
+    // Uses GestureClick so we can react to press AND release separately
+    // (a plain `connect_clicked` only fires on the full press+release).
+    // Server-side debounce (~100 ms) drops accidental taps so a quick
+    // brush against the button doesn't fire a turn.
+    let ptt_btn = gtk4::Button::with_label("PTT");
+    ptt_btn.add_css_class("hal-ptt-btn");
+    ptt_btn.set_focusable(false);
+    ptt_btn.set_tooltip_text(Some("Hold to talk — release to send"));
+
+    let ptt_gesture = gtk4::GestureClick::new();
+    ptt_gesture.set_button(0); // any mouse button
+
+    let ptt_press_url = server_url.to_string();
+    let ptt_release_url = server_url.to_string();
+    let ptt_press_btn = ptt_btn.clone();
+    let ptt_release_btn = ptt_btn.clone();
+
+    ptt_gesture.connect_pressed(move |_, _, _, _| {
+        ptt_press_btn.add_css_class("active");
+        let u = ptt_press_url.clone();
+        std::thread::spawn(move || send_trigger(&u, "/api/ptt/start"));
+    });
+
+    ptt_gesture.connect_released(move |_, _, _, _| {
+        ptt_release_btn.remove_css_class("active");
+        let u = ptt_release_url.clone();
+        std::thread::spawn(move || send_trigger(&u, "/api/ptt/end"));
+    });
+
+    ptt_btn.add_controller(ptt_gesture);
+    container.append(&ptt_btn);
 
     window.set_child(Some(&container));
 
