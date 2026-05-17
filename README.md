@@ -1,120 +1,33 @@
-# HAL — Local Voice Assistant for Home Assistant
+<h1 align="center">HAL — Local Voice Assistant for Home Assistant</h1>
 
-A fully local, always-listening voice assistant that controls your smart home through natural conversation. Runs on two nodes: a **Raspberry Pi** for audio I/O and a sleek web UI, and an **AI server** with a GPU for speech recognition, language understanding, and speech synthesis.
+<p align="center"><em>A fully local, always-listening voice assistant with a personality, a face, and a memory.<br>No cloud. No subscriptions. Everything runs on your network.</em></p>
 
-No cloud services. No subscriptions. All processing stays on your network.
+<p align="center">
+  <img src="docs/themes/material_you.jpg" width="420" alt="HAL kiosk — Material You theme with green orb and lava-lamp wash">
+</p>
 
-### Reference docs
+---
 
-* [**API.md**](./API.md) — REST + WebSocket reference (PTT, command, speak, mute, volume, snapshots, themes, `/ws/{ptt,ui,audio}`)
-* [**MQTT.md**](./MQTT.md) — Every subscribed/published MQTT topic, the HA Discovery entity table, automation snippets
-* [**THEMES.md**](./THEMES.md) — Plug-in theme authoring (CSS variables, `effect.js`, manifest)
+## What HAL does
 
-## Architecture
+- 🎙️ **Listens continuously** through a USB speakerphone, transcribing every utterance in the room
+- 🗣️ **Talks back** in a voice you pick, through a Wyoming-protocol TTS service
+- 🏠 **Controls Home Assistant** via MCP tool-calling — switches, scenes, climate, media, all of it
+- 🧠 **Remembers** what you've told it (Shodh Hebbian long-term memory) so context survives across days
+- 👁️ **Shows itself** through a HAL-9000-inspired kiosk with an animated eye and 14 switchable themes
+- 📸 **Displays cameras, images, and videos** inside the orb (HA snapshots, live WebRTC, RTSP, HLS playlists)
+- 📅 **Pops up a calendar overlay** (month / week / day) pulled from any HA calendar, on voice or HA button
+- 🎯 **Wake word** *or* **Push-to-Talk** — your choice per situation (PTT triggerable from HA, an HTTP call, a WebSocket, or the desktop popup app)
+- 🎵 **Multi-room audio** via an optional Music-Assistant Sendspin sidecar with PulseAudio role-ducking
+- 🔌 **Speaks every protocol your house already speaks** — REST, MQTT, WebSocket — and HA auto-discovers it as a single device with sensors, switches, selects, text inputs, and buttons
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                                      LOCAL NETWORK                                      │
-│                                                                                         │
-│  ┌──────────────────────────────┐              ┌──────────────────────────────────────┐  │
-│  │       RASPBERRY PI           │   WebSocket  │           AI SERVER (GPU)            │  │
-│  │                              │    :8765     │                                      │  │
-│  │  ┌────────────────────────┐  │              │  ┌──────────────────────────────┐    │  │
-│  │  │   Audio Streamer       │  │  PCM 16-bit  │  │       FastAPI Server          │   │  │
-│  │  │                        │──┼──────────────┼─►│                              │    │  │
-│  │  │  Anker Powerconf S330  │  │   mono audio │  │  ┌────────┐  ┌───────────┐  │    │  │
-│  │  │  (48kHz stereo → 16kHz │  │              │  │  │Silero  │  │ STT Engine│  │    │  │
-│  │  │   mono, FIR filtered)  │  │              │  │  │VAD     │─►│ Whisper / │  │    │  │
-│  │  │  ┌──────┐  ┌───────┐  │◄─┼──────────────┼──│  │(voice  │  │ Nemotron  │  │    │  │
-│  │  │  │ Mic  │  │Speaker│  │  │  WAV audio   │  │  │activity│  │           │  │    │  │
-│  │  │  └──────┘  └───────┘  │  │  + JSON msgs │  │  └────────┘  └─────┬─────┘  │    │  │
-│  │  └────────────────────────┘  │              │  │                    │         │    │  │
-│  │                              │              │  │  ┌────────────────▼──────┐  │    │  │
-│  │  ┌────────────────────────┐  │              │  │  │  Speaker Filter       │  │    │  │
-│  │  │   Web UI  (:8080)      │  │  transcript  │  │  │  (resemblyzer)        │  │    │  │
-│  │  │                        │◄─┼──────────────┼──│  │  human vs AI voice    │  │    │  │
-│  │  │  HAL 9000 Eye          │  │  + state     │  │  └──────────┬────────────┘  │    │  │
-│  │  │  (4 themes,            │  │  + wake flash│  │             │               │    │  │
-│  │  │   auto day/night)      │  │              │  │  ┌──────────▼────────────┐  │    │  │
-│  │  │  Live Transcription    │  │  + JPEG      │  │  │ Conversation Manager  │  │    │  │
-│  │  │  Response Display      │  │   snapshots  │  │  │                       │  │    │  │
-│  │  └────────────────────────┘  │              │  │  │  Wake word + chime    │  │    │  │
-│  │                              │              │  │  │  (or always-on mode)  │  │    │  │
-│  │  ┌────────────────────────┐  │              │  │  │  Command accumulation │  │    │  │
-│  │  │   Sendspin sidecar     │  │              │  │  │  Follow-up window     │  │    │  │
-│  │  │   (Music Assistant     │  │              │  │  └─┬────────────┬───┬────┘  │    │  │
-│  │  │    multi-room player)  │  │              │  │    │            │   │       │    │  │
-│  │  │   + Pulse role-ducking │  │              │  │  ┌─▼─────┐ ┌───▼───▼────┐  │    │  │
-│  │  └────────────────────────┘  │              │  │  │Ollama │ │ Wyoming    │  │    │  │
-│  │                              │              │  │  │LLM    │ │ TTS        │  │    │  │
-│  └──────────────────────────────┘              │  │  │(tools)│ └────────────┘  │    │  │
-│                                                │  │  └───┬───┘                 │    │  │
-│                                                │  │      │ MCP + LocalTools    │    │  │
-│                                                │  │  ┌───▼──────────────────┐  │    │  │
-│                                                │  │  │ Multi-MCP Client     │──┼────┼──► HA MCP Server(s)
-│                                                │  │  └──────────────────────┘  │    │  │
-│                                                │  └──────────────────────────────┘   │  │
-│                                                │                                      │  │
-│                                                │  ┌──────────────────────────────┐    │  │
-│                                                │  │  MQTT Bridge                 │    │  │
-│                                                │  │  HA auto-discovery → state,  │────┼──► MQTT broker → HA
-│                                                │  │  volume, mute, theme, cam,   │    │  │
-│                                                │  │  speak text                  │    │  │
-│                                                │  └──────────────────────────────┘    │  │
-│                                                │  ┌──────────────────────────────┐    │  │
-│                                                │  │  Shodh Memory (:3030)        │    │  │
-│                                                │  │  Hebbian long-term memory    │    │  │
-│                                                │  └──────────────────────────────┘    │  │
-│                                                └──────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
-```
+Setup is two `docker compose` commands. See [Quick start](#quick-start) below.
 
-## How It Works
-
-1. **Continuous listening** — The Raspberry Pi captures audio from the Anker Powerconf S330 USB speakerphone (48kHz stereo, FIR anti-alias filtered and downmixed to 16kHz mono) and streams raw PCM audio over WebSocket to the AI server.
-
-2. **Always-on transcription** — The AI server runs Silero VAD (voice activity detection) and a configurable STT engine to transcribe everything said in the room. All transcriptions appear live on the web UI regardless of whether a command was issued.
-
-3. **Speaker identification** — Resemblyzer voice embeddings distinguish human speakers from the AI's own TTS output, preventing the assistant from responding to itself.
-
-4. **Wake word or always-on** — Two modes:
-   - **Wake word mode** (default): Transcribed text is monitored for the wake word (configurable). Only after detecting it does the system engage the LLM. A two-tone chime plays and the HAL eye flashes white as confirmation. A 10-second follow-up window allows natural back-and-forth conversation without repeating the wake word.
-   - **Always-on mode**: Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM automatically.
-
-5. **LLM with multi-MCP tool calling** — The user's command is sent to Ollama (configurable context window, defaults to 32k) with tool definitions discovered at startup from one or more MCP servers (typically Home Assistant, plus a built-in `LocalTools` server that exposes `ui_set_theme`, `audio_set_volume`, `audio_toggle_mute`, `get_sun_times`, `speak_verbatim`, `show_camera`, `show_image`, `stream_camera`, `stream_rtsp`, `play_video`, and `stop_streaming`). The LLM searches for entities by friendly name, then calls HA services with the correct entity IDs. Conversational replies are returned as plain text. The system prompt is loaded from `server/system_prompt.txt` — edit it to customize HAL's personality.
-
-6. **Long-term memory** — Before each LLM call, relevant memories are recalled from [Shodh Memory](https://www.shodh-memory.com/) and injected into the prompt as context. After each exchange, the conversation is stored as a new memory. Shodh uses Hebbian learning (connections that fire together wire together) and natural decay, so frequently referenced facts strengthen over time while irrelevant ones fade — like biological memory.
-
-7. **Local TTS** — The response is synthesized via a Wyoming-protocol TTS service and streamed back to the Raspberry Pi for playback through the speaker (resampled to the device's native rate).
-
-8. **Web UI with themes** — A modern HAL 9000-inspired interface with metallic bezel ring, animated eye, live transcription, AI responses, and assistant state indicators. Twelve themes covering the AI-pantheon and ambient aesthetics (`dark`, `sal`, `glados`, `matrix`, `mother`, `joi`, `kitt`, `birch`, `odyssey`, `japandi`, `forest`, `sunset`); optional auto day/night switching driven by HA's `sun.sun` entity.
-
-9. **Home Assistant integration** — When MQTT is configured, the AI server publishes HA Discovery messages so HAL appears as a single device exposing state, volume, mute, theme, a camera (the latest UI snapshot), and a text input that speaks anything you write into it. The audio_streamer captures the kiosk via the Chrome DevTools Protocol against the running kiosk Chromium and forwards the JPEG to the server every minute (live video frames, custom fonts, animations, masks, and filters all included — exact pixels, no html2canvas approximations).
-
-10. **Multi-room audio (optional)** — A Sendspin sidecar on the Pi registers an [Open Home Foundation](https://www.openhomefoundation.org/) multi-room player in Music Assistant. HAL TTS and Sendspin music share the same PulseAudio socket; HA announcements duck the music via `module-role-ducking` while HAL speaks. Hardware volume buttons on the Anker target MA when music is playing and HAL TTS otherwise.
-
-11. **Camera in the orb** — Ask HAL to show or stream any HA camera and it appears inside the eye (filling the area up to the metallic rim, with the bezel and crystal highlights still on top). `show_camera` paints a snapshot for 150 s by default; `stream_camera` opens a low-latency WebRTC stream against HA's built-in go2rtc (HA 2024.11+) for up to 5 min, ended early by saying "stop streaming". The kiosk owns the `RTCPeerConnection`; the server proxies SDP/ICE between kiosk and HA's WebSocket API. Live audio is dropped — only video is requested — to avoid feedback with HAL's own TTS.
-
-## Speech-to-Text Engines
-
-Two STT engines are available, selectable at runtime via the `STT_ENGINE` environment variable:
-
-| Engine | Models | Speed | Best for |
-|---|---|---|---|
-| `whisper` (default) | `large-v3-turbo`, `large-v3`, `medium`, `base` | Baseline | Accuracy, multilingual, noisy environments |
-| `nemotron` | `nvidia/parakeet-tdt-0.6b-v2`, `nvidia/parakeet-ctc-1.1b` | ~21x faster | Real-time streaming, low latency |
-
-```ini
-# .env — switch to Nemotron
-STT_ENGINE=nemotron
-STT_MODEL=nvidia/parakeet-tdt-0.6b-v2
-```
-
-Both engines are included in the Docker image and share the same interface. Models are cached in a Docker volume across restarts.
+---
 
 ## Themes
 
-Fourteen built-in themes, switchable from the web UI's theme picker, the LLM (`ui_set_theme` tool), the MQTT theme select, or the auto day/night scheduler:
+Fourteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_theme` tool), the MQTT `Theme` select, or the auto day/night scheduler. Authoring guide: [`THEMES.md`](./THEMES.md).
 
 | Preview | Theme | Vibe |
 |---|---|---|
@@ -126,251 +39,56 @@ Fourteen built-in themes, switchable from the web UI's theme picker, the LLM (`u
 | <img src="docs/themes/joi.jpg" width="200"> | `joi` | Blade Runner 2049 — hot pink/magenta on deep teal-blue |
 | <img src="docs/themes/kitt.jpg" width="200"> | `kitt` | Knight Rider — saturated crimson on chrome-edged black, with the iconic red scanner sweeping along the bottom |
 | <img src="docs/themes/cyberpunk.jpg" width="200"> | `cyberpunk` | Night City — high-contrast neon yellow + electric cyan on black with animated scanlines and occasional glitch bars |
-| <img src="docs/themes/birch.jpg" width="200"> | `birch` | Warm beige Scandinavian wood tones — light room friendly |
+| <img src="docs/themes/birch.jpg" width="200"> | `birch` | Warm beige Scandinavian wood tones — light-room friendly |
 | <img src="docs/themes/odyssey.jpg" width="200"> | `odyssey` | Bright white background, minimalist — for very bright rooms |
 | <img src="docs/themes/japandi.jpg" width="200"> | `japandi` | Earthy Japandi with subtle decorative background patterns |
 | <img src="docs/themes/material_you.jpg" width="200"> | `material_you` | Material You light theme tuned for birch wood + white furniture, with a slow lava-lamp drift of the Google brand colours in the background |
 | <img src="docs/themes/forest.jpg" width="200"> | `forest` | Moss green + amber on dark walnut — calm and organic |
 | <img src="docs/themes/sunset.jpg" width="200"> | `sunset` | Coral + peach on dusk plum — warm and gentle, with drifting golden-hour bokeh |
 
-**Auto day/night switching** (default on): the server polls `sun.sun` every 5 minutes and swaps `THEME_NIGHT` ↔ `THEME_DAY` at dusk/dawn. Disable with `AUTO_THEME=false`.
+---
 
-### Writing a theme
+## How you talk to HAL
 
-See **[THEMES.md](./THEMES.md)** for the full theme-author guide: every
-CSS variable, the `effect.js` API contract, packaging conventions,
-and the REST endpoints that drive theme discovery.
+| Mode                              | What it is                                                                                                                            |
+|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| **Wake word**                     | Say `"hey hal"` (or whatever `WAKE_WORD` you set), pause, then your command. Chime fires + eye flashes when wake is detected.        |
+| **Push-to-Talk (PTT)**            | Bypass the wake word. Trigger via the desktop popup's hold-button, an HA dashboard button, an HTTP POST, an MQTT publish, or a persistent WebSocket. Hold-to-talk via Zigbee remote works too. See [`API.md`](./API.md#push-to-talk) + [`MQTT.md`](./MQTT.md#push-to-talk). |
+| **Typed text**                    | `POST /api/command` (or write to HA's `text.<id>_command` entity, or publish to MQTT `hal/<id>/command`) — runs the full LLM round with tools. |
+| **Verbatim announcement**         | `POST /api/speak` (or `text.<id>_speak`, or MQTT `hal/<id>/speak`) — HAL says the exact words you wrote, no LLM in the loop. |
+| **Follow-up window**              | After a turn ends, you have ~10 s to reply without repeating the wake word.                                                          |
+| **Always-on mode**                | Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM.                                                           |
 
-Themes are plug-in folders under `server/themes/`. The server scans the
-directory on startup *and* every `THEMES_POLL_INTERVAL_S` seconds
-(default 10), so dropping in a new folder gets picked up live —
-MQTT discovery is republished, the kiosk dropdown refreshes, no
-restart needed.
+---
 
-A theme is one to three files:
+## Integrations & extension points
 
-```
-server/themes/<your-theme>/
-├── manifest.json          # required
-├── theme.css              # required — CSS variable overrides
-└── effect.js              # optional — animated background / overlay
-```
+| Doc                                       | What's in it                                                                                                       |
+|-------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
+| [`API.md`](./API.md)                      | Full REST + WebSocket reference (PTT, command, speak, mute, volume, snapshots, themes; `/ws/{ptt,ui,audio}`)        |
+| [`MQTT.md`](./MQTT.md)                    | Every MQTT topic the bridge subscribes to or publishes; complete HA Discovery entity table; automation snippets    |
+| [`THEMES.md`](./THEMES.md)                | Plug-in theme authoring (CSS variable reference, `effect.js` API, manifest schema, hot-reload behaviour)            |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md)    | Pipeline walkthrough, STT engine choice, PTT internals, camera/video modes, runtime config, project structure       |
+| `openclaw-skill/hal/SKILL.md`             | OpenClaw skill exposing HAL's REST API — drop-in for any OpenClaw agent                                            |
+| `desktop/`                                | Rust/GTK4 Wayland overlay for typing commands + hold-to-talk PTT from your Linux desktop                            |
 
-**manifest.json**
+---
 
-```json
-{
-    "name": "your-theme",
-    "display_name": "Your Theme — Description",
-    "description": "One-line description shown in the picker tooltip.",
-    "version": "1.0.0",
-    "kind": "dark",
-    "effect": "effect.js"
-}
-```
+## Quick start
 
-- `name`: must match the directory name. Used as the CSS selector (`body.theme-<name>`) and the MQTT/voice/HA value.
-- `kind`: `"dark"` or `"light"` — controls grouping in the HA selects.
-- `effect` is optional. Omit if your theme is colors-only.
+> Two `docker compose` commands once `.env` is configured. Full env variable reference at the [bottom of this README](#configuration-reference); pipeline internals in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
-**theme.css**
+### Prerequisites
 
-A single `body.theme-<name> { … }` block overriding any of the CSS
-custom properties declared in the kiosk's `:root`. Copy `themes/dark/theme.css`
-as a starter; only override what differs.
-
-**effect.js** (optional, ES module)
-
-Exports a default function called when the theme activates:
-
-```js
-export default function setup({ root }) {
-    // `root` is the kiosk's <body>. Free to mount canvases / DOM.
-    return {
-        start() { /* called when theme activates */ },
-        stop()  { /* called when theme deactivates — must clean up */ },
-    };
-}
-```
-
-The kiosk imports the module on first activation, calls `setup()` once
-for the lifetime of the page, then `start()`/`stop()` on each theme
-swap. Built-in example: `themes/matrix/effect.js` runs the digital-rain
-canvas animation.
-
-## Home Assistant Integration
-
-> **Full reference**: [`MQTT.md`](./MQTT.md) lists every topic the
-> bridge subscribes to or publishes, the payload for each, the full
-> HA Discovery entity table, and HA automation snippets. The summary
-> below is the cheat-sheet view.
-
-When `MQTT_BROKER_HOST` is set, HAL appears in HA via auto-discovery as a single device with:
-
-| Entity | Type | Purpose |
-|---|---|---|
-| `sensor.<id>_state` | sensor | `idle` / `listening` / `processing` / `speaking` |
-| `number.<id>_volume` | number | TTS volume 0–100 % |
-| `switch.<id>_mute` | switch | Mic mute state |
-| `select.<id>_theme` | select | Live theme switching |
-| `camera.<id>_screen` | camera | Latest JPEG snapshot of the kiosk UI |
-| `text.<id>_speak` | text | Type anything → HAL speaks it via Wyoming TTS |
-| `text.<id>_command` | text | Type a command → run through the conversation pipeline (LLM + tools) |
-| `text.<id>_show_image` | text | Paste a URL (or short JSON) → show on the orb for 60 s |
-| `text.<id>_stream_rtsp` | text | Paste an RTSP URL → live WebRTC stream in the orb (5 min default) |
-| `text.<id>_play_video` | text | Paste an HTTP video URL (MP4/WebM/HLS) → play in the orb |
-| `text.<id>_show_camera` | text | Paste a HA `camera.*` or `image.*` entity_id → snapshot in the orb. JSON `{"entity_id":"...","live":true,"duration_s":N}` for a live stream (camera.* only; `live=true` is ignored on `image.*`) |
-| `sensor.<id>_last_response` | sensor | Last thing HAL said (state truncated to 250 chars; full text in `full_text` attribute) |
-| `sensor.<id>_task_total_s` | sensor (diagnostic) | Wall-clock duration of the last command (s) |
-| `sensor.<id>_llm_total_s` | sensor (diagnostic) | LLM time (sum of all rounds) for the last command (s) |
-| `sensor.<id>_tools_total_s` | sensor (diagnostic) | MCP tool time for the last command (s) |
-| `sensor.<id>_memory_recall_s` | sensor (diagnostic) | Shodh `memory.recall` time (s) |
-| `sensor.<id>_memory_remember_s` | sensor (diagnostic) | Shodh `memory.remember` time (s) |
-| `sensor.<id>_tts_s` | sensor (diagnostic) | TTS synthesis time (s) |
-| `sensor.<id>_rounds` | sensor (diagnostic) | LLM tool-calling rounds for the last command |
-| `sensor.<id>_gen_n` | sensor (diagnostic) | Tokens generated by the last LLM call |
-| `sensor.<id>_gen_tps` | sensor (diagnostic) | Generation throughput, tokens/sec |
-| `sensor.<id>_prompt_tps` | sensor (diagnostic) | Prompt-eval throughput, tokens/sec |
-| `sensor.<id>_model` | sensor (diagnostic) | Model used for the last LLM call |
-| `select.<id>_config_theme_day` | select (config) | Live-edit the day theme |
-| `select.<id>_config_theme_night` | select (config) | Live-edit the night theme |
-| `select.<id>_config_tts_voice` | select (config) | Pick a Wyoming voice (options discovered at startup) |
-| `select.<id>_config_ollama_model` | select (config) | Pick the Ollama model (options discovered at startup) |
-| `text.<id>_config_wake_word` | text (config) | Live-edit the wake word |
-| `switch.<id>_config_auto_theme` | switch (config) | Toggle the dusk/dawn theme scheduler |
-
-Set `HAL_DEVICE_ID` (slug) and `HAL_DEVICE_NAME` (display name) to identify the device. State is republished on reconnect; availability uses MQTT Last-Will-Testament.
-
-### Live Runtime Config
-
-A handful of settings can be changed from HA without restarting the
-server. They live in **`server/runtime/config.json`** (created on first
-boot from the matching `.env` values). Once the file exists, **the file
-wins over `.env`** — `.env` is only consulted to bootstrap.
-
-Currently managed in the live config (and exposed as `entity_category=
-config` controls under HAL's device card in HA):
-
-| Key | Type | Source on first boot | HA control |
-|---|---|---|---|
-| `theme_day` | string (enum) | `THEME_DAY` env, default `birch` | select |
-| `theme_night` | string (enum) | `THEME_NIGHT` env, default `dark` | select |
-| `tts_voice` | string | `WYOMING_TTS_VOICE` env, default `""` (server default) | select (options queried from Wyoming TTS at startup) |
-| `wake_word` | string | `WAKE_WORD` env, default `hey hal` | text |
-| `ollama_model` | string | `OLLAMA_MODEL` env, default `llama3.2` | select (options queried from Ollama `/api/tags` at startup) |
-| `auto_theme` | bool | `AUTO_THEME` env, default `true` | switch |
-
-Changing any control from HA writes the file atomically, applies the
-change live (theme reapplied if it would currently be visible, TTS
-voice on the next utterance, model on the next LLM round, etc.) and
-publishes the new state back to MQTT so HA stays in sync.
-
-To reset to env defaults: stop the server, delete the file, restart.
-
-### Images and cameras in the orb
-
-HAL can paint any image — HA camera snapshot, live WebRTC stream, or
-arbitrary URL — inside the eye, filling the area up to the metallic
-rim while keeping the bezel and crystal highlights on top. Three
-modes, all mutually exclusive (newest replaces previous):
-
-- **HA camera snapshot** — `show_camera(entity_id, duration_s=150)`
-  fetches a single JPEG via the HA MCP server and displays it for
-  5–900 s (default 150).
-- **HA camera live stream** — `stream_camera(entity_id, duration_s=300)`
-  opens a WebRTC peer connection. The kiosk owns the
-  `RTCPeerConnection`; the server proxies SDP/ICE between kiosk and
-  HA's `camera/webrtc/offer` subscription. Default 5 min, max 30.
-  End early with `stop_streaming` ("stop streaming", "stop the
-  video", etc.). Audio is dropped (video only).
-- **Arbitrary RTSP live stream** — `stream_rtsp(rtsp_url, duration_s=300)`
-  takes any RTSP URL (with optional inline credentials) and streams it
-  via the bundled go2rtc sidecar. The server registers a temporary
-  stream in go2rtc, then exchanges a non-trickle SDP offer/answer
-  through go2rtc's HTTP API (kiosk waits for ICE gathering to
-  complete before sending the offer; candidates are bundled in the
-  SDP). Same `stop_streaming` ends it. Also exposed via MQTT topic
-  `hal/<id>/rtsp/set` (URL or JSON `{"url":"...","duration_s":N}`)
-  and the HA Discovery text entity `text.<id>_stream_rtsp`.
-- **HTTP video / HLS** — `play_video(url, duration_s, loop, muted)`
-  plays an MP4 / WebM / HLS playlist directly in the kiosk's
-  `<video>` element. No server-side fetching, no transcoding — the
-  browser handles playback. HLS is detected by `.m3u8` and routed
-  through hls.js; everything else uses native `<video src>`. Audio
-  plays by default and **auto-ducks while HAL is speaking**, then
-  restores the user's muted preference when HAL goes back to idle.
-  Optional `loop=true` for endless playback; optional `duration_s`
-  for a hard cap (otherwise playback ends naturally on the video's
-  end event). Mutually exclusive with all other orb modes. MQTT
-  topic `hal/<id>/video/set` (URL or JSON
-  `{"url":"...","loop":true,"muted":false,"duration_s":N}`); HA
-  Discovery text entity `text.<id>_play_video`.
-- **Arbitrary image push** — `show_image(url, duration_s=60)` from
-  the LLM, **or** publish to MQTT `hal/<id>/image/set`, **or** write
-  to the `text.<id>_show_image` HA entity. The MQTT topic accepts
-  binary JPEG/PNG/GIF/WebP, a plain URL, or a JSON wrapper:
-  `{"url": "...", "duration_s": 90}` or
-  `{"image": "<base64>", "mime": "image/png", "duration_s": 30}`.
-  Server-side URL fetcher caps responses at 8 MB and 10 s, refuses
-  non-image content types, and auto-attaches `HA_TOKEN` when the URL
-  starts with `HA_URL` (so `/local/` and `/api/camera_proxy/` work
-  out of the box). Default duration 60 s, configurable per call,
-  bounds 5–600 s.
-
-Streaming requires HA 2024.11+ (built-in go2rtc) and a Long-Lived
-Access Token in `HA_TOKEN` plus `HA_URL`. The `show_image` URL
-fetcher uses the same token only when the URL targets HA.
-
-Example HA automation pushing an image to HAL via the text helper:
-
-```yaml
-service: text.set_value
-target:
-  entity_id: text.hal_default_show_image
-data:
-  value: 'https://homeassistant.local:8123/local/dinner.jpg'
-```
-
-### Sendspin (multi-room audio)
-
-A separate sidecar container registers a [Sendspin](https://www.music-assistant.io/player-support/sendspin/) player in Music Assistant named `${HAL_DEVICE_NAME} Speaker`. Channel mode (`Stereo` / `Left only` / `Right only` / `Mono`) is configured in MA's player settings — set `Mono` for the Anker since it's effectively a mono device.
-
-**One-time host setup** — append this to `~/.config/pulse/default.pa` on the Pi:
-
-```
-load-module module-role-ducking trigger_roles=phone ducking_roles=music volume=-25dB
-```
-
-Then `systemctl --user restart pulseaudio`. HAL TTS streams (tagged `media.role=phone`) trigger ducking; music streams (`media.role=music`) duck by 25 dB while HAL speaks and resume automatically.
-
-Set `SENDSPIN_PLAYER_ENTITY=media_player.hal_speaker` (or your actual entity) on the *server* `.env` to enable hardware-volume-button redirection (buttons drive MA when music is playing) and the optional Shape C explicit pause/resume (`SENDSPIN_PAUSE_DURING_TTS=true`). Shape C only resumes if MA was actually playing when HAL spoke — manual user pauses are never overridden.
-
-**Deploying the sidecar** — on the Pi:
-
-```bash
-git pull
-docker compose -f docker-compose.rpi-ghcr.yml pull
-docker compose -f docker-compose.rpi-ghcr.yml up -d
-docker compose -f docker-compose.rpi-ghcr.yml logs -f sendspin
-```
-
-The MA player should appear within ~30s via mDNS. Set channel mode in MA, then set `SENDSPIN_PLAYER_ENTITY` on the server and restart that stack.
-
-See `rpi/sendspin/README.md` for details.
-
-## Prerequisites
-
-| Component | Requirement |
-|---|---|
-| AI Server | Linux machine with NVIDIA GPU, Docker with nvidia-container-toolkit |
-| Raspberry Pi | Raspberry Pi 4/5 with Docker, USB speakerphone (e.g., Anker Powerconf S330) |
-| Ollama | Running on the AI server host with a tool-calling model |
-| Home Assistant | Running instance with a configured MCP server exposed over HTTP(S) |
-| Wyoming TTS | A Wyoming-protocol TTS service (e.g., [wyoming-piper](https://github.com/rhasspy/wyoming-piper)) |
-| MQTT broker (optional) | Any MQTT broker reachable from the AI server (Mosquitto, EMQX, HA add-on…) |
-| Music Assistant (optional) | Required only if you use the Sendspin sidecar |
-
-## Quick Start
+| Component                       | Requirement                                                                              |
+|---------------------------------|------------------------------------------------------------------------------------------|
+| AI Server                       | Linux box with NVIDIA GPU, Docker + nvidia-container-toolkit                             |
+| Raspberry Pi                    | Pi 4/5 with Docker, USB speakerphone (e.g. Anker PowerConf S330)                         |
+| Ollama                          | Running on the AI server host with a tool-calling-capable model                          |
+| Home Assistant                  | Running, with an MCP server exposed over HTTP(S)                                         |
+| Wyoming TTS                     | Any Wyoming-protocol TTS service (e.g. [wyoming-piper](https://github.com/rhasspy/wyoming-piper)) |
+| MQTT broker *(optional)*        | Mosquitto, EMQX, the HA Mosquitto add-on — anything Paho/aiomqtt can speak v3.1.1 to     |
+| Music Assistant *(optional)*    | Required only for the Sendspin multi-room sidecar                                        |
 
 ### 1. Clone and configure
 
@@ -378,353 +96,161 @@ See `rpi/sendspin/README.md` for details.
 git clone https://github.com/moimart/conversation-hass.git
 cd conversation-hass
 cp .env.example .env
+# Edit .env — see the Configuration reference at the bottom
 ```
 
-Edit `.env` — at minimum:
+### 2. Start the AI server
 
-```ini
-AI_SERVER_HOST=10.20.30.185       # IP of your GPU server
-RPI_HOST=10.20.30.180             # IP of your Raspberry Pi
-MCP_SERVER_URL=https://your-ha-mcp-server/endpoint
-WAKE_WORD=hey homie               # leave empty for always-on
-OLLAMA_HOST=http://10.20.30.185:11434
-OLLAMA_MODEL=gpt-oss:20b
-WYOMING_TTS_HOST=10.20.30.185
-WYOMING_TTS_PORT=10300
-STT_ENGINE=whisper
-```
-
-Optional integrations are commented in `.env.example` — uncomment as needed:
-- `MQTT_BROKER_HOST=…` to expose HAL as a HA device
-- `SENDSPIN_PLAYER_ENTITY=…` once the MA player appears, to enable button/pause coordination
-
-### 2. Configure MCP servers
-
-Edit `server/mcp_servers.json` to point at your Home Assistant MCP endpoint (and any other MCP servers you want to mount). The server merges tools from all configured servers and routes calls automatically:
-
-```json
-[
-  { "name": "home-assistant", "url": "https://your-ha-mcp-server/endpoint" }
-]
-```
-
-### 3. Start the AI server
-
-**Option A — Build locally:**
 ```bash
+# Pre-built (recommended for first try):
+docker compose -f docker-compose.server-ghcr.yml up -d
+
+# Or build from source:
 docker compose -f docker-compose.server.yml up --build -d
 ```
 
-**Option B — Use pre-built image from GHCR:**
+Brings up `hal-ai-server` (port **8765**), `hal-shodh-memory` (port **3030**), and a `go2rtc` sidecar (host networking, port **1984**).
+
+### 3. Start the Raspberry Pi
+
 ```bash
-docker compose -f docker-compose.server-ghcr.yml up -d
-```
+# Pre-built arm64:
+docker compose -f docker-compose.rpi-ghcr.yml up -d
 
-This starts:
-- `hal-ai-server` — FastAPI WebSocket server on port **8765**
-- `hal-shodh-memory` — Long-term memory service on port **3030**
-
-Ollama must already be running on the host. STT models are cached in a Docker volume (`huggingface-cache`). Shodh Memory data persists in `shodh-data`.
-
-### 4. Start the Raspberry Pi
-
-**Option A — Build locally:**
-```bash
+# Or build from source:
 docker compose -f docker-compose.rpi.yml up --build -d
 ```
 
-**Option B — Use pre-built arm64 images from GHCR:**
+Brings up `hal-audio-streamer` (port **8080**, web UI + mic capture + speaker playback) and the optional `hal-sendspin` sidecar.
+
+### 4. Open the kiosk
+
+Navigate to `http://<rpi-ip>:8080`. For HA snapshots to work, launch the kiosk Chromium with the DevTools Protocol enabled:
+
 ```bash
-docker compose -f docker-compose.rpi-ghcr.yml up -d
-```
-
-This starts:
-- `hal-audio-streamer` — Mic capture, TTS playback, web UI on port **8080**
-- `hal-sendspin` — Music Assistant multi-room audio player (host networking, port **8927**)
-- `hal-go2rtc` — RTSP→WebRTC bridge sidecar for `stream_rtsp` (host networking, port **1984**)
-
-The audio streamer auto-detects the USB speakerphone, probes its native sample rate and channel count, and resamples to 16kHz mono with FIR anti-aliasing for the AI server. TTS playback is upsampled to the device's native rate.
-
-### 5. Open the web UI
-
-Navigate to `http://<rpi-ip>:8080` in a browser, ideally as a kiosk on a monitor attached to the Pi.
-
-For the HA camera entity to receive screenshots, launch the kiosk Chromium with the DevTools Protocol enabled:
-
-```
 chromium-browser --kiosk http://localhost:8080 \
   --autoplay-policy=no-user-gesture-required \
   --remote-debugging-port=9222
 ```
 
-The audio_streamer container runs on host networking and reaches the kiosk Chromium via `127.0.0.1:9222`, then uploads a JPEG to the AI server every `SNAPSHOT_INTERVAL_S` seconds (default 60). Recent Chromium silently ignores `--remote-debugging-address` values other than `127.0.0.1`, which is why we use host networking instead of trying to bridge across `docker0`.
+### 5. (Optional) Desktop command popup
 
-### 6. Desktop Command App (optional)
-
-A lightweight Rust/GTK4 overlay for Hyprland/Wayland that sends text commands directly to HAL from your Linux desktop — bypassing speech entirely.
+A lightweight Rust/GTK4 Wayland overlay that types commands and hold-to-talks PTT from your Linux desktop.
 
 ```bash
-cd desktop
-./install.sh
+cd desktop && ./install.sh
+# Hyprland keybind:  bind = SUPER, H, exec, hal-command
 ```
 
-This builds the binary, copies it to `~/.local/bin/hal-command`, and installs default config/CSS to `~/.config/hal-command/`.
+---
 
-**Add Hyprland keybind** (in `~/.config/hypr/hyprland.conf`):
-```
-bind = SUPER, H, exec, hal-command
-```
+## Pre-built images
 
-Press `SUPER+H` to open. Type a command. `Enter` sends (green tick on success, auto-dismisses). `ESC` cancels. Configure the server URL and styling in `~/.config/hal-command/{config.toml,style.css}`.
+| Image                                                                  | Platform     | Purpose                                                            |
+|------------------------------------------------------------------------|--------------|--------------------------------------------------------------------|
+| `ghcr.io/moimart/conversation-hass/hal-ai-server:latest`               | `linux/amd64`| FastAPI server, STT, MCP routing, MQTT bridge                      |
+| `ghcr.io/moimart/conversation-hass/hal-rpi:latest`                     | `linux/arm64`| Pi audio_streamer + kiosk web UI                                   |
+| `ghcr.io/moimart/conversation-hass/hal-sendspin:latest`                | `linux/arm64`| Sendspin daemon for Music Assistant                                |
 
-### 7. OpenClaw skill (optional)
+Tagged versions also published (`:0.10`, etc. — the previous stable is preserved with each release for easy revert).
 
-`openclaw-skill/hal/` exposes HAL's REST API as an OpenClaw skill — drop it into any OpenClaw agent and it can speak through HAL, adjust volume, toggle mute, and switch themes via curl. Set `HAL_SERVER_URL` in the agent's config and the skill is ready.
+---
 
-## Pre-built Images
+## Configuration reference
 
-| Image | Platform | Purpose |
-|---|---|---|
-| `ghcr.io/moimart/conversation-hass/hal-ai-server:latest` | linux/amd64 | FastAPI server, STT, MCP routing, MQTT bridge |
-| `ghcr.io/moimart/conversation-hass/hal-rpi:latest` | linux/arm64 | Pi audio streamer + web UI |
-| `ghcr.io/moimart/conversation-hass/hal-sendspin:latest` | linux/arm64 | Sendspin daemon for Music Assistant |
-
-## Project Structure
-
-```
-conversation-hass/
-├── docker-compose.server.yml          # AI server (build locally)
-├── docker-compose.server-ghcr.yml     # AI server (pre-built image)
-├── docker-compose.rpi.yml             # RPi: audio_streamer + sendspin (build locally)
-├── docker-compose.rpi-ghcr.yml        # RPi: audio_streamer + sendspin (pre-built)
-├── .env.example                       # Configuration template
-├── setup.sh                           # Interactive setup script
-│
-├── server/
-│   ├── Dockerfile                     # NVIDIA CUDA + NeMo + Whisper
-│   ├── requirements.txt               # faster-whisper, nemo_toolkit, silero-vad, mcp, aiomqtt
-│   ├── system_prompt.txt              # LLM personality (mounted read-only)
-│   ├── mcp_servers.json               # MCP server list (multi-server support)
-│   └── app/
-│       ├── main.py                    # FastAPI server, WebSocket + REST endpoints
-│       ├── audio_pipeline.py          # VAD + STT engine selection + speaker filter
-│       ├── transcriber.py             # WhisperTranscriber + NemotronTranscriber
-│       ├── speaker_filter.py          # Voice embedding comparison (resemblyzer)
-│       ├── conversation.py            # Wake word, MCP tool-calling, follow-up window
-│       ├── memory.py                  # Shodh Memory client (remember/recall)
-│       ├── mcp_client.py              # MCP client + MultiMCPClient (merge tools)
-│       ├── local_tools.py             # In-process MCP server: theme/volume/mute/sun/speak
-│       ├── ha_ws.py                   # HA WebSocket client (WebRTC offer signaling)
-│       ├── go2rtc.py                  # go2rtc HTTP client (stream registration + WebRTC offer)
-│       ├── runtime_config.py          # File-backed live config (atomic JSON, env bootstrap)
-│       ├── themes.py                  # Plug-in theme registry (scan + polling reload)
-│   ├── themes/                            # Plug-in theme folders (manifest+theme.css+optional effect.js)
-│       ├── mqtt_bridge.py             # HA Discovery + MQTT state/command bridge
-│       └── tts.py                     # Wyoming protocol TTS client
-│
-├── rpi/
-│   ├── Dockerfile                     # Python 3.11 slim + PulseAudio + ALSA
-│   ├── audio_streamer/
-│   │   ├── main.py                    # Mic capture, FIR resample, TTS playback,
-│   │   │                              # CDP snapshot loop, music-state hook, HID buttons
-│   │   └── cdp_snapshot.py            # Chrome DevTools Protocol screenshot client
-│   ├── web/
-│   │   ├── index.html                 # HAL 9000 UI (4 themes)
-│   │   ├── style.css                  # Animations, theme variants
-│   │   └── app.js                     # WebSocket client (orb / overlays / video)
-│   └── sendspin/
-│       ├── Dockerfile                 # Python 3.12 slim + sendspin daemon
-│       ├── entrypoint.sh              # Daemon launcher with MA hooks
-│       └── README.md                  # Pulse ducking + channel-mode docs
-│
-├── desktop/                           # Rust/GTK4 desktop command app
-│   ├── Cargo.toml                     # GTK4, layer-shell, reqwest
-│   ├── src/main.rs                    # Wayland overlay, sends to /api/command
-│   ├── config/                        # Default config.toml + style.css
-│   └── install.sh                     # Build + install to ~/.local/bin
-│
-├── openclaw-skill/                    # OpenClaw skill exposing HAL's REST API
-│   └── hal/SKILL.md
-│
-└── tests/                             # 262 pytest tests (mocked, no GPU needed)
-    ├── test_audio_manager.py
-    ├── test_audio_pipeline.py
-    ├── test_conversation.py
-    ├── test_mcp_client.py
-    ├── test_server_main.py
-    ├── test_speaker_filter.py
-    ├── test_transcriber.py
-    └── test_tts.py
-```
-
-## Configuration Reference
+> Bootstrap-from-env on first run; runtime-changeable keys are listed in the [Live runtime config table](./ARCHITECTURE.md#live-runtime-config) — once changed from HA, the file (`server/runtime/config.json`) wins over `.env`.
 
 ### Network
 
-| Variable | Default | Description |
-|---|---|---|
-| `AI_SERVER_HOST` | — | IP of the AI server (used by RPi to connect) |
-| `RPI_HOST` | — | IP of the RPi (informational; not consumed by code) |
-| `WEB_PORT` | `8080` | Port for the RPi web UI |
-| `CHROMIUM_DEBUG_URL` | `http://127.0.0.1:9222` | Kiosk Chromium's DevTools endpoint (audio_streamer reaches it for screenshots; container runs on host networking) |
-| `SNAPSHOT_INTERVAL_S` | `60` | Seconds between CDP screenshots posted to the AI server |
+| Variable             | Default                       | Description                                                          |
+|----------------------|-------------------------------|----------------------------------------------------------------------|
+| `AI_SERVER_HOST`     | —                             | IP of the AI server (used by RPi to connect)                         |
+| `RPI_HOST`           | —                             | IP of the RPi (informational; not consumed by code)                  |
+| `WEB_PORT`           | `8080`                        | Port for the RPi web UI                                              |
+| `CHROMIUM_DEBUG_URL` | `http://127.0.0.1:9222`       | Kiosk Chromium's DevTools endpoint (for snapshot capture)            |
+| `SNAPSHOT_INTERVAL_S`| `60`                          | Seconds between CDP screenshots posted to the AI server              |
 
 ### Speech & LLM
 
-| Variable | Default | Description |
-|---|---|---|
-| `WAKE_WORD` | `hey hal` | Phrase that activates command processing. Empty = always-on |
-| `STT_ENGINE` | `whisper` | `whisper` or `nemotron` |
-| `STT_MODEL` | (auto) | Defaults: whisper=`large-v3-turbo`, nemotron=`nvidia/parakeet-tdt-0.6b-v2` |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API endpoint |
-| `OLLAMA_MODEL` | `llama3.2` | LLM model name (must support tool calling) |
-| `OLLAMA_NUM_CTX` | `32768` | LLM context window in tokens |
-| `OLLAMA_NUM_PREDICT` | `512` | Max tokens per LLM response |
-| `WYOMING_TTS_HOST` | `localhost` | Wyoming TTS host |
-| `WYOMING_TTS_PORT` | `10200` | Wyoming TTS port |
-| `WYOMING_TTS_VOICE` | (server default) | TTS voice; empty = service default |
-| `SYSTEM_PROMPT_FILE` | `/app/system_prompt.txt` | LLM system prompt path inside the container |
+| Variable             | Default                              | Description                                                |
+|----------------------|--------------------------------------|------------------------------------------------------------|
+| `WAKE_WORD`          | `hey hal`                            | Activation phrase. Empty = always-on                       |
+| `STT_ENGINE`         | `whisper`                            | `whisper` or `nemotron`                                    |
+| `STT_MODEL`          | (auto per engine)                    | Whisper: `large-v3-turbo`; Nemotron: `nvidia/parakeet-tdt-0.6b-v2` |
+| `OLLAMA_HOST`        | `http://localhost:11434`             | Ollama API                                                 |
+| `OLLAMA_MODEL`       | `llama3.2`                           | LLM name (must support tool calling)                       |
+| `OLLAMA_NUM_CTX`     | `32768`                              | LLM context window in tokens                               |
+| `OLLAMA_NUM_PREDICT` | `512`                                | Max tokens per LLM response                                |
+| `WYOMING_TTS_HOST`   | `localhost`                          | Wyoming TTS host                                           |
+| `WYOMING_TTS_PORT`   | `10200`                              | Wyoming TTS port                                           |
+| `WYOMING_TTS_VOICE`  | (server default)                     | Voice name; empty = service default                        |
+| `SYSTEM_PROMPT_FILE` | `/app/system_prompt.txt`             | LLM system prompt path inside the container                |
 
 ### MCP & Memory
 
-| Variable | Default | Description |
-|---|---|---|
-| `MCP_SERVERS_FILE` | `/app/mcp_servers.json` | Path to MCP server list inside the container |
-| `MCP_SERVER_URL` | — | Single-server fallback if `mcp_servers.json` is absent |
-| `MEMORY_URL` | `http://shodh-memory:3030` | Shodh Memory service URL |
-| `MEMORY_USER_ID` | `hal-default` | User ID for memory isolation |
-| `MEMORY_API_KEY` | — | Shodh API key (if your instance requires auth) |
+| Variable           | Default                              | Description                                       |
+|--------------------|--------------------------------------|---------------------------------------------------|
+| `MCP_SERVERS_FILE` | `/app/mcp_servers.json`              | Path to the MCP server list inside the container  |
+| `MCP_SERVER_URL`   | —                                    | Single-server fallback if `mcp_servers.json` is absent |
+| `MEMORY_URL`       | `http://shodh-memory:3030`           | Shodh Memory service URL                          |
+| `MEMORY_USER_ID`   | `hal-default`                        | User ID for memory isolation                      |
+| `MEMORY_API_KEY`   | —                                    | Shodh API key (if your instance requires auth)    |
 
-### Home Assistant WebSocket (live camera streaming)
+### Home Assistant (live streaming, calendar, image fetch)
 
-`stream_camera` opens a WebRTC peer connection against HA's built-in
-`camera/webrtc/offer` subscription. The server holds the credentials
-and proxies SDP/ICE between kiosk and HA — the kiosk never sees the
-HA URL or token.
-
-| Variable | Default | Description |
-|---|---|---|
-| `HA_URL` | — | HA base URL, e.g. `http://homeassistant.local:8123` (leave empty to disable streaming) |
-| `HA_TOKEN` | — | HA Long-Lived Access Token (User profile → Long-Lived Access Tokens) |
-
-### go2rtc sidecar (arbitrary RTSP streaming)
-
-`stream_rtsp` registers an RTSP source in the bundled go2rtc service
-and exchanges a WebRTC offer/answer through it. Compose ships a
-go2rtc container on host networking (so its ICE candidates contain
-the host's LAN IPs, reachable from the kiosk).
-
-| Variable | Default | Description |
-|---|---|---|
+| Variable   | Default | Description                                                         |
+|------------|---------|---------------------------------------------------------------------|
+| `HA_URL`   | —       | HA base URL, e.g. `http://homeassistant.local:8123` (empty disables streaming/calendar/image-fetch) |
+| `HA_TOKEN` | —       | HA Long-Lived Access Token                                          |
 | `GO2RTC_URL` | `http://host.docker.internal:1984` | go2rtc HTTP/WS endpoint reachable from the AI server container |
 
 ### Audio (RPi)
 
-| Variable | Default | Description |
-|---|---|---|
-| `AUDIO_DEVICE` | `default` | ALSA audio device (auto-detects USB speakerphones) |
-| `SAMPLE_RATE` | `16000` | Target audio sample rate in Hz |
-| `CHANNELS` | `1` | Target audio channels |
-| `CHUNK_SIZE` | `4096` | Audio buffer size per WebSocket frame |
+| Variable      | Default   | Description                                       |
+|---------------|-----------|---------------------------------------------------|
+| `AUDIO_DEVICE`| `default` | ALSA device (auto-detects USB speakerphones)      |
+| `SAMPLE_RATE` | `16000`   | Target audio sample rate (Hz)                     |
+| `CHANNELS`    | `1`       | Target audio channels                             |
+| `CHUNK_SIZE`  | `4096`    | Audio buffer size per WebSocket frame             |
 
 ### Themes
 
-| Variable | Default | Description |
-|---|---|---|
-| `AUTO_THEME` | `true` | Auto-switch themes at dusk/dawn via `sun.sun` |
-| `THEME_DAY` | `birch` | Theme used when sun is above horizon |
-| `THEME_NIGHT` | `dark` | Theme used when sun is below horizon |
+| Variable      | Default | Description                                                          |
+|---------------|---------|----------------------------------------------------------------------|
+| `AUTO_THEME`  | `true`  | Auto-switch themes at dusk/dawn via `sun.sun`                        |
+| `THEME_DAY`   | `birch` | Theme used when sun is above horizon                                 |
+| `THEME_NIGHT` | `dark`  | Theme used when sun is below horizon                                 |
 
 ### MQTT (HA auto-discovery)
 
-| Variable | Default | Description |
-|---|---|---|
-| `MQTT_BROKER_HOST` | (empty = disabled) | MQTT broker hostname/IP |
-| `MQTT_BROKER_PORT` | `1883` | MQTT broker port |
-| `MQTT_USERNAME` | — | Broker username (optional) |
-| `MQTT_PASSWORD` | — | Broker password (optional) |
-| `HAL_DEVICE_ID` | `hal-default` | MQTT object id (slug) |
-| `HAL_DEVICE_NAME` | `HAL` | Display name in HA |
+| Variable           | Default              | Description                                            |
+|--------------------|----------------------|--------------------------------------------------------|
+| `MQTT_BROKER_HOST` | (empty = disabled)   | MQTT broker hostname/IP                                |
+| `MQTT_BROKER_PORT` | `1883`               | MQTT broker port                                       |
+| `MQTT_USERNAME`    | —                    | Broker username (optional)                             |
+| `MQTT_PASSWORD`    | —                    | Broker password (optional)                             |
+| `HAL_DEVICE_ID`    | `hal-default`        | MQTT object id (slug)                                  |
+| `HAL_DEVICE_NAME`  | `HAL`                | Display name in HA                                     |
+| `START_MUTED`      | `false`              | Boot with mic muted (live-toggleable from HA)          |
+
+### Calendar overlay
+
+| Variable                     | Default | Description                                                          |
+|------------------------------|---------|----------------------------------------------------------------------|
+| `CALENDAR_DEFAULT_SOURCE`    | (empty) | Default calendar name; empty = merge all HA calendars                |
+| `CALENDAR_DISMISS_SECONDS`   | `30`    | Default duration the overlay stays up before auto-dismissing         |
 
 ### Sendspin (multi-room audio)
 
-| Variable | Default | Description |
-|---|---|---|
-| `SENDSPIN_PLAYER_ENTITY` | (empty = disabled) | MA `media_player.*` entity_id, enables button redirection / Shape C |
-| `SENDSPIN_PAUSE_DURING_TTS` | `false` | Shape C: explicit pause/resume around TTS (only resumes if MA was playing) |
-| `SENDSPIN_LOG_LEVEL` | `INFO` | Sendspin daemon log level |
+| Variable                     | Default              | Description                                                                          |
+|------------------------------|----------------------|--------------------------------------------------------------------------------------|
+| `SENDSPIN_PLAYER_ENTITY`     | (empty = disabled)   | MA `media_player.*` entity_id — enables button redirection and the optional Shape C  |
+| `SENDSPIN_PAUSE_DURING_TTS`  | `false`              | Shape C: explicit pause/resume around TTS (only resumes if MA was playing)           |
+| `SENDSPIN_LOG_LEVEL`         | `INFO`               | Sendspin daemon log level                                                            |
 
-## API Endpoints
+---
 
-### AI Server (`hal-ai-server:8765`)
-
-| Endpoint | Protocol | Description |
-|---|---|---|
-| `/ws/audio` | WebSocket | Main audio channel (RPi). PCM in, transcription/TTS out, JSON control msgs |
-| `/ws/ui` | WebSocket | UI channel for live transcription and state |
-| `/api/command` | HTTP POST | Direct text command to LLM. Body `{"text": "..."}` |
-| `/api/speak` | HTTP POST | Speak verbatim text via TTS. Body `{"text": "..."}` |
-| `/api/volume` | HTTP POST | Set TTS volume. Body `{"level": 0.0..1.0}` |
-| `/api/mute` | HTTP POST/GET | Toggle/get mic mute |
-| `/api/snapshot` | HTTP POST | Receive a JPEG snapshot from the kiosk page |
-| `/api/snapshot.jpg` | HTTP GET | Latest cached JPEG (also published on MQTT camera) |
-| `/health` | HTTP GET | Health check: pipeline, MCP, TTS, memory |
-
-### Audio Streamer (`hal-audio-streamer:8080`)
-
-| Endpoint | Protocol | Description |
-|---|---|---|
-| `/` | HTTP GET | Web UI |
-| `/ws` | WebSocket | UI client channel (state/transcription/theme) |
-| `/api/snapshot` | HTTP POST | Snapshot proxy → forwards JPEG to AI server |
-| `/api/music/state` | HTTP POST | Sendspin daemon hook → updates music-playing flag |
-
-### WebSocket Message Types
-
-**Server → RPi (`/ws/audio`):**
-```jsonc
-{"type": "transcription", "text": "...", "is_partial": false, "speaker": "human"}
-{"type": "response", "text": "..."}          // LLM response text
-{"type": "wake"}                             // Wake word detected (UI flash + chime)
-{"type": "chime_start", "size": 13230}       // Wake chime audio incoming
-{"type": "chime_end"}                        // Wake chime complete
-{"type": "tts_start", "size": 48000}         // TTS audio incoming
-{"type": "tts_end"}                          // TTS audio complete
-{"type": "state", "state": "listening"}      // idle | listening | processing | speaking
-{"type": "set_theme", "name": "birch"}       // Server-driven theme change
-{"type": "volume_adjust", "step": 0.1}       // Adjust TTS volume
-{"type": "mute_toggle"}                      // Toggle mic mute
-{"type": "mute_query"}                       // Ask current mute state
-{"type": "show_camera", "image": "<b64>", "mime": "image/jpeg",
- "duration_s": 150, "entity_id": "camera.x"}  // Paint snapshot inside the orb
-{"type": "stream_start", "session_id": "...",
- "entity_id": "camera.x"}                    // Begin live WebRTC stream
-{"type": "stream_stop", "session_id": "..."} // End live stream
-{"type": "webrtc_signal", "session_id": "...",
- "kind": "answer"|"candidate", ...}           // SDP/ICE forwarded from HA
-{"type": "play_video", "url": "https://...",
- "loop": false, "muted": false,
- "duration_s": 60}                            // Play HTTP video (MP4/WebM/HLS)
-{"type": "video_stop"}                        // Stop any active HTTP video
-```
-
-**RPi → Server (`/ws/audio`):**
-```jsonc
-// Binary: raw PCM 16-bit LE audio chunks
-{"type": "tts_finished"}                     // RPi finished playing audio
-{"type": "ping"} / {"type": "pong"}          // Keepalive
-{"type": "mute_sync", "muted": true}         // RPi reports mute state change
-{"type": "volume_sync", "level": 0.7}        // RPi reports volume change
-{"type": "ma_volume_adjust", "step": 0.1}    // Forward HID button to MA player
-{"type": "webrtc_signal", "session_id": "...",
- "kind": "offer"|"candidate", ...}            // Kiosk-side SDP/ICE for stream
-```
-
-## Customizing the System Prompt
-
-Edit `server/system_prompt.txt` to change HAL's personality. The file is mounted read-only into the container — no rebuild needed, just restart. Tool definitions are passed to Ollama separately via its native tool-calling API.
-
-## Running Tests
+## Running tests
 
 ```bash
 uv venv .venv && source .venv/bin/activate
@@ -732,7 +258,9 @@ uv pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-All 276 tests run without GPU, ML models, or external services — dependencies (HA WS, MCP servers, TTS, audio devices, runtime config) are fully mocked.
+All tests run without GPU, ML models, or external services — every external dependency (HA WS, MCP servers, TTS, audio devices, runtime config) is mocked.
+
+---
 
 ## License
 
