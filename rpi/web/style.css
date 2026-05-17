@@ -525,9 +525,27 @@ body {
     50%      { opacity: 0.55; transform: scale(1.25); }
 }
 body.ptt-active .ptt-chip { display: flex; }
+
+/* Orb aura while PTT is held. border-radius:50% on the (otherwise
+   square) container makes the box-shadow follow a circle, so the
+   glow reads as a halo around the orb instead of a square frame.
+   Two shadow stops + a slow breathing pulse so the visual feels
+   alive while transmitting, not just decoratively switched on. */
 body.ptt-active .eye-container {
-    box-shadow: 0 0 80px rgba(var(--accent-rgb), 0.4);
-    transition: box-shadow 0.25s ease;
+    border-radius: 50%;
+    animation: ptt-orb-aura 1.8s ease-in-out infinite;
+}
+@keyframes ptt-orb-aura {
+    0%, 100% {
+        box-shadow:
+            0 0 32px rgba(var(--accent-rgb), 0.50),
+            0 0 90px rgba(var(--accent-rgb), 0.22);
+    }
+    50% {
+        box-shadow:
+            0 0 56px rgba(var(--accent-rgb), 0.70),
+            0 0 130px rgba(var(--accent-rgb), 0.32);
+    }
 }
 
 /* === Transcript === */
