@@ -4,6 +4,12 @@ A fully local, always-listening voice assistant that controls your smart home th
 
 No cloud services. No subscriptions. All processing stays on your network.
 
+### Reference docs
+
+* [**API.md**](./API.md) — REST + WebSocket reference (PTT, command, speak, mute, volume, snapshots, themes, `/ws/{ptt,ui,audio}`)
+* [**MQTT.md**](./MQTT.md) — Every subscribed/published MQTT topic, the HA Discovery entity table, automation snippets
+* [**THEMES.md**](./THEMES.md) — Plug-in theme authoring (CSS variables, `effect.js`, manifest)
+
 ## Architecture
 
 ```
@@ -193,6 +199,11 @@ swap. Built-in example: `themes/matrix/effect.js` runs the digital-rain
 canvas animation.
 
 ## Home Assistant Integration
+
+> **Full reference**: [`MQTT.md`](./MQTT.md) lists every topic the
+> bridge subscribes to or publishes, the payload for each, the full
+> HA Discovery entity table, and HA automation snippets. The summary
+> below is the cheat-sheet view.
 
 When `MQTT_BROKER_HOST` is set, HAL appears in HA via auto-discovery as a single device with:
 
