@@ -70,6 +70,27 @@ class AudioPipeline:
         log.info("Initializing speaker filter...")
         self.speaker_filter = SpeakerFilter()
 
+        # Warm-up pass: run one inference through each model on 1 s of
+        # silence so CUDA kernels JIT-compile and cuDNN auto-tunes
+        # BEFORE the first user request lands. Without this, the very
+        # first transcribe/VAD/identify after a server restart pays a
+        # 1-2 s cold-start tax — exactly the symptom users hit when
+        # they fire off a PTT shortly after a deploy.
+        log.info("Warming up STT / VAD / speaker filter...")
+        silence = np.zeros(self._target_rate, dtype=np.float32)
+        await self.transcriber.warm_up()
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(self._vad_executor, self._run_vad, silence)
+            log.info("VAD warm-up complete")
+        except Exception as e:
+            log.warning(f"VAD warm-up failed (non-fatal): {e}")
+        try:
+            self.speaker_filter.identify(silence, self._target_rate)
+            log.info("Speaker filter warm-up complete")
+        except Exception as e:
+            log.warning(f"Speaker filter warm-up failed (non-fatal): {e}")
+
         log.info("Audio pipeline ready.")
 
     def _to_16k_float(self, audio_bytes: bytes) -> np.ndarray:

@@ -32,6 +32,24 @@ class BaseTranscriber(ABC):
     def _transcribe_sync(self, audio: np.ndarray) -> str:
         pass
 
+    async def warm_up(self) -> None:
+        """Run one dummy inference so the model's CUDA kernels are
+        JIT-compiled and cuDNN auto-tuned BEFORE the first real user
+        request. Without this, the first transcribe call after a server
+        restart pays a 1-2 s setup tax. We pay it here at startup
+        instead, where nobody is waiting."""
+        log.info(f"{self.__class__.__name__}: warming up model")
+        silence = np.zeros(16000, dtype=np.float32)  # 1 s of silence at 16 kHz
+        try:
+            loop = asyncio.get_event_loop()
+            await asyncio.wait_for(
+                loop.run_in_executor(self._executor, self._transcribe_sync, silence),
+                timeout=60.0,
+            )
+            log.info(f"{self.__class__.__name__}: warm-up complete")
+        except Exception as e:
+            log.warning(f"{self.__class__.__name__}: warm-up failed (non-fatal): {e}")
+
     def _reload_model(self):
         """Override in subclasses to reload the STT model."""
         pass
