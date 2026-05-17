@@ -91,6 +91,15 @@ class AudioPipeline:
         except Exception as e:
             log.warning(f"Speaker filter warm-up failed (non-fatal): {e}")
 
+        # Tell the self-healing reload timer that we just had a
+        # "successful transcription" (the warm-up). Otherwise the
+        # 5-minute "no successful transcription" check fires at the
+        # next PTT — model gets reloaded right as the user is trying
+        # to talk, costing them another ~2 s of cold start.
+        now = time.monotonic()
+        self._last_successful_transcription = now
+        self._last_vad_reset = now
+
         log.info("Audio pipeline ready.")
 
     def _to_16k_float(self, audio_bytes: bytes) -> np.ndarray:
