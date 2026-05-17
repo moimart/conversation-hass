@@ -765,20 +765,26 @@ async def apply_theme(state: AppState, theme: str) -> bool:
 _VALID_CAL_VIEWS = ("month", "week", "day")
 
 
-def _calendar_range(view: str, now: "datetime | None" = None) -> "tuple[datetime, datetime]":
+def _calendar_range(view: str, anchor: "datetime | None" = None) -> "tuple[datetime, datetime]":
     """Return (start, end) UTC datetimes covering the requested view.
 
-    month: first → last day of the current month
-    week:  Monday → Sunday end-of-day of the current week
-    day:   today 00:00 → tomorrow 00:00
+    `anchor` is the date the user wants to land on. Defaults to today (UTC).
+    For "tomorrow's calendar", the caller passes tomorrow's date; this
+    function then computes the day/week/month that contains it.
+
+    * `day`:   anchor 00:00 → anchor+1 day 00:00 (just that day)
+    * `week`:  Monday of anchor's week → following Monday
+    * `month`: first of anchor's month → first of next month
     """
     from datetime import datetime, timedelta, timezone
-    now = now or datetime.now(timezone.utc)
+    now = anchor or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     if view == "day":
         return today, today + timedelta(days=1)
     if view == "week":
-        # ISO weekday: Mon=1, Sun=7
+        # ISO weekday: Mon=0 .. Sun=6
         start = today - timedelta(days=today.weekday())
         return start, start + timedelta(days=7)
     # month — first to first-of-next-month
@@ -790,16 +796,44 @@ def _calendar_range(view: str, now: "datetime | None" = None) -> "tuple[datetime
     return first, next_first
 
 
+def _parse_anchor_date(s: str) -> "datetime | None":
+    """Parse the LLM's / MQTT's `anchor_date` string into a UTC datetime.
+
+    Accepts:
+      * ISO date            "2026-05-18"
+      * ISO datetime        "2026-05-18T00:00:00"
+      * Short ISO datetime  "2026-05-18T15:30"
+
+    Returns None on empty/unparseable input — callers should fall back to
+    today() when None.
+    """
+    from datetime import datetime, timezone
+    s = (s or "").strip()
+    if not s:
+        return None
+    try:
+        d = datetime.fromisoformat(s)
+    except ValueError:
+        log.warning(f"_parse_anchor_date: unparseable {s!r}, falling back to today")
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d
+
+
 async def _show_calendar(
     state: AppState,
     view: str = "month",
     calendar_name: str = "",
     duration_s: int | None = None,
+    anchor_date: str = "",
 ) -> dict:
     """Resolve calendar(s), fetch events, push show_calendar to kiosk + UI clients.
 
     Returns the same payload that was pushed (useful for tests / LLM tool reply).
     `calendar_name` empty / no match → merged view of all HA calendars.
+    `anchor_date` empty → today; otherwise ISO date string (see
+    `_parse_anchor_date`) to show a specific day/week/month.
     """
     view = (view or "month").lower().strip()
     if view not in _VALID_CAL_VIEWS:
@@ -816,7 +850,8 @@ async def _show_calendar(
     available = await list_calendars()
     chosen = resolve_calendars(name_query or None, available)
 
-    start, end = _calendar_range(view)
+    anchor = _parse_anchor_date(anchor_date)
+    start, end = _calendar_range(view, anchor)
     events = await fetch_calendar_events([c["entity_id"] for c in chosen], start, end)
 
     if not chosen:
@@ -1332,24 +1367,53 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         if view not in _VALID_CAL_VIEWS:
             return f"view must be one of {_VALID_CAL_VIEWS}"
         calendar_name = (args.get("calendar_name") or "").strip()
+        anchor_date = (args.get("anchor_date") or "").strip()
         duration_s = args.get("duration_s")
         try:
             duration_s = int(duration_s) if duration_s is not None else None
         except (TypeError, ValueError):
             duration_s = None
-        payload = await _show_calendar(state, view=view, calendar_name=calendar_name, duration_s=duration_s)
+        payload = await _show_calendar(
+            state,
+            view=view,
+            calendar_name=calendar_name,
+            duration_s=duration_s,
+            anchor_date=anchor_date,
+        )
         n = len(payload.get("events") or [])
         src = payload.get("source_label") or "all calendars"
-        return f"Showing {view} calendar from {src} ({n} events) for {payload['duration_s']}s"
+        return f"Showing {view} calendar from {src} for {payload.get('title','?')} ({n} events, {payload['duration_s']}s)"
 
     tools.register(
         "show_calendar",
-        "Display a full-screen calendar overlay on the kiosk (month, week, or day view) and pull events from Home Assistant. Use when the user asks to 'show me my <name> calendar', 'show the calendar', 'what's on this week', etc. Pass calendar_name with the source name (e.g. 'Family', 'Work') — partial / case-insensitive match against HA calendar entities. Empty calendar_name shows all calendars merged. The overlay rotates back to the orb after duration_s (default from runtime_config) and is preempted by show_camera/show_image/play_video/stream_camera.",
+        (
+            "Display a full-screen calendar overlay on the kiosk (month, week, or "
+            "day view) and pull events from Home Assistant. "
+            "Use when the user asks 'show me my <name> calendar', 'show the calendar', "
+            "'what's on this week', 'show me tomorrow's calendar', "
+            "'show me my Family calendar for next Friday', 'what does May 25 look "
+            "like', 'show last Monday', etc. "
+            "Pass `calendar_name` with the source name (e.g. 'Family', 'Work') — "
+            "partial / case-insensitive match against HA calendar entities. "
+            "Empty `calendar_name` shows all calendars merged. "
+            "Pass `anchor_date` as an ISO date string (YYYY-MM-DD) when the user "
+            "names a specific day, week, or month other than today — e.g. for "
+            "'tomorrow' compute tomorrow's date from the current date in your "
+            "system prompt; for 'next Friday' or 'May 25' compute the absolute "
+            "date. With view=day, the overlay shows that single day; with "
+            "view=week, the Mon-Sun week containing that date; with view=month, "
+            "the whole month containing that date. Omit `anchor_date` for "
+            "today / this week / this month. "
+            "The overlay rotates back to the orb after duration_s (default from "
+            "runtime_config) and is preempted by show_camera / show_image / "
+            "play_video / stream_camera."
+        ),
         {
             "type": "object",
             "properties": {
                 "view": {"type": "string", "enum": list(_VALID_CAL_VIEWS), "default": "month", "description": "Calendar view"},
                 "calendar_name": {"type": "string", "description": "Optional source calendar name. Empty = merge all HA calendars."},
+                "anchor_date": {"type": "string", "description": "Optional ISO date (YYYY-MM-DD) to anchor a specific day/week/month instead of today. Use this for 'tomorrow', 'next Friday', 'May 25', 'last week', etc."},
                 "duration_s": {"type": "integer", "minimum": 5, "maximum": 600, "description": "How long to show before auto-dismissing"},
             },
         },
@@ -1826,6 +1890,7 @@ async def lifespan(app: FastAPI):
         async def _mqtt_calendar_show(args: dict):
             view = (args.get("view") or "month").lower()
             calendar_name = (args.get("calendar_name") or "").strip()
+            anchor_date = (args.get("anchor_date") or "").strip()
             duration_s = args.get("duration_s")
             try:
                 duration_s = int(duration_s) if duration_s is not None else None
@@ -1836,6 +1901,7 @@ async def lifespan(app: FastAPI):
                 view=view,
                 calendar_name=calendar_name,
                 duration_s=duration_s,
+                anchor_date=anchor_date,
             )
 
         async def _mqtt_calendar_hide():

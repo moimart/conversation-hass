@@ -137,7 +137,7 @@ HA discovery buttons) works.
 
 | Topic | Payload | Effect |
 |---|---|---|
-| `<base>/calendar/show/set` | Several forms:<br>• `month` / `week` / `day` (bare string)<br>• Calendar name (bare string)<br>• JSON `{"view": "...", "calendar_name": "...", "duration_s": N}` | Show the calendar overlay. Empty/no-match `calendar_name` = merge all HA calendars. |
+| `<base>/calendar/show/set` | Several forms:<br>• `month` / `week` / `day` (bare string)<br>• Calendar name (bare string)<br>• JSON `{"view": "...", "calendar_name": "...", "anchor_date": "YYYY-MM-DD", "duration_s": N}` | Show the calendar overlay. Empty/no-match `calendar_name` = merge all HA calendars. Optional `anchor_date` (ISO `YYYY-MM-DD`) anchors a specific day/week/month — omit for today. |
 | `<base>/calendar/hide/set` | (any) | Dismiss the overlay early. |
 
 ### Live runtime config
@@ -356,6 +356,23 @@ remote that emits `action: "hold"` and `action: "release"`:
         topic: hal/hal-default/calendar/show/set
         payload: >-
           {"view": "day", "calendar_name": "Family", "duration_s": 60}
+```
+
+### Show tomorrow's calendar at bedtime
+
+```yaml
+- alias: Bedtime preview
+  triggers:
+    - trigger: time
+      at: "22:30:00"
+  actions:
+    - action: mqtt.publish
+      data:
+        topic: hal/hal-default/calendar/show/set
+        payload: >-
+          {"view": "day", "calendar_name": "Family",
+           "anchor_date": "{{ (now() + timedelta(days=1)) | as_timestamp | timestamp_custom('%Y-%m-%d') }}",
+           "duration_s": 45}
 ```
 
 ---
