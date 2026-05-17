@@ -1,140 +1,110 @@
-/* Material You effect — a slow lava-lamp drift of five soft blobs
-   in the Google brand colours (blue, red, yellow, green, plus an
-   extra light-blue). The canvas itself gets a heavy CSS blur so
-   the blobs blend into ambient washes rather than crisp shapes,
-   which is the lava-lamp look but classy enough not to fight the
-   birch-wood-and-white-furniture room aesthetic the theme targets.
-
-   Motion: each blob has a slow velocity perturbed by small random
-   forces each frame, soft-bounce containment at the edges, and a
-   sinusoidal size breathing so it swells and shrinks like real
-   lava. Average crossing time is ~30-45 s; nothing snaps. */
+/* Material You effect — RPi-friendly lava-lamp drift.
+   ---------------------------------------------------
+   Five soft Google-colour blobs gently drift across the screen on
+   their own slow paths. Implemented as plain <div> elements with a
+   radial-gradient background (the gradient does the soft falloff, so
+   no expensive CSS filter:blur is needed) and animated via the Web
+   Animations API. Keyframes are compiled once and the transform
+   interpolation runs on the compositor thread — there's no JS per
+   frame and no per-frame canvas redraw, which is what makes the
+   canvas version painful on a Raspberry Pi. */
 
 export default function setup({ root }) {
-    const canvas = root.ownerDocument.createElement("canvas");
-    canvas.id = "matyou-fx";
-    Object.assign(canvas.style, {
+    const doc = root.ownerDocument;
+
+    const container = doc.createElement("div");
+    container.id = "matyou-fx";
+    Object.assign(container.style, {
         position: "fixed",
         inset: "0",
-        width: "100vw",
-        height: "100vh",
         zIndex: "0",
         pointerEvents: "none",
         opacity: "0",
         transition: "opacity 1.2s ease",
-        filter: "blur(32px)",
+        overflow: "hidden",
+        // Tell the browser this subtree is independent — prevents
+        // layout/paint from rippling into the rest of the page.
+        contain: "layout paint",
     });
-    root.appendChild(canvas);
-    const ctx = canvas.getContext("2d");
+    root.appendChild(container);
 
-    // Google brand palette. Alpha pushed near-full at the core so the
-    // wash stays visible after the CSS blur diffuses it across ~32 px,
-    // even when sitting on the theme's warm off-white surface.
-    const COLORS = [
-        { core: "rgba( 66, 133, 244, 0.95)", mid: "rgba( 66, 133, 244, 0.32)" },  // Google Blue
-        { core: "rgba(234,  67,  53, 0.88)", mid: "rgba(234,  67,  53, 0.28)" },  // Google Red
-        { core: "rgba(251, 188,   4, 0.88)", mid: "rgba(251, 188,   4, 0.28)" },  // Google Yellow
-        { core: "rgba( 52, 168,  83, 0.88)", mid: "rgba( 52, 168,  83, 0.28)" },  // Google Green
-        { core: "rgba(132, 168, 235, 0.80)", mid: "rgba(132, 168, 235, 0.24)" },  // Soft secondary blue
+    // Google brand palette plus one soft secondary blue. Each blob
+    // gets its own slow loop with an irregular 4-step path and its
+    // own period so the wash never lines up periodically across the
+    // group — the eye never sees the loop.
+    const RECIPES = [
+        // [r, g, b], coreAlpha, size(vmin), durationSec, path([x%, y%] of viewport, last == first to close the loop)
+        { rgb: "66, 133, 244",  a: 0.75, size: 64, dur: 71, path: [[10, 20], [75,  8], [55, 70], [-8, 62], [10, 20]] },  // Blue
+        { rgb: "234,  67,  53", a: 0.62, size: 58, dur: 83, path: [[78, 22], [22, 78], [70, 92], [96, 38], [78, 22]] },  // Red
+        { rgb: "251, 188,   4", a: 0.62, size: 60, dur: 67, path: [[42, 86], [88, 50], [12, 30], [52,  4], [42, 86]] },  // Yellow
+        { rgb: " 52, 168,  83", a: 0.62, size: 62, dur: 79, path: [[25, 52], [62, 86], [82, 18], [ 8, 28], [25, 52]] },  // Green
+        { rgb: "132, 168, 235", a: 0.50, size: 52, dur: 91, path: [[58, 42], [12, 60], [42, 92], [86, 70], [58, 42]] },  // Soft secondary blue
     ];
 
-    let blobs = [];
-    let raf = null;
-    let onResize = null;
-    let lastFrame = 0;
+    const anims = [];
 
-    function resize() {
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
+    for (const r of RECIPES) {
+        const blob = doc.createElement("div");
+        Object.assign(blob.style, {
+            position: "absolute",
+            left: "0",
+            top: "0",
+            width: r.size + "vmin",
+            height: r.size + "vmin",
+            borderRadius: "50%",
+            // The gradient drops to fully transparent at 68% of the
+            // radius — that's what gives the soft lava edge without
+            // needing a CSS blur on top.
+            background:
+                "radial-gradient(circle at 50% 50%, " +
+                `rgba(${r.rgb}, ${r.a}) 0%, ` +
+                `rgba(${r.rgb}, ${(r.a * 0.32).toFixed(3)}) 38%, ` +
+                `rgba(${r.rgb}, 0) 68%)`,
+            // Initial position via translate so the WAAPI keyframes
+            // are pure transform updates (compositor-only).
+            transform: "translate3d(0, 0, 0)",
+            willChange: "transform",
+        });
+        container.appendChild(blob);
 
-    function rand(min, max) { return min + Math.random() * (max - min); }
-
-    function spawn() {
-        const w = window.innerWidth, h = window.innerHeight;
-        // Blob radius scales with the smaller viewport dimension so
-        // the wash looks proportional on both a kiosk and a phone.
-        const base = Math.min(w, h);
-        blobs = COLORS.map((c) => ({
-            x: rand(0, w),
-            y: rand(0, h),
-            vx: rand(-8, 8),                       // px/sec — very slow
-            vy: rand(-8, 8),
-            r: rand(base * 0.22, base * 0.38),     // tighter blobs — show more colour
-            phase: rand(0, Math.PI * 2),
-            color: c,
+        // Build absolute-positioned keyframes. The blob's top/left
+        // are 0; we move it with a translate by (x% of vw, y% of vh)
+        // minus half the blob size so its CENTRE lands on the path
+        // point.
+        const half = r.size / 2;
+        const keyframes = r.path.map(([x, y]) => ({
+            transform: `translate3d(calc(${x}vw - ${half}vmin), calc(${y}vh - ${half}vmin), 0)`,
         }));
+        anims.push({ blob, keyframes, dur: r.dur, ctrl: null });
     }
 
-    function tick(now) {
-        if (raf === null) return;
-        const dt = Math.min(0.1, (now - (lastFrame || now)) / 1000);  // clamp huge frame gaps
-        lastFrame = now;
-        const w = window.innerWidth, h = window.innerHeight;
-        ctx.clearRect(0, 0, w, h);
-
-        for (const b of blobs) {
-            // Tiny random perturbation each frame so the motion never
-            // feels mechanical or quite periodic.
-            b.vx += rand(-2.5, 2.5) * dt;
-            b.vy += rand(-2.5, 2.5) * dt;
-
-            // Soft speed cap — keeps everything lava-slow.
-            const speed = Math.hypot(b.vx, b.vy);
-            const maxV = 14;
-            if (speed > maxV) { b.vx *= maxV / speed; b.vy *= maxV / speed; }
-
-            b.x += b.vx * dt;
-            b.y += b.vy * dt;
-
-            // Soft containment: allow the blob to extend a bit off-screen
-            // (the blur smears it nicely off the edge), then push it
-            // back in. Damping the bounce stops jitter at corners.
-            const margin = b.r * 0.4;
-            if (b.x < -margin) { b.x = -margin; b.vx = Math.abs(b.vx) * 0.9; }
-            if (b.x > w + margin) { b.x = w + margin; b.vx = -Math.abs(b.vx) * 0.9; }
-            if (b.y < -margin) { b.y = -margin; b.vy = Math.abs(b.vy) * 0.9; }
-            if (b.y > h + margin) { b.y = h + margin; b.vy = -Math.abs(b.vy) * 0.9; }
-
-            // Size "breathing" — ±12% over ~14 s, phase-offset per blob.
-            const r = b.r * (1 + 0.12 * Math.sin(now * 0.00045 + b.phase));
-
-            const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
-            g.addColorStop(0, b.color.core);
-            g.addColorStop(0.55, b.color.mid);
-            g.addColorStop(1, "rgba(0, 0, 0, 0)");
-            ctx.fillStyle = g;
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        raf = requestAnimationFrame(tick);
-    }
+    let started = false;
 
     return {
         start() {
-            if (raf !== null) return;
-            resize();
-            onResize = () => resize();
-            window.addEventListener("resize", onResize);
-            spawn();
-            requestAnimationFrame(() => { canvas.style.opacity = "0.9"; });
-            lastFrame = performance.now();
-            raf = requestAnimationFrame(tick);
+            if (started) return;
+            started = true;
+            for (const a of anims) {
+                a.ctrl = a.blob.animate(a.keyframes, {
+                    duration: a.dur * 1000,
+                    iterations: Infinity,
+                    easing: "ease-in-out",
+                });
+            }
+            // Defer the fade-in by a frame so the animations have
+            // already placed the blobs at frame 0 — avoids a flash
+            // of all blobs at (0,0) before the WAAPI ticks.
+            requestAnimationFrame(() => {
+                container.style.opacity = "0.95";
+            });
         },
         stop() {
-            if (raf !== null) cancelAnimationFrame(raf);
-            raf = null;
-            if (onResize) {
-                window.removeEventListener("resize", onResize);
-                onResize = null;
+            for (const a of anims) {
+                try { a.ctrl && a.ctrl.cancel(); } catch (_) { /* ignore */ }
+                a.ctrl = null;
             }
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            canvas.style.opacity = "0";
-            blobs = [];
+            container.style.opacity = "0";
+            started = false;
         },
     };
 }
