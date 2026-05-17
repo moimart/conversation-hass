@@ -1,0 +1,8 @@
+{
+    "name": "material_you",
+    "display_name": "Material You — Sunlit Birch",
+    "description": "Material You light theme tuned for birch wood countertops and white furniture, with a slow lava-lamp drift of Google brand colors in the background.",
+    "version": "1.0.0",
+    "kind": "light",
+    "effect": "effect.js"
+}

@@ -1,0 +1,79 @@
+/* MATERIAL YOU — Sunlit Birch
+   ---------------------------
+   A light theme tuned to birch-wood countertops and white furniture
+   (Japandi-adjacent room palette), but treated with Material 3
+   tonal logic: warm off-white surfaces, a saturated Google-blue
+   primary, and supporting accents drawn from the rest of the Google
+   brand palette. The lava-lamp background effect uses those four
+   brand colours; the theme variables tie everything together so the
+   orb chrome, status indicators, and overlays all read as "Material
+   You" rather than "generic light". */
+body.theme-material_you {
+    /* Surfaces — warm off-white, like raw birch under morning light. */
+    --bg: #F5EFE3;
+    --surface: #FBF7EC;
+    --border: #E6DDCB;
+    --text: #1F1C16;
+    --text-dim: #6E665A;
+
+    /* Primary = Google Blue (#4285F4). Glow = a softer ML-display blue,
+       deep = the M3 P40 darker tone for emphasis. */
+    --accent: #4285F4;
+    --accent-rgb: 66, 133, 244;
+    --accent-glow: #6FA4FF;
+    --accent-glow-rgb: 111, 164, 255;
+    --accent-deep: #1A56C9;
+
+    /* Secondary tones from the Google palette. Warm = Red, Success = Green. */
+    --accent-warm: #EA4335;
+    --accent-warm-rgb: 234, 67, 53;
+    --success: #34A853;
+
+    /* Orb "speaking" state — warm-white core that picks up a soft
+       Material You blue tint outward. */
+    --speak-core-1: rgba(255, 252, 245, 0.95);
+    --speak-core-2: rgba(225, 235, 255, 0.85);
+    --speak-pupil: rgba(40, 60, 120, 0.55);
+    --speak-pupil-2: rgba(40, 60, 120, 0.18);
+    --speak-reflection: rgba(255, 255, 255, 0.65);
+    --speak-glow: rgba(66, 133, 244, 0.18);
+
+    /* Bezel — looks like brushed warm aluminium, classy and architectural. */
+    --bezel-1: #9E9486;
+    --bezel-2: #C4BAA8;
+    --bezel-3: #DFD6C5;
+    --bezel-4: #F2EBDC;
+    /* Cavity stays dark across themes — the lens sits in a deep recess. */
+    --bezel-inner: #15110B;
+    --bezel-inner-edge: #2C2418;
+    --bezel-shadow: rgba(40, 35, 25, 0.22);
+    --lens-rim: #000000;
+
+    /* Iris tied to the Google-blue primary, with the M3 P40 dark blue
+       at the deep stop so the eye reads as Material You at a glance. */
+    --core-deep-stop: #1A56C9;
+    --core-shadow: rgba(20, 30, 60, 0.35);
+    --core-shadow-deep: rgba(0, 0, 0, 0.7);
+    --iris-highlight: rgba(132, 195, 255, 0.45);
+    --pupil-1: rgba(20, 35, 80, 0.55);
+    --pupil-2: rgba(20, 35, 80, 0.25);
+    --reflection: rgba(255, 255, 255, 0.55);
+
+    /* Ambient — very subtle blue radial glow over a near-invisible
+       grid. The lava-lamp effect provides the real colour wash; the
+       grid is just structural backing. */
+    --scan-line: rgba(66, 133, 244, 0.18);
+    --grid-line: rgba(66, 133, 244, 0.012);
+    --ambient-radial: rgba(66, 133, 244, 0.05);
+
+    --status-speak: #4285F4;
+    --status-speak-glow: rgba(66, 133, 244, 0.55);
+    --vol-hover-bg: rgba(66, 133, 244, 0.08);
+}
+
+/* During "processing" the dark themes do a red-pulse on the core;
+   the lighter themes do a gentler warm pulse instead. Material You
+   shares the warm pulse with birch/japandi/odyssey. */
+body.theme-material_you.state-processing .eye-core {
+    animation: core-warm-pulse 2.4s ease-in-out infinite alternate;
+}
