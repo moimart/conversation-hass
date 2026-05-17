@@ -87,6 +87,11 @@ class MQTTBridge:
         # Calendar runtime-config callbacks (default source name + dismiss timeout).
         self.on_config_calendar_default_source: Callable[[str], Awaitable[None]] | None = None
         self.on_config_calendar_dismiss_seconds: Callable[[int], Awaitable[None]] | None = None
+        # "Start muted" config — whether HAL's mic should be muted on
+        # RPi connect / server boot. The current mute state still
+        # flows through the existing mute switch; this is just the
+        # boot-time default.
+        self.on_config_start_muted: Callable[[bool], Awaitable[None]] | None = None
         # Lists populated by main.py at startup so the select entities
         # advertise the right options. Empty lists publish a "none found"
         # placeholder so the entity still appears in HA.
@@ -119,6 +124,7 @@ class MQTTBridge:
         # Calendar config caches
         self._cached_config_calendar_default_source: str = ""
         self._cached_config_calendar_dismiss_seconds: int = 30
+        self._cached_config_start_muted: bool = False
 
     @property
     def connected(self) -> bool:
@@ -511,6 +517,24 @@ class MQTTBridge:
                 "entity_category": "config",
             },
         ))
+        # Start-muted default — switch under the Configuration section.
+        # When ON, every time the RPi audio_streamer connects the
+        # server pushes a mute_set so it boots muted.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_start_muted/config",
+            {
+                "name": "Start Muted",
+                "unique_id": f"{self.device_id}_config_start_muted",
+                "state_topic":   f"{self.base}/config/start_muted/state",
+                "command_topic": f"{self.base}/config/start_muted/set",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "icon": "mdi:microphone-off",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
         configs.append((
             f"{DISCOVERY_PREFIX}/number/{self.device_id}/config_calendar_dismiss_seconds/config",
             {
@@ -609,6 +633,7 @@ class MQTTBridge:
                     await self.publish_config_calendar_dismiss_seconds(
                         self._cached_config_calendar_dismiss_seconds
                     )
+                    await self.publish_config_start_muted(self._cached_config_start_muted)
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -630,6 +655,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/calendar/hide/set")
                     await client.subscribe(f"{self.base}/config/calendar_default_source/set")
                     await client.subscribe(f"{self.base}/config/calendar_dismiss_seconds/set")
+                    await client.subscribe(f"{self.base}/config/start_muted/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -769,6 +795,10 @@ class MQTTBridge:
                     seconds = max(5, min(600, seconds))
                     await self.on_config_calendar_dismiss_seconds(seconds)
 
+            elif topic == f"{self.base}/config/start_muted/set":
+                if self.on_config_start_muted:
+                    await self.on_config_start_muted(payload.strip().upper() == "ON")
+
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")
 
@@ -888,4 +918,11 @@ class MQTTBridge:
         await self._safe_publish(
             f"{self.base}/config/calendar_dismiss_seconds/state",
             str(v),
+        )
+
+    async def publish_config_start_muted(self, value: bool):
+        self._cached_config_start_muted = bool(value)
+        await self._safe_publish(
+            f"{self.base}/config/start_muted/state",
+            "ON" if value else "OFF",
         )

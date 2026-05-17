@@ -1816,6 +1816,9 @@ async def lifespan(app: FastAPI):
         bridge._cached_config_calendar_dismiss_seconds = int(
             state.runtime_config.get("calendar_dismiss_seconds", 30) or 30
         )
+        bridge._cached_config_start_muted = bool(
+            state.runtime_config.get("start_muted", False)
+        )
 
         async def _mqtt_calendar_show(args: dict):
             view = (args.get("view") or "month").lower()
@@ -1848,6 +1851,19 @@ async def lifespan(app: FastAPI):
             await _persist("calendar_dismiss_seconds", seconds)
             await bridge.publish_config_calendar_dismiss_seconds(seconds)
 
+        async def _cfg_start_muted(enabled: bool):
+            await _persist("start_muted", bool(enabled))
+            await bridge.publish_config_start_muted(bool(enabled))
+            # Apply right now too: push the desired state to the RPi if
+            # connected, so flipping the HA switch takes effect without
+            # waiting for the next reconnect.
+            ws = state.audio_websocket
+            if ws:
+                try:
+                    await ws.send_json({"type": "mute_set", "muted": bool(enabled)})
+                except Exception as e:
+                    log.warning(f"start_muted: could not push mute_set to RPi: {e}")
+
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
         bridge.on_theme_set = _mqtt_theme
@@ -1867,6 +1883,7 @@ async def lifespan(app: FastAPI):
         bridge.on_calendar_hide = _mqtt_calendar_hide
         bridge.on_config_calendar_default_source = _cfg_calendar_default_source
         bridge.on_config_calendar_dismiss_seconds = _cfg_calendar_dismiss_seconds
+        bridge.on_config_start_muted = _cfg_start_muted
 
         await bridge.start()
         state.mqtt_bridge = bridge
@@ -1927,6 +1944,16 @@ async def audio_endpoint(websocket: WebSocket):
     await websocket.accept()
     state.audio_websocket = websocket
     log.info("Audio client connected")
+
+    # Push the configured "start muted" state so a freshly-booted
+    # audio_streamer (which always inits mic_muted=False) lands in the
+    # state the user configured rather than always unmuted.
+    try:
+        start_muted = bool(state.runtime_config.get("start_muted", False))
+        await websocket.send_json({"type": "mute_set", "muted": start_muted})
+        log.info(f"Pushed initial mute state to RPi: {start_muted}")
+    except Exception as e:
+        log.warning(f"Could not push initial mute state to RPi: {e}")
 
     async def on_wake_word():
         """Callback: play chime on RPi and flash the UI."""

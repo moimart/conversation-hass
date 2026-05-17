@@ -372,6 +372,18 @@ class AudioManager:
             await self.broadcast_to_ui({"type": "mute_sync", "muted": self.mic_muted})
             await ws.send(json.dumps({"type": "mute_sync", "muted": self.mic_muted}))
 
+        elif msg_type == "mute_set":
+            # Idempotent setter — server uses this to push the desired
+            # mic state (e.g. start_muted on RPi connect) without
+            # depending on whatever transient toggle state the RPi
+            # happened to have. Only logs / re-broadcasts if it changed.
+            desired = bool(msg.get("muted", False))
+            if self.mic_muted != desired:
+                self.mic_muted = desired
+                log.info(f"Mic {'muted' if self.mic_muted else 'unmuted'} (via mute_set)")
+            await self.broadcast_to_ui({"type": "mute_sync", "muted": self.mic_muted})
+            await ws.send(json.dumps({"type": "mute_sync", "muted": self.mic_muted}))
+
         elif msg_type == "mute_query":
             await ws.send(json.dumps({"type": "mute_sync", "muted": self.mic_muted}))
 
