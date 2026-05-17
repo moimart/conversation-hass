@@ -68,6 +68,12 @@ class ConversationManager:
         self._command_buffer: list[str] = []
         self._wake_detected = False
         self._last_text_time = 0.0
+        # True while a Push-to-Talk session owns the audio path. Set/cleared
+        # exclusively from server/app/ptt.py. The wake-word + on_silence
+        # path doesn't actually need this flag (it reuses _wake_detected),
+        # but exposing it makes the LLM-side logging and any future
+        # ptt-aware behaviour explicit.
+        self.ptt_active: bool = False
 
         # Follow-up: when the LLM asks a question, stay in listening mode
         # so the user can answer without repeating the wake word

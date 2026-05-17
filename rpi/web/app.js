@@ -274,6 +274,13 @@
                     calendarController.dismiss("explicit").catch(() => {});
                 }
                 break;
+            case "ptt_active":
+                // Hint-only: flip a body class so the PTT chip + orb
+                // glow show up. The server-side PTT trigger is owned
+                // by an external app/hardware/HA — there's no kiosk
+                // input for it.
+                document.body.classList.toggle("ptt-active", !!msg.active);
+                break;
             default:
                 console.log("Unknown message:", msg);
         }

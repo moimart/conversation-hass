@@ -87,6 +87,12 @@ class MQTTBridge:
         # Calendar runtime-config callbacks (default source name + dismiss timeout).
         self.on_config_calendar_default_source: Callable[[str], Awaitable[None]] | None = None
         self.on_config_calendar_dismiss_seconds: Callable[[int], Awaitable[None]] | None = None
+        # Push-to-Talk callbacks. Bare-trigger topics (payload ignored):
+        # `start` opens a PTT session, `end` closes it (runs the LLM),
+        # `cancel` closes it AND discards the captured audio.
+        self.on_ptt_start: Callable[[], Awaitable[None]] | None = None
+        self.on_ptt_end: Callable[[], Awaitable[None]] | None = None
+        self.on_ptt_cancel: Callable[[], Awaitable[None]] | None = None
         # "Start muted" config — whether HAL's mic should be muted on
         # RPi connect / server boot. The current mute state still
         # flows through the existing mute switch; this is just the
@@ -553,6 +559,29 @@ class MQTTBridge:
             },
         ))
 
+        # Push-to-Talk: three button entities under the device's
+        # Configuration section. HA dashboards, automations, and
+        # Zigbee/Z-Wave remotes routed through HA can press them.
+        # Triggers are bare — payload is ignored on the server side.
+        for action, label, icon in (
+            ("start",  "PTT Start",  "mdi:microphone"),
+            ("end",    "PTT End",    "mdi:microphone-off"),
+            ("cancel", "PTT Cancel", "mdi:microphone-question"),
+        ):
+            configs.append((
+                f"{DISCOVERY_PREFIX}/button/{self.device_id}/ptt_{action}/config",
+                {
+                    "name": label,
+                    "unique_id": f"{self.device_id}_ptt_{action}",
+                    "command_topic": f"{self.base}/ptt/{action}",
+                    "payload_press": "PRESS",
+                    "icon": icon,
+                    "availability": avail,
+                    "device": device,
+                    "entity_category": "config",
+                },
+            ))
+
         return configs
 
     async def start(self):
@@ -656,6 +685,9 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/config/calendar_default_source/set")
                     await client.subscribe(f"{self.base}/config/calendar_dismiss_seconds/set")
                     await client.subscribe(f"{self.base}/config/start_muted/set")
+                    await client.subscribe(f"{self.base}/ptt/start")
+                    await client.subscribe(f"{self.base}/ptt/end")
+                    await client.subscribe(f"{self.base}/ptt/cancel")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -798,6 +830,18 @@ class MQTTBridge:
             elif topic == f"{self.base}/config/start_muted/set":
                 if self.on_config_start_muted:
                     await self.on_config_start_muted(payload.strip().upper() == "ON")
+
+            elif topic == f"{self.base}/ptt/start":
+                if self.on_ptt_start:
+                    await self.on_ptt_start()
+
+            elif topic == f"{self.base}/ptt/end":
+                if self.on_ptt_end:
+                    await self.on_ptt_end()
+
+            elif topic == f"{self.base}/ptt/cancel":
+                if self.on_ptt_cancel:
+                    await self.on_ptt_cancel()
 
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")

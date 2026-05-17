@@ -490,6 +490,46 @@ body {
     transition: color 0.3s;
 }
 
+/* === PTT hint chip ===
+   Hidden until the server flips body.ptt-active. Lives just under the
+   status-bar so the chip and the status dot read together. The orb
+   also picks up an accent-tinted glow so the room can tell at a glance
+   that a Push-to-Talk session is live (vs a regular wake-word listen). */
+.ptt-chip {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 12px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(var(--accent-rgb), 0.12);
+    border: 1px solid rgba(var(--accent-rgb), 0.35);
+    box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.25);
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    user-select: none;
+}
+.ptt-chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.8);
+    animation: ptt-pulse 1.1s ease-in-out infinite;
+}
+@keyframes ptt-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.55; transform: scale(1.25); }
+}
+body.ptt-active .ptt-chip { display: flex; }
+body.ptt-active .eye-container {
+    box-shadow: 0 0 80px rgba(var(--accent-rgb), 0.4);
+    transition: box-shadow 0.25s ease;
+}
+
 /* === Transcript === */
 .transcript-container {
     width: min(600px, 90vw);

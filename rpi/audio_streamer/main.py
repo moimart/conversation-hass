@@ -68,6 +68,11 @@ class AudioManager:
         self.tts_playing: bool = False
         self.tts_volume: float = 0.7
         self.mic_muted: bool = False
+        # Set by a `tts_cancel` message from the server (Push-to-Talk
+        # interrupts in-flight TTS). The inner write loop in
+        # _play_tts_audio_once checks this between chunks and bails out
+        # cleanly. Cleared at the start of every play_tts_audio call.
+        self._tts_cancel_flag: bool = False
 
         # TTS receive buffers
         self.tts_buffer = bytearray()
@@ -244,6 +249,9 @@ class AudioManager:
         is the main symptom users hit: TTS bytes arrive fine but the
         speaker is silent until the container is manually restarted."""
         self.tts_playing = True
+        # Fresh playback: clear any cancel flag that might have been left
+        # set from a previous cancelled session.
+        self._tts_cancel_flag = False
         try:
             try:
                 await self._play_tts_audio_once(audio_data)
@@ -256,6 +264,7 @@ class AudioManager:
                     log.error(f"TTS playback retry also failed: {e2}")
         finally:
             self.tts_playing = False
+            self._tts_cancel_flag = False
 
     def _reset_pyaudio(self):
         """Terminate the current PyAudio instance and re-init. Forces a
@@ -308,6 +317,9 @@ class AudioManager:
         try:
             chunk = 4096
             for i in range(0, len(frames), chunk):
+                if self._tts_cancel_flag:
+                    log.info("TTS playback cancelled mid-stream (likely PTT interrupt)")
+                    break
                 stream.write(frames[i : i + chunk])
                 await asyncio.sleep(0)
         finally:
@@ -359,6 +371,23 @@ class AudioManager:
             await self.broadcast_to_ui({"type": "state", "state": "idle"})
             await ws.send(json.dumps({"type": "tts_finished"}))
 
+        elif msg_type == "tts_cancel":
+            # PTT (or any other interrupt) is taking over — stop any
+            # in-flight playback ASAP. The inner write loop checks this
+            # flag between chunks; cancellation typically lands within
+            # one chunk (~85ms at 48kHz). Drop any audio that's been
+            # received but not yet played, and notify the server so its
+            # AI-speaking bookkeeping unblocks.
+            self._tts_cancel_flag = True
+            if self.tts_receiving:
+                self.tts_receiving = False
+                self.tts_buffer = bytearray()
+            await self.broadcast_to_ui({"type": "state", "state": "idle"})
+            try:
+                await ws.send(json.dumps({"type": "tts_finished"}))
+            except Exception:
+                pass
+
         elif msg_type == "volume_adjust":
             step = float(msg.get("step", 0.1))
             self.tts_volume = max(0.0, min(1.0, self.tts_volume + step))
@@ -405,6 +434,7 @@ class AudioManager:
             "show_camera", "stream_start", "stream_stop", "webrtc_signal",
             "play_video", "video_stop", "themes_changed",
             "show_calendar", "hide_calendar",
+            "ptt_active",
         ):
             await self.broadcast_to_ui(msg)
 

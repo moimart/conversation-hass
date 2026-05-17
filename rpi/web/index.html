@@ -46,6 +46,13 @@
             <span class="status-text">IDLE</span>
         </div>
 
+        <!-- PTT hint chip — hidden until body.ptt-active is set by the
+             server's {"type":"ptt_active","active":true} message. -->
+        <div class="ptt-chip" id="ptt-chip" aria-hidden="true">
+            <span class="ptt-chip-dot"></span>
+            <span class="ptt-chip-label">PTT</span>
+        </div>
+
         <!-- Transcription display -->
         <div class="transcript-container">
             <div class="transcript-label">TRANSCRIPT</div>

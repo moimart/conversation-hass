@@ -91,6 +91,66 @@ class AudioPipeline:
         else:
             self._ai_speaking_since = 0.0
 
+    async def force_finalize(self, discard: bool = False) -> dict | None:
+        """Force-flush the in-flight VAD speech segment immediately.
+
+        Used by the Push-to-Talk path so the user doesn't have to wait for
+        the 1.5 s silence detector after releasing the button. Returns a
+        transcription result with the same shape `process_chunk` produces
+        on a silence-triggered finalise — `{"text", "is_partial": False,
+        "speaker", "silence_after": True}` — or None if there's nothing to
+        transcribe.
+
+        `discard=True` clears the buffer without running STT (cancel path)."""
+        buf_bytes = len(self._audio_buffer)
+        if discard or buf_bytes == 0:
+            self._audio_buffer.clear()
+            self._partial_buffer.clear()
+            self._silence_start = None
+            self._speech_active = False
+            return None
+
+        buf_duration = buf_bytes / (self.sample_rate * 2)
+        if buf_duration < MIN_SPEECH_DURATION:
+            log.debug(f"force_finalize: discarding {buf_duration:.2f}s burst (< {MIN_SPEECH_DURATION}s)")
+            self._audio_buffer.clear()
+            self._partial_buffer.clear()
+            self._silence_start = None
+            self._speech_active = False
+            return None
+
+        full_audio = self._to_16k_float(bytes(self._audio_buffer))
+        self._audio_buffer.clear()
+        self._partial_buffer.clear()
+        self._silence_start = None
+        self._speech_active = False
+
+        log.info(f"force_finalize: transcribing {buf_bytes} bytes ({len(full_audio)/16000:.1f}s)")
+        try:
+            text = await self.transcriber.transcribe(full_audio)
+        except Exception as e:
+            log.error(f"force_finalize: transcribe failed: {e}")
+            return None
+
+        if not text or not text.strip():
+            self._consecutive_empty += 1
+            return None
+
+        self._last_successful_transcription = time.monotonic()
+        self._consecutive_empty = 0
+        if self._reload_count > 0:
+            self._reload_count = 0
+            self._vad_reset_interval = 300.0
+
+        speaker = self.speaker_filter.identify(full_audio, self._target_rate) if self.speaker_filter else "human"
+        log.info(f"force_finalize: '{text.strip()[:80]}' (speaker={speaker})")
+        return {
+            "text": text.strip(),
+            "is_partial": False,
+            "speaker": speaker,
+            "silence_after": True,
+        }
+
     async def _reload_models(self):
         """Reload VAD and STT models in a thread to avoid blocking the event loop."""
         loop = asyncio.get_event_loop()

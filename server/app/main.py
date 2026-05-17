@@ -80,6 +80,9 @@ class AppState:
     #   {session_id, kind: "ha"|"rtsp", entity_id|rtsp_url, safety_task,
     #    ha_sub_id?, ha_session_id?, go2rtc_name?}
     active_stream: dict | None = None
+    # Active Push-to-Talk session (server/app/ptt.PTTSession), if any.
+    # Open via ptt.start_ptt, closed via ptt.end_ptt or safety timeout.
+    ptt: object | None = None
 
 
 def _generate_chime() -> bytes:
@@ -1885,6 +1888,22 @@ async def lifespan(app: FastAPI):
         bridge.on_config_calendar_dismiss_seconds = _cfg_calendar_dismiss_seconds
         bridge.on_config_start_muted = _cfg_start_muted
 
+        async def _mqtt_ptt_start():
+            from .ptt import start_ptt
+            await start_ptt(state)
+
+        async def _mqtt_ptt_end():
+            from .ptt import end_ptt
+            await end_ptt(state)
+
+        async def _mqtt_ptt_cancel():
+            from .ptt import end_ptt
+            await end_ptt(state, cancel=True)
+
+        bridge.on_ptt_start = _mqtt_ptt_start
+        bridge.on_ptt_end = _mqtt_ptt_end
+        bridge.on_ptt_cancel = _mqtt_ptt_cancel
+
         await bridge.start()
         state.mqtt_bridge = bridge
         log.info(f"MQTT bridge started for broker {mqtt_host}")
@@ -2160,6 +2179,45 @@ async def audio_endpoint(websocket: WebSocket):
         watchdog_task.cancel()
 
 
+@app.websocket("/ws/ptt")
+async def ptt_endpoint(websocket: WebSocket):
+    """Persistent WebSocket for low-latency Push-to-Talk triggers.
+
+    Apps that press the button repeatedly (e.g. a desktop client) keep
+    one connection open and send JSON messages `{"type":"start"}`,
+    `{"type":"end"}`, or `{"type":"cancel"}`. Each maps onto the same
+    `start_ptt` / `end_ptt` server functions that drive the HTTP +
+    MQTT trigger surfaces, so behaviour is identical."""
+    from .ptt import start_ptt, end_ptt
+    state = _get_state(websocket.app)
+    await websocket.accept()
+    log.info("PTT WebSocket client connected")
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            t = (msg.get("type") or "").lower()
+            if t == "start":
+                result = await start_ptt(state)
+            elif t == "end":
+                result = await end_ptt(state)
+            elif t == "cancel":
+                result = await end_ptt(state, cancel=True)
+            else:
+                result = {"status": "unknown_type", "type": t}
+            try:
+                await websocket.send_json(result)
+            except Exception:
+                pass
+    except WebSocketDisconnect:
+        log.info("PTT WebSocket client disconnected")
+    except Exception as e:
+        log.warning(f"PTT WebSocket error: {e}")
+
+
 @app.websocket("/ws/ui")
 async def ui_endpoint(websocket: WebSocket):
     """WebSocket for the web UI to receive live transcription and state updates."""
@@ -2201,6 +2259,31 @@ async def health():
 
 class CommandRequest(BaseModel):
     text: str
+
+
+@app.post("/api/ptt/start")
+async def post_ptt_start():
+    """Open a Push-to-Talk session. See server/app/ptt.py for semantics."""
+    from .ptt import start_ptt
+    state = _get_state(app)
+    return await start_ptt(state)
+
+
+@app.post("/api/ptt/end")
+async def post_ptt_end():
+    """Close the active PTT session and run the LLM on whatever was captured."""
+    from .ptt import end_ptt
+    state = _get_state(app)
+    return await end_ptt(state)
+
+
+@app.post("/api/ptt/cancel")
+async def post_ptt_cancel():
+    """Close the active PTT session and DISCARD whatever was captured. Used
+    when the trigger party knows the press was an accident."""
+    from .ptt import end_ptt
+    state = _get_state(app)
+    return await end_ptt(state, cancel=True)
 
 
 @app.post("/api/command")
