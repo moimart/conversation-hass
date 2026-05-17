@@ -158,12 +158,16 @@ class AudioManager:
         return self.target_channels
 
     def get_output_rate(self) -> int:
-        """Get the output sample rate. Caches result."""
+        """Get the output sample rate. Only caches if Anker is actually
+        present — caching the rate from the 'default' fallback locks us
+        in to the wrong rate after the Anker becomes available again."""
         if self._output_rate is not None:
             return self._output_rate
         output_device = self.find_output_device()
-        self._output_rate = self.find_supported_sample_rate(output_device, 48000, for_output=True)
-        return self._output_rate
+        rate = self.find_supported_sample_rate(output_device, 48000, for_output=True)
+        if output_device is not None:
+            self._output_rate = rate
+        return rate
 
     def probe_device(self):
         """Probe and configure the audio input device."""
@@ -174,6 +178,12 @@ class AudioManager:
         log.info(f"Device config: {self.device_rate} Hz, {self.device_channels}ch (sending raw to server)")
         if self.needs_downmix:
             log.info(f"Will downmix from {self.device_channels}ch to mono")
+        # Eagerly probe the Anker OUTPUT too. Doing it at startup
+        # surfaces any USB enumeration delay here (where retry/restart
+        # is easy) instead of during the first TTS playback (where
+        # the user just hears silence). This populates self._output_device
+        # and self._output_rate.
+        _ = self.get_output_rate()
 
     # --- Audio stream management ---
 
@@ -225,54 +235,87 @@ class AudioManager:
     # --- TTS playback ---
 
     async def play_tts_audio(self, audio_data: bytes):
-        """Play TTS WAV audio through the speaker, resampling if needed."""
+        """Play TTS WAV audio through the speaker, resampling if needed.
+
+        On failure (typically 'Sample format not supported' when the Anker
+        USB device dropped out of PortAudio's cached device list),
+        reinit PyAudio so the next device scan sees the current device
+        set, clear the cached output device/rate, and retry once. This
+        is the main symptom users hit: TTS bytes arrive fine but the
+        speaker is silent until the container is manually restarted."""
         self.tts_playing = True
         try:
-            buf = io.BytesIO(audio_data)
-            with wave.open(buf, "rb") as wf:
-                wav_rate = wf.getframerate()
-                wav_channels = wf.getnchannels()
-                wav_width = wf.getsampwidth()
-                frames = wf.readframes(wf.getnframes())
+            try:
+                await self._play_tts_audio_once(audio_data)
+            except Exception as e:
+                log.error(f"TTS playback error: {e}. Reinitialising PyAudio and retrying once.")
+                self._reset_pyaudio()
+                try:
+                    await self._play_tts_audio_once(audio_data)
+                except Exception as e2:
+                    log.error(f"TTS playback retry also failed: {e2}")
+        finally:
+            self.tts_playing = False
 
-            output_device = self.find_output_device()
-            play_rate = self.get_output_rate()
+    def _reset_pyaudio(self):
+        """Terminate the current PyAudio instance and re-init. Forces a
+        device re-enumeration so USB devices that disappeared from
+        PortAudio's stale cache become visible again. Clears the
+        output device / rate caches so the next TTS call re-probes."""
+        try:
+            self.pa.terminate()
+        except Exception:
+            pass
+        self.pa = pyaudio.PyAudio()
+        self._output_device = None
+        self._output_rate = None
 
-            # Resample if needed
-            if play_rate != wav_rate:
-                samples = np.frombuffer(frames, dtype=np.int16)
-                if wav_channels > 1:
-                    samples = samples.reshape(-1, wav_channels)
-                    resampled = []
-                    for ch in range(wav_channels):
-                        resampled.append(_resample_audio(samples[:, ch], wav_rate, play_rate))
-                    frames = np.column_stack(resampled).tobytes()
-                else:
-                    frames = _resample_audio(samples, wav_rate, play_rate).tobytes()
-                log.info(f"Resampled TTS audio from {wav_rate}Hz to {play_rate}Hz")
+    async def _play_tts_audio_once(self, audio_data: bytes):
+        """Single playback attempt. Raises on failure so the caller can retry."""
+        buf = io.BytesIO(audio_data)
+        with wave.open(buf, "rb") as wf:
+            wav_rate = wf.getframerate()
+            wav_channels = wf.getnchannels()
+            wav_width = wf.getsampwidth()
+            frames = wf.readframes(wf.getnframes())
 
-            frames = self.apply_volume(frames)
+        output_device = self.find_output_device()
+        play_rate = self.get_output_rate()
 
-            stream = self.pa.open(
-                format=self.pa.get_format_from_width(wav_width),
-                channels=wav_channels,
-                rate=play_rate,
-                output=True,
-                output_device_index=output_device,
-            )
+        # Resample if needed
+        if play_rate != wav_rate:
+            samples = np.frombuffer(frames, dtype=np.int16)
+            if wav_channels > 1:
+                samples = samples.reshape(-1, wav_channels)
+                resampled = []
+                for ch in range(wav_channels):
+                    resampled.append(_resample_audio(samples[:, ch], wav_rate, play_rate))
+                frames = np.column_stack(resampled).tobytes()
+            else:
+                frames = _resample_audio(samples, wav_rate, play_rate).tobytes()
+            log.info(f"Resampled TTS audio from {wav_rate}Hz to {play_rate}Hz")
 
+        frames = self.apply_volume(frames)
+
+        stream = self.pa.open(
+            format=self.pa.get_format_from_width(wav_width),
+            channels=wav_channels,
+            rate=play_rate,
+            output=True,
+            output_device_index=output_device,
+        )
+
+        try:
             chunk = 4096
             for i in range(0, len(frames), chunk):
                 stream.write(frames[i : i + chunk])
                 await asyncio.sleep(0)
-
-            stream.stop_stream()
-            stream.close()
-
-        except Exception as e:
-            log.error(f"TTS playback error: {e}")
         finally:
-            self.tts_playing = False
+            try:
+                stream.stop_stream()
+                stream.close()
+            except Exception:
+                pass
 
     # --- UI broadcasting ---
 
