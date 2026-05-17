@@ -88,6 +88,14 @@ async def start_ptt(state: "AppState") -> dict:
         log.debug("PTT start: session already active, ignoring")
         return {"status": "already_active", "session": True}
 
+    # The RPi audio_streamer holds the only path from microphone to STT.
+    # If it's not currently connected, opening a session would visually
+    # flip the kiosk to "listening" while no audio ever flows — exactly
+    # the symptom the user reported. Refuse cleanly instead.
+    if state.audio_websocket is None:
+        log.warning("PTT start refused: RPi audio_streamer not connected")
+        return {"status": "rpi_disconnected", "session": False}
+
     prev_muted = bool(state.mic_muted)
     was_tts_active = bool(pipeline._ai_speaking)
 
@@ -205,10 +213,20 @@ async def end_ptt(state: "AppState", cancel: bool = False) -> dict:
         if final.get("speaker") != "ai":
             await conv.process_text(final["text"])
 
-    # 4. Run the LLM exactly like a wake-word turn would. If the buffer is
-    #    empty (e.g. the user said nothing), on_silence is a clean no-op.
+    # 4. Run the LLM exactly like a wake-word turn would, OR clean up if
+    #    no audio was captured. Without this, an empty PTT (user pressed
+    #    and released without speaking, or the mic was disconnected mid-
+    #    session) would leave the conversation with _wake_detected=True
+    #    and the kiosk stuck on state-listening forever.
     if conv is not None:
-        asyncio.create_task(conv.on_silence())
+        has_text = (final is not None) and bool(final.get("text", "").strip()) and final.get("speaker") != "ai"
+        if has_text:
+            asyncio.create_task(conv.on_silence())
+        else:
+            log.info("PTT closed with no transcript — resetting to idle")
+            conv._command_buffer.clear()
+            conv._wake_detected = False
+            await conv._set_state("idle")
 
     log.info(f"PTT session closed (held {held_s*1000:.0f}ms)")
     return {"status": "ok", "session": False}
