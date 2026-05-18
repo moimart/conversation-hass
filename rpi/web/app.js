@@ -267,9 +267,17 @@
                 break;
             case "state":
                 setState(msg.state);
-                // Photo frame dismisses on any transition out of idle.
-                if (msg.state && msg.state !== "idle") {
-                    maybeDismissPhotoFrame("state-" + msg.state);
+                // Photo frame dismisses ONLY when the user starts talking
+                // (state → "listening"). Transitions to "processing" /
+                // "speaking" come from HAL's own response — typically the
+                // confirmation TTS of the very voice command that opened
+                // the photo frame, so dismissing on those would make it
+                // impossible to trigger by voice. The wake word that
+                // actually shifts the user's attention always lands as a
+                // "listening" transition first, so we still dismiss on
+                // every real user-initiated state change.
+                if (msg.state === "listening") {
+                    maybeDismissPhotoFrame("state-listening");
                 }
                 break;
             case "mute_sync":
