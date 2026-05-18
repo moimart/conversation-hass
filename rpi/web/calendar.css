@@ -329,56 +329,77 @@ body.state-speaking .cal-status-dot {
     margin-bottom: 1px;
 }
 
-/* === Day timeline ======================================================== */
+/* === Day timeline ========================================================
+   Continuous absolute-positioned grid: hour lines + labels span the full
+   timeline; events sit on top with top/height computed from minutes.
+   Width is split across overlap tracks when events collide. */
 
-.cal-day-timeline {
+.cal-day-wrapper {
     height: 100%;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+    padding-right: 4px;
 }
-.cal-hour-row {
-    display: grid;
-    grid-template-columns: 60px 1fr;
-    gap: 12px;
-    padding: 6px 0;
-    border-bottom: 1px solid rgba(var(--accent-rgb), 0.08);
-    min-height: 36px;
+.cal-day-timeline {
+    position: relative;
+    padding-left: 60px;
+    /* height is set inline based on 24 * --cal-hour-px */
 }
-.cal-hour-row:last-child { border-bottom: none; }
-.cal-hour-label {
+.cal-hour-line {
+    position: absolute;
+    left: 60px;
+    right: 0;
+    height: 1px;
+    background: rgba(var(--accent-rgb), 0.08);
+    pointer-events: none;
+}
+.cal-hour-label-abs {
+    position: absolute;
+    left: 0;
+    width: 48px;
+    text-align: right;
     font-family: 'Berlin Type', 'Inter', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 11px;
     color: var(--text-dim);
-    text-align: right;
-    padding-top: 2px;
-}
-.cal-hour-events {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    line-height: 1;
+    pointer-events: none;
 }
 .cal-day-event {
-    padding: 6px 12px;
+    position: absolute;
+    padding: 3px 8px;
     border-radius: 6px;
     border-left: 3px solid var(--cal-color);
     background: var(--cal-bg);
-    font-size: 13px;
+    font-size: 12px;
+    overflow: hidden;
+    box-sizing: border-box;
+    line-height: 1.15;
 }
 .cal-day-event-time {
     font-family: 'Berlin Type', 'Inter', sans-serif; font-variant-numeric: tabular-nums;
     font-size: 10px;
     color: var(--text-dim);
     letter-spacing: 1px;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
+}
+.cal-day-event-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .cal-day-allday {
+    position: relative;
     margin-bottom: 12px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     gap: 4px;
+}
+.cal-day-allday .cal-day-event {
+    position: relative;
+    padding: 6px 12px;
 }
 
 /* === Empty + error states =============================================== */

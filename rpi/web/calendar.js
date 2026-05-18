@@ -395,15 +395,31 @@ function renderWeek(root, payload) {
     root.appendChild(grid);
 }
 
-/* === DAY ================================================================ */
+/* === DAY ================================================================
+   Continuous timeline: every event is absolutely positioned so its top
+   matches the start time and its height matches the duration. Overlapping
+   events get laid out side-by-side, Google-Cal style, by greedy-assigning
+   each event to the lowest-numbered track free at its start and then
+   splitting the available width across tracks within each connected
+   overlap group. Auto-fit density: try to fit 24 h, but if the available
+   container height implies hours smaller than ~24 px, force a minimum
+   hour height and let the timeline scroll. */
 
 function renderDay(root, payload) {
     const { start } = payload.range || {};
     const events = payload.events || [];
     const day = new Date(start);
 
-    const timeline = document.createElement("div");
-    timeline.className = "cal-day-timeline";
+    if (events.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "cal-empty";
+        empty.textContent = "No events today.";
+        root.appendChild(empty);
+        return;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "cal-day-wrapper";
 
     // All-day events sit in a separate strip at the top.
     const allDay = events.filter((ev) => ev.all_day);
@@ -422,53 +438,128 @@ function renderDay(root, payload) {
             item.appendChild(s);
             strip.appendChild(item);
         }
-        timeline.appendChild(strip);
+        wrapper.appendChild(strip);
     }
 
-    // Index timed events by hour
-    const timed = events.filter((ev) => !ev.all_day)
-        .map((ev) => ({ ev, s: parseEventDate(ev.start, false), e: parseEventDate(ev.end, false) }))
-        .filter(({ s }) => s && sameDate(s, day))
-        .sort((a, b) => a.s - b.s);
+    // Build the absolutely-positioned timeline. Height = 24h * hourPx;
+    // the scroll container picks min-height when content fits.
+    const timeline = document.createElement("div");
+    timeline.className = "cal-day-timeline";
+    wrapper.appendChild(timeline);
+    root.appendChild(wrapper);
 
+    // We need the wrapper to be in the DOM to measure its height for
+    // auto-fit. Compute the height of one hour: prefer fitting all 24 h,
+    // but enforce a minimum so events stay readable.
+    const MIN_HOUR_PX = 26;
+    const allDayPx = allDay.length > 0 ? 56 : 0;
+    const availPx = Math.max(0, (wrapper.parentElement?.clientHeight || 600) - allDayPx);
+    const hourPx = Math.max(MIN_HOUR_PX, Math.floor(availPx / 24));
+    const timelineHeight = hourPx * 24;
+    timeline.style.height = timelineHeight + "px";
+    timeline.style.setProperty("--cal-hour-px", hourPx + "px");
+
+    // Hour grid lines + labels (every hour gets a horizontal divider and
+    // a label in the left gutter).
     for (let h = 0; h < 24; h++) {
-        const row = document.createElement("div");
-        row.className = "cal-hour-row";
+        const top = h * hourPx;
+        const line = document.createElement("div");
+        line.className = "cal-hour-line";
+        line.style.top = top + "px";
+        timeline.appendChild(line);
 
         const label = document.createElement("div");
-        label.className = "cal-hour-label";
+        label.className = "cal-hour-label-abs";
+        label.style.top = (top - 6) + "px";
         label.textContent = String(h).padStart(2, "0") + ":00";
-        row.appendChild(label);
+        timeline.appendChild(label);
+    }
 
-        const hourEventsEl = document.createElement("div");
-        hourEventsEl.className = "cal-hour-events";
+    // Compute event boxes with track assignment.
+    const items = events
+        .filter((ev) => !ev.all_day)
+        .map((ev) => {
+            const s = parseEventDate(ev.start, false);
+            const e = parseEventDate(ev.end, false);
+            if (!s || !sameDate(s, day)) return null;
+            const startMin = s.getHours() * 60 + s.getMinutes();
+            let endMin;
+            if (!e || !sameDate(e, day)) {
+                // Event continues past midnight — clamp to 24:00.
+                endMin = 24 * 60;
+            } else {
+                endMin = e.getHours() * 60 + e.getMinutes();
+            }
+            // Minimum visual duration so a 5-minute event is still tappable.
+            const effectiveEnd = Math.max(endMin, startMin + 15);
+            return { ev, s, e, startMin, endMin, effectiveEnd };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.startMin - b.startMin || a.effectiveEnd - b.effectiveEnd);
 
-        for (const { ev, s } of timed) {
-            if (s.getHours() !== h) continue;
-            const item = document.createElement("div");
-            item.className = "cal-day-event cal-c" + (ev.color_idx % 6);
-            const t = document.createElement("div");
-            t.className = "cal-day-event-time";
-            t.textContent = formatTime(s);
-            item.appendChild(t);
-            const summary = document.createElement("div");
-            summary.textContent = ev.summary;
-            item.appendChild(summary);
-            hourEventsEl.appendChild(item);
+    // Greedy track assignment: lowest-numbered track whose last event
+    // ends at or before this event's start.
+    const trackEnds = [];   // index = track #, value = effectiveEnd of latest event in it
+    for (const it of items) {
+        let track = 0;
+        while (track < trackEnds.length && trackEnds[track] > it.startMin) track++;
+        if (track === trackEnds.length) trackEnds.push(it.effectiveEnd);
+        else trackEnds[track] = it.effectiveEnd;
+        it.track = track;
+    }
+
+    // Connected overlap groups: events whose intervals form a chain of
+    // overlaps share a numCols, so width-splitting is consistent across
+    // the group instead of recomputed per-event.
+    let groupStart = null;
+    let groupEnd = -1;
+    let groupItems = [];
+    const flushGroup = () => {
+        if (groupItems.length === 0) return;
+        const numCols = Math.max(...groupItems.map((it) => it.track)) + 1;
+        for (const it of groupItems) it.numCols = numCols;
+        groupItems = [];
+    };
+    for (const it of items) {
+        if (groupStart === null || it.startMin >= groupEnd) {
+            flushGroup();
+            groupStart = it.startMin;
+            groupEnd = it.effectiveEnd;
+            groupItems = [it];
+        } else {
+            groupItems.push(it);
+            groupEnd = Math.max(groupEnd, it.effectiveEnd);
         }
-
-        row.appendChild(hourEventsEl);
-        timeline.appendChild(row);
     }
+    flushGroup();
 
-    if (events.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "cal-empty";
-        empty.textContent = "No events today.";
-        root.appendChild(empty);
-        return;
+    // Paint.
+    for (const it of items) {
+        const box = document.createElement("div");
+        box.className = "cal-day-event cal-c" + (it.ev.color_idx % 6);
+        const top = (it.startMin / 60) * hourPx;
+        const height = ((it.effectiveEnd - it.startMin) / 60) * hourPx;
+        box.style.top = top + "px";
+        box.style.height = Math.max(18, height) + "px";
+        // Width: split among numCols, leaving a 2 px gutter between adjacent.
+        const widthPct = 100 / (it.numCols || 1);
+        const leftPct = it.track * widthPct;
+        box.style.left = `calc(${leftPct}% + 2px)`;
+        box.style.width = `calc(${widthPct}% - 4px)`;
+        box.title = `${it.ev.summary} — ${formatTime(it.s)}${it.e ? "–" + formatTime(it.e) : ""}`;
+
+        // Compact label: time on first line, summary on the next.
+        const t = document.createElement("div");
+        t.className = "cal-day-event-time";
+        t.textContent = formatTime(it.s);
+        box.appendChild(t);
+        const summary = document.createElement("div");
+        summary.className = "cal-day-event-title";
+        summary.textContent = it.ev.summary;
+        box.appendChild(summary);
+
+        timeline.appendChild(box);
     }
-    root.appendChild(timeline);
 }
 
 /* === Helpers ============================================================ */
