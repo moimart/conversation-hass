@@ -242,6 +242,18 @@
         }
     }
 
+    // Protection window for HAL's own confirmation TTS when the LLM
+    // just called show_photo_frame this turn. Set when a show message
+    // arrives, cleared when the turn ends (state→idle) or a new user
+    // turn begins (state→listening). While the flag is set, speaking
+    // and processing transitions don't dismiss — because they're the
+    // continuation of the voice command that opened the frame in the
+    // first place. Anything OTHER than that turn (a /api/speak
+    // announcement, a different voice command later, an HA-fired
+    // command) lands with the flag already false and dismisses
+    // normally.
+    let pfProtectedTurn = false;
+
     async function withPhotoFramePreempt(runFn) {
         if (pfController && pfController.isShown()) {
             try {
@@ -267,17 +279,30 @@
                 break;
             case "state":
                 setState(msg.state);
-                // Photo frame dismisses ONLY when the user starts talking
-                // (state → "listening"). Transitions to "processing" /
-                // "speaking" come from HAL's own response — typically the
-                // confirmation TTS of the very voice command that opened
-                // the photo frame, so dismissing on those would make it
-                // impossible to trigger by voice. The wake word that
-                // actually shifts the user's attention always lands as a
-                // "listening" transition first, so we still dismiss on
-                // every real user-initiated state change.
+                // Photo frame dismiss rules:
+                //   listening → always dismiss (user is talking; clear
+                //               protection for whatever turn comes next).
+                //   idle      → turn just ended; clear protection so the
+                //               NEXT non-idle transition dismisses
+                //               regardless of source.
+                //   speaking
+                //   /processing → dismiss UNLESS pfProtectedTurn is set
+                //                  (i.e. this is HAL's own confirmation
+                //                  TTS for the same voice command that
+                //                  opened the frame). Anything else —
+                //                  /api/speak announcements, a different
+                //                  voice command later, an HA-fired
+                //                  command — has pfProtectedTurn=false
+                //                  and dismisses normally.
                 if (msg.state === "listening") {
                     maybeDismissPhotoFrame("state-listening");
+                    pfProtectedTurn = false;
+                } else if (msg.state === "idle") {
+                    pfProtectedTurn = false;
+                } else if (msg.state === "speaking" || msg.state === "processing") {
+                    if (!pfProtectedTurn) {
+                        maybeDismissPhotoFrame("state-" + msg.state);
+                    }
                 }
                 break;
             case "mute_sync":
@@ -354,6 +379,9 @@
                 }
                 break;
             case "show_photo_frame":
+                // Protect through HAL's confirmation TTS for THIS turn —
+                // see the "state" case above.
+                pfProtectedTurn = true;
                 getPhotoFrame().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] show failed:", e));
                 break;
@@ -361,6 +389,7 @@
                 if (pfController) pfController.update(msg);
                 break;
             case "hide_photo_frame":
+                pfProtectedTurn = false;
                 if (pfController) pfController.dismiss("explicit").catch(() => {});
                 break;
             default:
