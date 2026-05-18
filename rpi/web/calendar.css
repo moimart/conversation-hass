@@ -343,7 +343,6 @@ body.state-speaking .cal-status-dot {
 }
 .cal-day-timeline {
     position: relative;
-    padding-left: 60px;
     /* height is set inline based on 24 * --cal-hour-px */
 }
 .cal-hour-line {
@@ -364,6 +363,13 @@ body.state-speaking .cal-status-dot {
     color: var(--text-dim);
     line-height: 1;
     pointer-events: none;
+}
+.cal-day-events-area {
+    position: absolute;
+    top: 0;
+    left: 60px;
+    right: 0;
+    bottom: 0;
 }
 .cal-day-event {
     position: absolute;

@@ -460,7 +460,9 @@ function renderDay(root, payload) {
     timeline.style.setProperty("--cal-hour-px", hourPx + "px");
 
     // Hour grid lines + labels (every hour gets a horizontal divider and
-    // a label in the left gutter).
+    // a label in the left gutter). Events live inside a dedicated abs
+    // container so their percentage widths are relative to the
+    // post-gutter area, not the gutter itself.
     for (let h = 0; h < 24; h++) {
         const top = h * hourPx;
         const line = document.createElement("div");
@@ -474,6 +476,10 @@ function renderDay(root, payload) {
         label.textContent = String(h).padStart(2, "0") + ":00";
         timeline.appendChild(label);
     }
+
+    const eventsArea = document.createElement("div");
+    eventsArea.className = "cal-day-events-area";
+    timeline.appendChild(eventsArea);
 
     // Compute event boxes with track assignment.
     const items = events
@@ -558,7 +564,7 @@ function renderDay(root, payload) {
         summary.textContent = it.ev.summary;
         box.appendChild(summary);
 
-        timeline.appendChild(box);
+        eventsArea.appendChild(box);
     }
 }
 
