@@ -593,6 +593,9 @@ class MQTTBridge:
         # Photo frame: two bare-trigger buttons + one text entity for the
         # configured image entity_id. Pattern mirrors the calendar
         # buttons + calendar_default_source.
+        # User-facing buttons live under the device's Controls section
+        # (no entity_category) so they're surfaced next to Volume / Mute /
+        # Theme, not buried under Configuration.
         for action, label, icon in (
             ("show", "Show Photo Frame", "mdi:image-frame"),
             ("hide", "Hide Photo Frame", "mdi:image-off-outline"),
@@ -607,7 +610,6 @@ class MQTTBridge:
                     "icon": icon,
                     "availability": avail,
                     "device": device,
-                    "entity_category": "config",
                 },
             ))
         # Default image entity for the photo frame. Empty = feature

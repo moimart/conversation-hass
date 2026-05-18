@@ -1098,36 +1098,25 @@ body:not(.photo-frame-active) .photo-frame-stage {
     100% { transform: scale(1.12) translate(-1.5%, -1.5%); }
 }
 
-/* Clock + date overlay — same positioning + font as the existing
-   body-level .clock-display, but white with a heavy drop-shadow so it
-   stays legible on any photo. Berlin Type is already loaded globally
-   via @font-face at the top of this file. */
-.photo-frame-stage .pf-clock {
-    position: absolute;
-    top: 28px;
-    left: 32px;
-    z-index: 12;
-    font-family: 'Berlin Type', 'Inter', sans-serif;
-    pointer-events: none;
-    user-select: none;
-    line-height: 1;
+/* Clock + date — re-use the body-level .clock-display element (already
+   ticking, already in Berlin Type, already at top:28px left:32px,
+   already at z-index 12 so it sits naturally on top of the
+   photo-frame-stage at z:8). When body.photo-frame-active is set we
+   flip its colour to white with a drop-shadow so it stays legible on
+   any photo; when dismissed, the theme colours come back. Transition
+   smooths the swap so it doesn't snap. */
+.clock-display .clock-time,
+.clock-display .clock-date {
+    transition: color 600ms ease, text-shadow 600ms ease, opacity 600ms ease;
 }
-.photo-frame-stage .pf-clock-time {
-    font-size: 56px;
-    font-weight: 700;
-    letter-spacing: -1px;
+body.photo-frame-active .clock-display .clock-time {
     color: #ffffff;
     opacity: 1;
-    font-variant-numeric: tabular-nums;
     text-shadow:
         0 2px 8px rgba(0, 0, 0, 0.75),
         0 0 24px rgba(0, 0, 0, 0.45);
 }
-.photo-frame-stage .pf-clock-date {
-    margin-top: 6px;
-    font-size: 14px;
-    font-weight: 400;
-    letter-spacing: 0.5px;
+body.photo-frame-active .clock-display .clock-date {
     color: #ffffff;
     opacity: 0.92;
     text-shadow:

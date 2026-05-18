@@ -17,9 +17,13 @@
 export function mountPhotoFrame(root, { onDismiss } = {}) {
     if (!root) throw new Error("mountPhotoFrame: root is required");
 
-    // Stage layout: two image layers + clock-display + nothing else.
-    // The two layers crossfade on update — back layer becomes the
-    // active one, front fades out and is reused next time.
+    // Stage layout: just two image layers for crossfade. The kiosk's
+    // existing top-left .clock-display (already ticking, already
+    // Berlin Type, already positioned) is re-used — body.photo-frame-active
+    // flips its colour to white + drop-shadow via CSS, so the same
+    // element transitions in and out without needing a duplicate
+    // here. This also keeps the clock z-ordered above the stage (the
+    // body-level clock is at z-index:12 vs the stage at 8).
     root.innerHTML = "";
     const imgA = root.ownerDocument.createElement("img");
     const imgB = root.ownerDocument.createElement("img");
@@ -30,33 +34,9 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
     root.appendChild(imgA);
     root.appendChild(imgB);
 
-    const clock = root.ownerDocument.createElement("div");
-    clock.className = "clock-display pf-clock";
-    clock.innerHTML = '<div class="clock-time pf-clock-time">--:--</div>'
-                    + '<div class="clock-date pf-clock-date">---</div>';
-    root.appendChild(clock);
-
-    const timeEl = clock.querySelector(".clock-time");
-    const dateEl = clock.querySelector(".clock-date");
-
     let active = imgA;  // pointer to the currently-displayed layer
     let buffer = imgB;  // pointer to the layer that holds the NEXT image
     let shown = false;
-    let clockTimer = null;
-
-    // Refresh the clock+date once per second. Berlin Type is loaded
-    // globally by style.css so we don't need to do anything but write
-    // text content.
-    function refreshClock() {
-        const now = new Date();
-        const hh = String(now.getHours()).padStart(2, "0");
-        const mm = String(now.getMinutes()).padStart(2, "0");
-        timeEl.textContent = `${hh}:${mm}`;
-        const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-        const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-        dateEl.textContent = `${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]}`;
-    }
-    refreshClock();
 
     // Build a data: URL from {image, mime} payload. The server sends
     // base64-encoded bytes so we don't need a fetch round-trip.
@@ -91,9 +71,7 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         if (!shown) {
             shown = true;
             document.body.classList.add("photo-frame-active");
-            if (!clockTimer) clockTimer = setInterval(refreshClock, 1000);
         }
-        refreshClock();
     }
 
     async function update(payload) {
@@ -136,7 +114,6 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
                 imgA.classList.add("active");   // reset to canonical layout
                 active = imgA;
                 buffer = imgB;
-                if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
                 pendingDismissPromise = null;
                 resolve(reason);
             }, 450);
