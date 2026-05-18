@@ -83,6 +83,10 @@ class AppState:
     # Active Push-to-Talk session (server/app/ptt.PTTSession), if any.
     # Open via ptt.start_ptt, closed via ptt.end_ptt or safety timeout.
     ptt: object | None = None
+    # Active photo-frame session (server/app/photo_frame.PhotoFrameSession).
+    # Open via photo_frame.start_photo_frame, closed via stop_photo_frame
+    # or by the kiosk's photo_frame_dismissed message.
+    photo_frame_session: object | None = None
 
 
 def _generate_chime() -> bytes:
@@ -1431,6 +1435,66 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         hide_calendar_tool,
     )
 
+    async def show_photo_frame_tool(args: dict) -> str:
+        from .photo_frame import start_photo_frame
+        entity_id = (args.get("entity_id") or "").strip()
+        result = await start_photo_frame(state, entity_id=entity_id)
+        status = result.get("status")
+        if status == "not_configured":
+            return (
+                "Photo frame entity is not configured. Set photo_frame_entity in "
+                "the HAL device's Configuration (or pass entity_id) to use this."
+            )
+        if status == "invalid_entity":
+            return f"{entity_id!r} is not an image.* / camera.* entity — photo frame skipped."
+        if status == "fetch_failed":
+            return "I couldn't fetch that image from Home Assistant."
+        if status == "already_active":
+            return "Photo frame was already showing — refreshed the image."
+        return "Photo frame shown on the kiosk."
+
+    tools.register(
+        "show_photo_frame",
+        (
+            "Display an ambient full-screen photo frame on the kiosk: a slow "
+            "Ken-Burns image from a configurable Home Assistant image.* entity "
+            "with the wall clock overlaid in white. Use when the user asks to "
+            "'show the photo frame', 'start the photo display', 'show my "
+            "pictures', 'put up the slideshow'. Pass `entity_id` only if the "
+            "user names a specific image entity; otherwise omit it and the "
+            "server uses the configured default (text.<id>_config_photo_frame_entity). "
+            "If neither is set, the tool no-ops and tells you so — do NOT "
+            "treat that as an error to the user, just explain the entity isn't "
+            "configured. The photo frame dismisses itself automatically the "
+            "moment ANY kiosk action happens (wake word, PTT, volume, touch, "
+            "another overlay), so it's safe to leave running indefinitely."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "string",
+                    "description": "Optional HA image.* or camera.* entity_id. Omit to use the configured default.",
+                },
+            },
+        },
+        show_photo_frame_tool,
+    )
+
+    async def hide_photo_frame_tool(_args: dict) -> str:
+        from .photo_frame import stop_photo_frame
+        result = await stop_photo_frame(state, reason="explicit")
+        if result.get("status") == "not_active":
+            return "Photo frame wasn't showing — nothing to hide."
+        return "Photo frame hidden."
+
+    tools.register(
+        "hide_photo_frame",
+        "Dismiss the photo frame if it is currently shown on the kiosk. Use when the user says 'hide the photo frame', 'stop the slideshow', 'close the pictures', etc.",
+        {"type": "object", "properties": {}},
+        hide_photo_frame_tool,
+    )
+
     return tools
 
 
@@ -1886,6 +1950,9 @@ async def lifespan(app: FastAPI):
         bridge._cached_config_start_muted = bool(
             state.runtime_config.get("start_muted", False)
         )
+        bridge._cached_config_photo_frame_entity = str(
+            state.runtime_config.get("photo_frame_entity", "") or ""
+        )
 
         async def _mqtt_calendar_show(args: dict):
             view = (args.get("view") or "month").lower()
@@ -1906,6 +1973,20 @@ async def lifespan(app: FastAPI):
 
         async def _mqtt_calendar_hide():
             await _hide_calendar(state)
+
+        async def _mqtt_photo_frame_show(args: dict):
+            from .photo_frame import start_photo_frame
+            entity_id = (args.get("entity_id") or "").strip()
+            await start_photo_frame(state, entity_id=entity_id)
+
+        async def _mqtt_photo_frame_hide():
+            from .photo_frame import stop_photo_frame
+            await stop_photo_frame(state, reason="mqtt")
+
+        async def _cfg_photo_frame_entity(value: str):
+            value = (value or "").strip()
+            await _persist("photo_frame_entity", value)
+            await bridge.publish_config_photo_frame_entity(value)
 
         async def _cfg_calendar_default_source(value: str):
             value = (value or "").strip()
@@ -1950,6 +2031,9 @@ async def lifespan(app: FastAPI):
         bridge.on_config_auto_theme = _cfg_auto_theme
         bridge.on_calendar_show = _mqtt_calendar_show
         bridge.on_calendar_hide = _mqtt_calendar_hide
+        bridge.on_photo_frame_show = _mqtt_photo_frame_show
+        bridge.on_photo_frame_hide = _mqtt_photo_frame_hide
+        bridge.on_config_photo_frame_entity = _cfg_photo_frame_entity
         bridge.on_config_calendar_default_source = _cfg_calendar_default_source
         bridge.on_config_calendar_dismiss_seconds = _cfg_calendar_dismiss_seconds
         bridge.on_config_start_muted = _cfg_start_muted
@@ -2208,6 +2292,14 @@ async def audio_endpoint(websocket: WebSocket):
                         step = 0.0
                     if step != 0.0:
                         asyncio.create_task(_ma_volume_step(state, step))
+                elif msg_type == "photo_frame_dismissed":
+                    # Kiosk auto-dismissed (state change / volume / pointer /
+                    # preempt). Tear down the HA subscription so we don't
+                    # keep receiving state_changed events for nothing.
+                    from .photo_frame import stop_photo_frame
+                    reason = str(msg.get("reason") or "kiosk")
+                    await stop_photo_frame(state, reason=reason)
+
                 elif msg_type == "webrtc_signal":
                     # Kiosk → server signaling for an active stream session.
                     # offer is sent on stream start; candidate is sent during ICE.
@@ -2350,6 +2442,28 @@ async def post_ptt_cancel():
     from .ptt import end_ptt
     state = _get_state(app)
     return await end_ptt(state, cancel=True)
+
+
+class PhotoFrameStartRequest(BaseModel):
+    entity_id: str = ""
+
+
+@app.post("/api/photo_frame/start")
+async def post_photo_frame_start(req: PhotoFrameStartRequest | None = None):
+    """Open the photo frame on the kiosk. Optional body overrides the
+    configured default: `{"entity_id": "image.weather_radar"}`."""
+    from .photo_frame import start_photo_frame
+    state = _get_state(app)
+    entity_id = (req.entity_id if req else "") or ""
+    return await start_photo_frame(state, entity_id=entity_id)
+
+
+@app.post("/api/photo_frame/end")
+async def post_photo_frame_end():
+    """Dismiss the active photo frame. No-op if none is open."""
+    from .photo_frame import stop_photo_frame
+    state = _get_state(app)
+    return await stop_photo_frame(state, reason="explicit")
 
 
 @app.post("/api/command")

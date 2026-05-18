@@ -34,6 +34,9 @@ auth.
 - [Snapshots (kiosk → server)](#snapshots)
   - [`POST /api/snapshot`](#post-apisnapshot)
   - [`GET /api/snapshot.jpg`](#get-apisnapshotjpg)
+- [Photo frame](#photo-frame)
+  - [`POST /api/photo_frame/start`](#post-apiphoto_framestart)
+  - [`POST /api/photo_frame/end`](#post-apiphoto_frameend)
 - [Themes](#themes)
   - [`GET /api/themes`](#get-apithemes)
   - [`GET /themes/{name}/{filename}`](#get-themesnamefilename)
@@ -347,6 +350,71 @@ Return the most recent JPEG. `404` if no snapshot has been posted yet.
 
 ```bash
 curl -o latest.jpg http://hal:8765/api/snapshot.jpg
+```
+
+---
+
+## Photo frame
+
+Ambient full-screen image from a configurable HA `image.*` entity,
+with the kiosk clock overlaid in white and a slow Ken-Burns zoom. The
+photo frame auto-dismisses on **any** kiosk activity (state change,
+volume/mute interaction, PTT trigger, pointer tap, another overlay).
+
+The feature is gated by `runtime_config["photo_frame_entity"]` (see
+[`MQTT.md`](./MQTT.md#live-runtime-config)). If neither the config nor
+the request body provides an entity, `start` is a silent no-op
+(`status: "not_configured"`).
+
+### `POST /api/photo_frame/start`
+
+Open a photo frame session. Optional body overrides the configured
+default entity.
+
+**Request body** (optional)
+
+```json
+{ "entity_id": "image.weather_radar" }
+```
+
+**Response** `200`
+
+| Status string       | Meaning                                                       |
+|---------------------|---------------------------------------------------------------|
+| `"ok"`              | New session opened; image is being shown on the kiosk.        |
+| `"already_active"`  | A session was already open for the same entity; the kiosk got a fresh `photo_frame_update` (covers re-fetch when the entity rotated). |
+| `"not_configured"`  | No entity given and `photo_frame_entity` runtime config is empty. Silent no-op — surface this in the UI text rather than as an error. |
+| `"invalid_entity"`  | The supplied `entity_id` isn't an `image.*` or `camera.*`.    |
+| `"fetch_failed"`    | HA returned a non-image content type, 404, or the request capped out. |
+
+```json
+{ "status": "ok", "session": true }
+```
+
+```bash
+curl -XPOST http://hal:8765/api/photo_frame/start \
+     -H 'Content-Type: application/json' \
+     -d '{"entity_id":"image.weather_radar"}'
+
+# Or with the configured default:
+curl -XPOST http://hal:8765/api/photo_frame/start
+```
+
+### `POST /api/photo_frame/end`
+
+Dismiss the active photo frame. No-op when nothing is open.
+
+**Request body**: empty
+
+**Response** `200`
+
+| Status string  | Meaning                                                    |
+|----------------|------------------------------------------------------------|
+| `"ok"`         | Session closed; kiosk is fading out; HA subscription torn down. |
+| `"not_active"` | No session was open.                                       |
+
+```bash
+curl -XPOST http://hal:8765/api/photo_frame/end
 ```
 
 ---

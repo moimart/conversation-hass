@@ -1049,3 +1049,88 @@ body.state-speaking .status-text {
     background: var(--border);
     border-radius: 1px;
 }
+
+/* === Photo frame overlay ===
+   Ambient full-screen image from a configurable HA image.* entity,
+   with the kiosk clock overlaid in white (drop-shadow for legibility
+   on any photo). Slow Ken-Burns zoom on every image, 600ms crossfade
+   on entity updates. Lives ABOVE the calendar stage so it preempts
+   nothing else conflicts visually. */
+.photo-frame-stage {
+    position: fixed;
+    inset: 0;
+    z-index: 8;
+    pointer-events: none;
+    opacity: 0;
+    background: #000;       /* visible during 1st image decode */
+    overflow: hidden;
+    transition: opacity 600ms ease;
+}
+body.photo-frame-active .photo-frame-stage {
+    opacity: 1;
+    pointer-events: auto;
+}
+/* The fade-out uses a shorter duration than the fade-in so dismissal
+   feels snappy. */
+body:not(.photo-frame-active) .photo-frame-stage {
+    transition: opacity 400ms ease;
+}
+
+.photo-frame-stage .pf-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 600ms ease;
+    transform-origin: 50% 50%;
+    will-change: transform, opacity;
+}
+.photo-frame-stage .pf-img.active {
+    opacity: 1;
+}
+.photo-frame-stage .pf-img.ken-burns {
+    animation: photo-frame-kenburns 30s ease-in-out infinite alternate;
+}
+@keyframes photo-frame-kenburns {
+    0%   { transform: scale(1)    translate(0, 0); }
+    100% { transform: scale(1.12) translate(-1.5%, -1.5%); }
+}
+
+/* Clock + date overlay — same positioning + font as the existing
+   body-level .clock-display, but white with a heavy drop-shadow so it
+   stays legible on any photo. Berlin Type is already loaded globally
+   via @font-face at the top of this file. */
+.photo-frame-stage .pf-clock {
+    position: absolute;
+    top: 28px;
+    left: 32px;
+    z-index: 12;
+    font-family: 'Berlin Type', 'Inter', sans-serif;
+    pointer-events: none;
+    user-select: none;
+    line-height: 1;
+}
+.photo-frame-stage .pf-clock-time {
+    font-size: 56px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    color: #ffffff;
+    opacity: 1;
+    font-variant-numeric: tabular-nums;
+    text-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.75),
+        0 0 24px rgba(0, 0, 0, 0.45);
+}
+.photo-frame-stage .pf-clock-date {
+    margin-top: 6px;
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    color: #ffffff;
+    opacity: 0.92;
+    text-shadow:
+        0 1px 4px rgba(0, 0, 0, 0.75),
+        0 0 16px rgba(0, 0, 0, 0.4);
+}

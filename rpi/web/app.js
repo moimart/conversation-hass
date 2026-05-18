@@ -200,6 +200,59 @@
         return runFn();
     }
 
+    // --- Photo frame overlay state (lazy-loaded on first show_photo_frame) ---
+    let pfController = null;
+    let pfLoading = null;
+
+    async function getPhotoFrame() {
+        if (pfController) return pfController;
+        if (!pfLoading) {
+            pfLoading = import("./photo_frame.js").then((mod) => {
+                const root = document.getElementById("photo-frame-root");
+                pfController = mod.mountPhotoFrame(root, {
+                    // When the kiosk dismisses itself (touch / state / etc.),
+                    // tell the server so it tears down the HA subscription.
+                    onDismiss: (reason) => {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            try {
+                                ws.send(JSON.stringify({
+                                    type: "photo_frame_dismissed",
+                                    reason: reason,
+                                }));
+                            } catch (_) { /* ignore */ }
+                        }
+                    },
+                });
+                return pfController;
+            }).catch((e) => {
+                console.error("[photo-frame] module load failed:", e);
+                pfLoading = null;
+                throw e;
+            });
+        }
+        return pfLoading;
+    }
+
+    // Single helper called from every kiosk-initiated dismissal trigger
+    // (state change, volume, mute, PTT activation, takeover overlays,
+    // pointer/touch). No-op when not shown.
+    function maybeDismissPhotoFrame(reason) {
+        if (pfController && pfController.isShown()) {
+            pfController.dismiss(reason).catch(() => {});
+        }
+    }
+
+    async function withPhotoFramePreempt(runFn) {
+        if (pfController && pfController.isShown()) {
+            try {
+                await pfController.dismiss("preempt");
+            } catch (e) {
+                console.warn("[photo-frame] preempt dismiss failed, continuing:", e);
+            }
+        }
+        return runFn();
+    }
+
     // --- Message Handling ---
     function handleMessage(msg) {
         switch (msg.type) {
@@ -214,6 +267,10 @@
                 break;
             case "state":
                 setState(msg.state);
+                // Photo frame dismisses on any transition out of idle.
+                if (msg.state && msg.state !== "idle") {
+                    maybeDismissPhotoFrame("state-" + msg.state);
+                }
                 break;
             case "mute_sync":
                 // Hardware mute button pressed — sync UI
@@ -221,11 +278,13 @@
                 muteBtn.classList.toggle("muted", muted);
                 muteIconOn.style.display = muted ? "none" : "";
                 muteIconOff.style.display = muted ? "" : "none";
+                maybeDismissPhotoFrame("mute");
                 break;
             case "volume_sync":
                 // Hardware volume button pressed — sync UI
                 volume = Math.max(0, Math.min(1, msg.level));
                 volFill.style.width = (volume * 100) + "%";
+                maybeDismissPhotoFrame("volume");
                 break;
             case "pong":
                 break;
@@ -243,10 +302,10 @@
                 });
                 break;
             case "show_camera":
-                withCalendarPreempt(() => showCamera(msg));
+                withPhotoFramePreempt(() => withCalendarPreempt(() => showCamera(msg)));
                 break;
             case "stream_start":
-                withCalendarPreempt(() => startStream(msg));
+                withPhotoFramePreempt(() => withCalendarPreempt(() => startStream(msg)));
                 break;
             case "stream_stop":
                 stopStream();
@@ -258,16 +317,18 @@
                 handleSignal(msg);
                 break;
             case "play_video":
-                withCalendarPreempt(() => playVideo(msg));
+                withPhotoFramePreempt(() => withCalendarPreempt(() => playVideo(msg)));
                 break;
             case "video_stop":
                 stopVideo();
                 break;
             case "show_calendar":
-                getCalendar().then((cal) => {
-                    if (cal.isShown()) cal.update(msg);
-                    else cal.show(msg);
-                }).catch((e) => console.error("[calendar] show failed:", e));
+                withPhotoFramePreempt(() => {
+                    getCalendar().then((cal) => {
+                        if (cal.isShown()) cal.update(msg);
+                        else cal.show(msg);
+                    }).catch((e) => console.error("[calendar] show failed:", e));
+                });
                 break;
             case "hide_calendar":
                 if (calendarController) {
@@ -280,6 +341,19 @@
                 // by an external app/hardware/HA — there's no kiosk
                 // input for it.
                 document.body.classList.toggle("ptt-active", !!msg.active);
+                if (msg.active) {
+                    maybeDismissPhotoFrame("ptt");
+                }
+                break;
+            case "show_photo_frame":
+                getPhotoFrame().then((pf) => pf.show(msg))
+                    .catch((e) => console.error("[photo-frame] show failed:", e));
+                break;
+            case "photo_frame_update":
+                if (pfController) pfController.update(msg);
+                break;
+            case "hide_photo_frame":
+                if (pfController) pfController.dismiss("explicit").catch(() => {});
                 break;
             default:
                 console.log("Unknown message:", msg);
@@ -677,6 +751,7 @@
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "mute", muted: muted }));
         }
+        maybeDismissPhotoFrame("kiosk-mute");
     }
 
     muteBtn.addEventListener("click", () => setMuted(!muted));
@@ -695,6 +770,7 @@
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "volume", level: volume }));
         }
+        maybeDismissPhotoFrame("kiosk-volume");
     }
 
     volDown.addEventListener("click", () => setVolume(volume - 0.1));

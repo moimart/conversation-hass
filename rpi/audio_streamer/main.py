@@ -435,6 +435,7 @@ class AudioManager:
             "play_video", "video_stop", "themes_changed",
             "show_calendar", "hide_calendar",
             "ptt_active",
+            "show_photo_frame", "photo_frame_update", "hide_photo_frame",
         ):
             await self.broadcast_to_ui(msg)
 
@@ -571,6 +572,15 @@ class AudioManager:
                                 await self._server_ws.send(json.dumps(data))
                             except Exception as e:
                                 log.debug(f"webrtc_signal upstream forward failed: {e}")
+                    elif msg_type == "photo_frame_dismissed":
+                        # Kiosk auto-dismissed the photo frame (user
+                        # interaction or state change). Forward upstream so
+                        # the server can tear down its HA subscription.
+                        if self._server_ws:
+                            try:
+                                await self._server_ws.send(json.dumps(data))
+                            except Exception as e:
+                                log.debug(f"photo_frame_dismissed upstream forward failed: {e}")
         finally:
             self.ui_clients.discard(ws)
             log.info(f"Web UI client disconnected (total: {len(self.ui_clients)})")

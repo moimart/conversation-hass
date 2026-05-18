@@ -140,6 +140,19 @@ HA discovery buttons) works.
 | `<base>/calendar/show/set` | Several forms:<br>• `month` / `week` / `day` (bare string)<br>• Calendar name (bare string)<br>• JSON `{"view": "...", "calendar_name": "...", "anchor_date": "YYYY-MM-DD", "duration_s": N}` | Show the calendar overlay. Empty/no-match `calendar_name` = merge all HA calendars. Optional `anchor_date` (ISO `YYYY-MM-DD`) anchors a specific day/week/month — omit for today. |
 | `<base>/calendar/hide/set` | (any) | Dismiss the overlay early. |
 
+### Photo frame
+
+Bare-trigger topics published by the two HA Discovery buttons. The
+`show` topic also accepts an explicit `entity_id` to override the
+configured default. Gated by [`photo_frame_entity`](#live-runtime-config)
+— if neither the configured default nor the payload supplies one,
+the request is a silent no-op.
+
+| Topic | Payload | Effect |
+|---|---|---|
+| `<base>/photo_frame/show/set` | Several forms:<br>• `PRESS` (HA button default) — uses configured default<br>• Bare `image.weather_radar` / `camera.front_door`<br>• JSON `{"entity_id": "image.weather_radar"}` | Show the photo frame. Auto-dismisses on any kiosk activity. |
+| `<base>/photo_frame/hide/set` | (any) | Dismiss early. |
+
 ### Live runtime config
 
 Each key has a `<state>` topic the bridge publishes to (retained) and a
@@ -157,6 +170,7 @@ Each key has a `<state>` topic the bridge publishes to (retained) and a
 | `start_muted`            | `<base>/config/start_muted/{state,set}`            | `ON`/`OFF` | mic boots muted |
 | `calendar_default_source`| `<base>/config/calendar_default_source/{state,set}`| text       | empty = merge all calendars |
 | `calendar_dismiss_seconds`| `<base>/config/calendar_dismiss_seconds/{state,set}` | `5`-`600` (number) | default 30 |
+| `photo_frame_entity`     | `<base>/config/photo_frame_entity/{state,set}`     | text       | HA `image.*` (or `camera.*`) entity_id; empty = feature disabled |
 
 ---
 
@@ -273,6 +287,8 @@ the theme catalog / voice list / model list changes.
 | **PTT Start**                | `ptt/start`          payload `PRESS`           |
 | **PTT End**                  | `ptt/end`            payload `PRESS`           |
 | **PTT Cancel**               | `ptt/cancel`         payload `PRESS`           |
+| **Show Photo Frame**         | `photo_frame/show/set` payload `PRESS`         |
+| **Hide Photo Frame**         | `photo_frame/hide/set` payload `PRESS`         |
 
 ### Camera
 
@@ -408,6 +424,12 @@ mosquitto_pub -h mqtt.broker.lan -t hal/hal-default/theme/set -m material_you
 
 # Adjust a runtime config key (auto-theme off)
 mosquitto_pub -h mqtt.broker.lan -t hal/hal-default/config/auto_theme/set -m OFF
+
+# Configure + show the photo frame (HA image.* entity)
+mosquitto_pub -h mqtt.broker.lan -t hal/hal-default/config/photo_frame_entity/set -m image.weather_radar
+mosquitto_pub -h mqtt.broker.lan -t hal/hal-default/photo_frame/show/set -m PRESS
+# ...wait, then dismiss explicitly (or just touch the kiosk):
+mosquitto_pub -h mqtt.broker.lan -t hal/hal-default/photo_frame/hide/set -m PRESS
 
 # Watch every topic the device touches
 mosquitto_sub -h mqtt.broker.lan -t 'hal/hal-default/#' -v

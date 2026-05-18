@@ -93,6 +93,12 @@ class MQTTBridge:
         self.on_ptt_start: Callable[[], Awaitable[None]] | None = None
         self.on_ptt_end: Callable[[], Awaitable[None]] | None = None
         self.on_ptt_cancel: Callable[[], Awaitable[None]] | None = None
+        # Photo-frame callbacks. show accepts optional JSON
+        # {"entity_id":"image.xyz"} to override the configured default.
+        # hide is a bare trigger.
+        self.on_photo_frame_show: Callable[[dict], Awaitable[None]] | None = None
+        self.on_photo_frame_hide: Callable[[], Awaitable[None]] | None = None
+        self.on_config_photo_frame_entity: Callable[[str], Awaitable[None]] | None = None
         # "Start muted" config — whether HAL's mic should be muted on
         # RPi connect / server boot. The current mute state still
         # flows through the existing mute switch; this is just the
@@ -131,6 +137,8 @@ class MQTTBridge:
         self._cached_config_calendar_default_source: str = ""
         self._cached_config_calendar_dismiss_seconds: int = 30
         self._cached_config_start_muted: bool = False
+        # Photo-frame config cache (entity_id, default "")
+        self._cached_config_photo_frame_entity: str = ""
 
     @property
     def connected(self) -> bool:
@@ -582,6 +590,45 @@ class MQTTBridge:
                 },
             ))
 
+        # Photo frame: two bare-trigger buttons + one text entity for the
+        # configured image entity_id. Pattern mirrors the calendar
+        # buttons + calendar_default_source.
+        for action, label, icon in (
+            ("show", "Show Photo Frame", "mdi:image-frame"),
+            ("hide", "Hide Photo Frame", "mdi:image-off-outline"),
+        ):
+            configs.append((
+                f"{DISCOVERY_PREFIX}/button/{self.device_id}/photo_frame_{action}/config",
+                {
+                    "name": label,
+                    "unique_id": f"{self.device_id}_photo_frame_{action}",
+                    "command_topic": f"{self.base}/photo_frame/{action}/set",
+                    "payload_press": "PRESS",
+                    "icon": icon,
+                    "availability": avail,
+                    "device": device,
+                    "entity_category": "config",
+                },
+            ))
+        # Default image entity for the photo frame. Empty = feature
+        # disabled (Show button is a no-op). No `max` field — HA's text
+        # entity caps at 255 silently if set above that, which an
+        # entity_id never reaches anyway.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_photo_frame_entity/config",
+            {
+                "name": "Photo Frame Entity",
+                "unique_id": f"{self.device_id}_config_photo_frame_entity",
+                "state_topic":   f"{self.base}/config/photo_frame_entity/state",
+                "command_topic": f"{self.base}/config/photo_frame_entity/set",
+                "icon": "mdi:image-multiple-outline",
+                "availability": avail,
+                "device": device,
+                "mode": "text",
+                "entity_category": "config",
+            },
+        ))
+
         return configs
 
     async def start(self):
@@ -663,6 +710,9 @@ class MQTTBridge:
                         self._cached_config_calendar_dismiss_seconds
                     )
                     await self.publish_config_start_muted(self._cached_config_start_muted)
+                    await self.publish_config_photo_frame_entity(
+                        self._cached_config_photo_frame_entity
+                    )
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -688,6 +738,9 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/ptt/start")
                     await client.subscribe(f"{self.base}/ptt/end")
                     await client.subscribe(f"{self.base}/ptt/cancel")
+                    await client.subscribe(f"{self.base}/photo_frame/show/set")
+                    await client.subscribe(f"{self.base}/photo_frame/hide/set")
+                    await client.subscribe(f"{self.base}/config/photo_frame_entity/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -843,6 +896,32 @@ class MQTTBridge:
                 if self.on_ptt_cancel:
                     await self.on_ptt_cancel()
 
+            elif topic == f"{self.base}/photo_frame/show/set":
+                args: dict = {}
+                stripped = payload.strip()
+                if stripped:
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, dict):
+                            args = parsed
+                        elif isinstance(parsed, str) and parsed.startswith(("image.", "camera.")):
+                            args = {"entity_id": parsed}
+                    except json.JSONDecodeError:
+                        # bare entity_id like "image.weather_radar"
+                        if stripped.startswith(("image.", "camera.")):
+                            args = {"entity_id": stripped}
+                        # else: ignore (e.g. "PRESS" from a button entity)
+                if self.on_photo_frame_show:
+                    await self.on_photo_frame_show(args)
+
+            elif topic == f"{self.base}/photo_frame/hide/set":
+                if self.on_photo_frame_hide:
+                    await self.on_photo_frame_hide()
+
+            elif topic == f"{self.base}/config/photo_frame_entity/set":
+                if self.on_config_photo_frame_entity:
+                    await self.on_config_photo_frame_entity(payload.strip())
+
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")
 
@@ -969,4 +1048,11 @@ class MQTTBridge:
         await self._safe_publish(
             f"{self.base}/config/start_muted/state",
             "ON" if value else "OFF",
+        )
+
+    async def publish_config_photo_frame_entity(self, value: str):
+        self._cached_config_photo_frame_entity = value or ""
+        await self._safe_publish(
+            f"{self.base}/config/photo_frame_entity/state",
+            value or "",
         )
