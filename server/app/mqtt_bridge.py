@@ -79,6 +79,7 @@ class MQTTBridge:
         self.on_config_tts_voice: Callable[[str], Awaitable[None]] | None = None
         self.on_config_wake_word: Callable[[str], Awaitable[None]] | None = None
         self.on_config_ollama_model: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_num_ctx: Callable[[int], Awaitable[None]] | None = None
         self.on_config_auto_theme: Callable[[bool], Awaitable[None]] | None = None
         # Calendar overlay callbacks. on_calendar_show receives a dict like
         # {"view": "month"|"week"|"day", "calendar_name"?: str, "duration_s"?: int}.
@@ -132,6 +133,7 @@ class MQTTBridge:
         self._cached_config_tts_voice: str = ""
         self._cached_config_wake_word: str = ""
         self._cached_config_ollama_model: str = ""
+        self._cached_config_num_ctx: int = 32768
         self._cached_config_auto_theme: bool = True
         # Calendar config caches
         self._cached_config_calendar_default_source: str = ""
@@ -566,6 +568,24 @@ class MQTTBridge:
                 "entity_category": "config",
             },
         ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/number/{self.device_id}/config_num_ctx/config",
+            {
+                "name": "LLM Context Size",
+                "unique_id": f"{self.device_id}_config_num_ctx",
+                "state_topic":   f"{self.base}/config/num_ctx/state",
+                "command_topic": f"{self.base}/config/num_ctx/set",
+                "min": 2048,
+                "max": 131072,
+                "step": 1024,
+                "unit_of_measurement": "tok",
+                "icon": "mdi:format-letter-case",
+                "mode": "box",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
 
         # Push-to-Talk: three button entities under the device's
         # Configuration section. HA dashboards, automations, and
@@ -704,6 +724,7 @@ class MQTTBridge:
                         await self.publish_config_wake_word(self._cached_config_wake_word)
                     if self._cached_config_ollama_model:
                         await self.publish_config_ollama_model(self._cached_config_ollama_model)
+                    await self.publish_config_num_ctx(self._cached_config_num_ctx)
                     await self.publish_config_auto_theme(self._cached_config_auto_theme)
                     await self.publish_config_calendar_default_source(
                         self._cached_config_calendar_default_source
@@ -730,6 +751,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/config/theme_night/set")
                     await client.subscribe(f"{self.base}/config/tts_voice/set")
                     await client.subscribe(f"{self.base}/config/ollama_model/set")
+                    await client.subscribe(f"{self.base}/config/num_ctx/set")
                     await client.subscribe(f"{self.base}/config/wake_word/set")
                     await client.subscribe(f"{self.base}/config/auto_theme/set")
                     await client.subscribe(f"{self.base}/calendar/show/set")
@@ -837,6 +859,15 @@ class MQTTBridge:
             elif topic == f"{self.base}/config/ollama_model/set":
                 if self.on_config_ollama_model:
                     await self.on_config_ollama_model(payload.strip())
+
+            elif topic == f"{self.base}/config/num_ctx/set":
+                if self.on_config_num_ctx:
+                    try:
+                        n = int(float(payload.strip()))
+                    except ValueError:
+                        n = 32768
+                    n = max(2048, min(131072, n))
+                    await self.on_config_num_ctx(n)
 
             elif topic == f"{self.base}/config/wake_word/set":
                 if self.on_config_wake_word:
@@ -1018,6 +1049,15 @@ class MQTTBridge:
     async def publish_config_ollama_model(self, value: str):
         self._cached_config_ollama_model = value
         await self._safe_publish(f"{self.base}/config/ollama_model/state", value)
+
+    async def publish_config_num_ctx(self, value: int):
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            n = 32768
+        n = max(2048, min(131072, n))
+        self._cached_config_num_ctx = n
+        await self._safe_publish(f"{self.base}/config/num_ctx/state", str(n))
 
     async def publish_config_auto_theme(self, value: bool):
         self._cached_config_auto_theme = bool(value)

@@ -25,6 +25,7 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "tts_voice":    ("WYOMING_TTS_VOICE", ""),
     "wake_word":    ("WAKE_WORD", "hey hal"),
     "ollama_model": ("OLLAMA_MODEL", "llama3.2"),
+    "num_ctx":      ("OLLAMA_NUM_CTX", 32768),
     "auto_theme":   ("AUTO_THEME", True),
     "calendar_dismiss_seconds":  ("CALENDAR_DISMISS_SECONDS", 30),
     "calendar_default_source":   ("CALENDAR_DEFAULT_SOURCE", ""),

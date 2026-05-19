@@ -1602,7 +1602,7 @@ async def lifespan(app: FastAPI):
         tts_engine=state.tts_engine,
         memory_client=state.memory_client,
         system_prompt=system_prompt,
-        num_ctx=int(os.environ.get("OLLAMA_NUM_CTX", "32768")),
+        num_ctx=int(cfg.get("num_ctx", os.environ.get("OLLAMA_NUM_CTX", "32768")) or 32768),
         num_predict=int(os.environ.get("OLLAMA_NUM_PREDICT", "512")),
     )
 
@@ -1876,6 +1876,17 @@ async def lifespan(app: FastAPI):
             await _persist("ollama_model", name)
             await bridge.publish_config_ollama_model(name)
 
+        async def _cfg_num_ctx(value: int):
+            try:
+                n = int(value)
+            except (TypeError, ValueError):
+                n = 32768
+            n = max(2048, min(131072, n))
+            if state.conversation is not None:
+                state.conversation.num_ctx = n
+            await _persist("num_ctx", n)
+            await bridge.publish_config_num_ctx(n)
+
         async def _cfg_wake_word(value: str):
             value = (value or "").strip()
             if state.conversation is not None:
@@ -1939,6 +1950,10 @@ async def lifespan(app: FastAPI):
         )
         bridge._cached_config_ollama_model = (
             state.conversation.ollama_model if state.conversation is not None else ""
+        )
+        bridge._cached_config_num_ctx = int(
+            state.conversation.num_ctx if state.conversation is not None
+            else state.runtime_config.get("num_ctx", 32768) or 32768
         )
         bridge._cached_config_auto_theme = state.auto_theme
         bridge._cached_config_calendar_default_source = str(
@@ -2027,6 +2042,7 @@ async def lifespan(app: FastAPI):
         bridge.on_config_theme_night = _cfg_theme_night
         bridge.on_config_tts_voice = _cfg_tts_voice
         bridge.on_config_ollama_model = _cfg_ollama_model
+        bridge.on_config_num_ctx = _cfg_num_ctx
         bridge.on_config_wake_word = _cfg_wake_word
         bridge.on_config_auto_theme = _cfg_auto_theme
         bridge.on_calendar_show = _mqtt_calendar_show
