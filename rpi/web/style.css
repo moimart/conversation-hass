@@ -526,26 +526,19 @@ body {
 }
 body.ptt-active .ptt-chip { display: flex; }
 
-/* Orb aura while PTT is held. border-radius:50% on the (otherwise
-   square) container makes the box-shadow follow a circle, so the
-   glow reads as a halo around the orb instead of a square frame.
-   Two shadow stops + a slow breathing pulse so the visual feels
-   alive while transmitting, not just decoratively switched on. */
+/* Orb aura while PTT is held. RPi GPU can't sustain a large animated
+   box-shadow blur (it re-rasterises every frame), so we keep the
+   shadow static and small, and breathe with opacity on the container
+   itself — opacity animations are compositor-only. */
 body.ptt-active .eye-container {
     border-radius: 50%;
+    box-shadow: 0 0 24px rgba(var(--accent-rgb), 0.55);
     animation: ptt-orb-aura 1.8s ease-in-out infinite;
+    will-change: opacity;
 }
 @keyframes ptt-orb-aura {
-    0%, 100% {
-        box-shadow:
-            0 0 32px rgba(var(--accent-rgb), 0.50),
-            0 0 90px rgba(var(--accent-rgb), 0.22);
-    }
-    50% {
-        box-shadow:
-            0 0 56px rgba(var(--accent-rgb), 0.70),
-            0 0 130px rgba(var(--accent-rgb), 0.32);
-    }
+    0%, 100% { opacity: 0.92; }
+    50%      { opacity: 1; }
 }
 
 /* === Transcript === */
