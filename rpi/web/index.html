@@ -35,6 +35,10 @@
                 <div class="eye-pupil"></div>
                 <div class="eye-pupil-light"></div>
                 <div class="eye-reflection"></div>
+                <!-- Hue-rotated overlay used during processing state.
+                     Cross-fades via opacity (compositor-cheap) instead
+                     of animating filter: hue-rotate on every frame. -->
+                <div class="eye-core-hue"></div>
             </div>
             <video class="eye-stream" id="eye-stream" autoplay muted playsinline></video>
             <div class="eye-scan-line"></div>

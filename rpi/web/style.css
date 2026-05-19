@@ -173,6 +173,13 @@ body {
     height: 406px;
     margin: 0;
     z-index: 1;
+    /* Promote to its own GPU compositor layer so the many animated
+       descendants (rings, glow, core, scan line, pupil light) don't
+       force repaints of unrelated parts of the page. translateZ(0)
+       triggers layer creation; will-change keeps it stable across
+       state changes. */
+    will-change: transform;
+    backface-visibility: hidden;
 }
 
 .eye-bezel {
@@ -326,6 +333,11 @@ body {
         0 0 80px rgba(var(--accent-rgb), 0.18);
     animation: core-pulse 4s ease-in-out infinite;
     z-index: 2;
+    /* Continuous transform/opacity animations live on this layer and
+       its descendants (speak-pulse, core-pulse, pupil-breathe,
+       eye-core-hue cross-fade). Promote so the box-shadow halo is
+       cached and only the transform composites per frame. */
+    will-change: transform;
 }
 
 /* Glass-dome highlight on the upper face of the lens */
@@ -403,15 +415,18 @@ body {
 }
 
 @keyframes pupil-breathe {
+    /* Brightness was conveyed by `filter: brightness()`, which forces a
+       paint on every frame. The pupil-light layer is mix-blend-mode:
+       screen on a saturated yellow gradient — boosting its opacity
+       slightly past 1 isn't possible, so we expand the opacity range
+       and let the scale do the rest. Visually equivalent breath. */
     0%, 100% {
-        opacity: 0.9;
+        opacity: 0.82;
         transform: translate(-50%, -50%) scale(1);
-        filter: brightness(1);
     }
     50% {
         opacity: 1;
         transform: translate(-50%, -50%) scale(1.2);
-        filter: brightness(1.25);
     }
 }
 
@@ -856,11 +871,36 @@ body.state-listening .status-text {
     color: var(--accent);
 }
 
-/* Processing state — dark theme uses hue-rotate which works on red.
-   Light/warm themes get a placid breath instead (hue-rotate on
-   copper/brown turns greenish, which we don't want). */
-body.state-processing .eye-core {
-    animation: core-spin 1.5s linear infinite;
+/* Processing state — used to animate filter: hue-rotate on .eye-core
+   (full repaint every frame). Now we keep .eye-core static and
+   cross-fade an overlaid .eye-core-hue layer that has the 30° hue
+   shift pre-baked statically. Browser rasters that layer once;
+   animating its opacity is compositor-only. Visual result is the
+   same warm "spin" feel. */
+.eye-core-hue {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: inherit;
+    filter: hue-rotate(30deg);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+body.state-processing .eye-core-hue {
+    /* inherit the eye-core background so the hue-shifted copy matches
+       whatever the current core gradient is */
+    background: radial-gradient(circle at 45% 42%,
+        var(--accent-glow) 0%,
+        var(--accent) 30%,
+        var(--accent-deep) 70%,
+        var(--core-deep-stop) 100%
+    );
+    animation: core-hue-fade 1.5s linear infinite;
+}
+@keyframes core-hue-fade {
+    0%, 100% { opacity: 0; }
+    50%      { opacity: 1; }
 }
 
 
@@ -971,20 +1011,15 @@ body.state-speaking .status-text {
 }
 
 @keyframes speak-pulse {
-    from {
-        transform: scale(1);
-        box-shadow:
-            0 0 40px rgba(var(--accent-rgb), 0.3),
-            0 0 80px rgba(var(--accent-rgb), 0.15),
-            inset 0 0 30px var(--core-shadow);
-    }
-    to {
-        transform: scale(1.04);
-        box-shadow:
-            0 0 60px rgba(var(--accent-rgb), 0.5),
-            0 0 100px rgba(var(--accent-rgb), 0.25),
-            inset 0 0 20px var(--core-shadow);
-    }
+    /* The 0.3s alternate cadence used to animate three box-shadow stops
+       up to 100px blur — three full-screen rasterised paints every
+       150ms during every spoken sentence. The visual cue we actually
+       want is the breathing scale; the halo intensity feels animated
+       because of .eye-glow's separate opacity breath running in
+       parallel. Restrict this keyframe to transform so it's
+       compositor-only. */
+    from { transform: scale(1); }
+    to   { transform: scale(1.04); }
 }
 
 @keyframes scan {
@@ -1058,6 +1093,9 @@ body.state-speaking .status-text {
     background: #000;       /* visible during 1st image decode */
     overflow: hidden;
     transition: opacity 600ms ease;
+    /* Isolate paint so the Ken-Burns transform on the image doesn't
+       invalidate any orb pixels behind it. */
+    contain: layout paint;
 }
 body.photo-frame-active .photo-frame-stage {
     opacity: 1;

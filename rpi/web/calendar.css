@@ -29,6 +29,9 @@
     -webkit-backface-visibility: hidden;
     pointer-events: none;
     will-change: transform;
+    /* Calendar internal repaints (typing animation, scroll) should not
+       invalidate the orb scene underneath. */
+    contain: layout paint;
 }
 
 body.show-calendar .calendar-stage {
