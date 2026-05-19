@@ -240,11 +240,45 @@ class MultiMCPClient:
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> str:
         server_name = self._tool_to_server.get(name)
         if not server_name:
-            return f"Error: Unknown tool '{name}'"
+            # The LLM occasionally hallucinates a prefix (e.g. invents
+            # `ha_config_show_calendar` because most HASS-MCP tool names
+            # start with `ha_config_`). If the suffix after the first
+            # underscore-separated token uniquely matches a real tool,
+            # route to it instead of returning a silent "unknown" error.
+            alias = self._resolve_alias(name)
+            if alias:
+                log.warning(f"Tool '{name}' not found — routing to '{alias}' as best-effort alias")
+                server_name = self._tool_to_server.get(alias)
+                if server_name:
+                    client = self._clients.get(server_name)
+                    if client:
+                        return await client.call_tool(alias, arguments)
+            return f"Error: Unknown tool '{name}'. Available tools include: {', '.join(sorted(self._tool_to_server.keys())[:20])}..."
         client = self._clients.get(server_name)
         if not client:
             return f"Error: Server '{server_name}' not connected"
         return await client.call_tool(name, arguments)
+
+    def _resolve_alias(self, name: str) -> str | None:
+        """Try a few permissive matches for a hallucinated tool name."""
+        if not name:
+            return None
+        known = set(self._tool_to_server.keys())
+        # Strip common erroneous prefixes the LLM adds.
+        for prefix in ("ha_config_", "ha_", "kiosk_", "hal_"):
+            if name.startswith(prefix):
+                stripped = name[len(prefix):]
+                if stripped in known:
+                    return stripped
+        # Suffix match: exactly one known tool ends with `_<name>` or equals `<name>`.
+        suffix_matches = [k for k in known if k == name or k.endswith("_" + name)]
+        if len(suffix_matches) == 1:
+            return suffix_matches[0]
+        # Prefix-of-known match: exactly one known tool starts with `<name>_`.
+        prefix_matches = [k for k in known if k.startswith(name + "_")]
+        if len(prefix_matches) == 1:
+            return prefix_matches[0]
+        return None
 
     async def call_tool_content(self, name: str, arguments: dict[str, Any] | None = None) -> list:
         """Route to the owning client's call_tool_content if available."""
