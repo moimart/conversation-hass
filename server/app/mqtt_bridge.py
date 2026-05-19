@@ -134,6 +134,10 @@ class MQTTBridge:
         self._cached_config_wake_word: str = ""
         self._cached_config_ollama_model: str = ""
         self._cached_config_num_ctx: int = 32768
+        # Dynamic upper bound for the LLM context size — main.py refreshes
+        # this from Ollama's /api/show whenever the model changes, so the
+        # HA Number entity exposes exactly what the current model supports.
+        self.num_ctx_max: int = 131072
         self._cached_config_auto_theme: bool = True
         # Calendar config caches
         self._cached_config_calendar_default_source: str = ""
@@ -576,7 +580,7 @@ class MQTTBridge:
                 "state_topic":   f"{self.base}/config/num_ctx/state",
                 "command_topic": f"{self.base}/config/num_ctx/set",
                 "min": 2048,
-                "max": 131072,
+                "max": max(2048, int(self.num_ctx_max)),
                 "step": 1024,
                 "unit_of_measurement": "tok",
                 "icon": "mdi:format-letter-case",
@@ -866,7 +870,7 @@ class MQTTBridge:
                         n = int(float(payload.strip()))
                     except ValueError:
                         n = 32768
-                    n = max(2048, min(131072, n))
+                    n = max(2048, min(int(self.num_ctx_max), n))
                     await self.on_config_num_ctx(n)
 
             elif topic == f"{self.base}/config/wake_word/set":
@@ -1055,9 +1059,29 @@ class MQTTBridge:
             n = int(value)
         except (TypeError, ValueError):
             n = 32768
-        n = max(2048, min(131072, n))
+        n = max(2048, min(int(self.num_ctx_max), n))
         self._cached_config_num_ctx = n
         await self._safe_publish(f"{self.base}/config/num_ctx/state", str(n))
+
+    async def update_num_ctx_max(self, value: int):
+        """Set the dynamic upper bound and republish discovery so the HA
+        Number entity reflects the current model's true ceiling."""
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            return
+        if n < 2048:
+            return
+        if n == self.num_ctx_max:
+            return
+        self.num_ctx_max = n
+        try:
+            await self.publish_discovery()
+        except Exception as e:
+            log.warning(f"num_ctx_max republish_discovery failed: {e}")
+        # If the current value exceeds the new ceiling, clamp + republish.
+        if self._cached_config_num_ctx > n:
+            await self.publish_config_num_ctx(n)
 
     async def publish_config_auto_theme(self, value: bool):
         self._cached_config_auto_theme = bool(value)

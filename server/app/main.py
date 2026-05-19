@@ -587,6 +587,39 @@ async def _fetch_ollama_tags(host: str) -> list[str]:
         return []
 
 
+async def _fetch_ollama_context_length(host: str, model: str) -> int | None:
+    """Return the model's native max context window via /api/show.
+
+    Ollama exposes the architecture-specific value under
+    `model_info["<arch>.context_length"]` (e.g.
+    `llama.context_length`, `gemma3.context_length`,
+    `qwen2.context_length`). Returns None on any failure so callers
+    can fall back to a static cap.
+    """
+    if not model:
+        return None
+    import httpx
+    url = host.rstrip("/") + "/api/show"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.post(url, json={"model": model})
+            r.raise_for_status()
+            data = r.json() or {}
+        info = data.get("model_info") or {}
+        arch = info.get("general.architecture") or ""
+        if arch:
+            v = info.get(f"{arch}.context_length")
+            if isinstance(v, int) and v > 0:
+                return v
+        # Fall back: scan for any *.context_length key.
+        for k, v in info.items():
+            if k.endswith(".context_length") and isinstance(v, int) and v > 0:
+                return v
+    except Exception as e:
+        log.warning(f"Ollama show failed for {model!r}: {e}")
+    return None
+
+
 async def _fetch_ha_image_entity(entity_id: str) -> tuple[bytes, str] | None:
     """Fetch an HA image.* entity via /api/image_proxy/<entity_id>.
 
@@ -1875,13 +1908,21 @@ async def lifespan(app: FastAPI):
                 state.conversation.ollama_model = name
             await _persist("ollama_model", name)
             await bridge.publish_config_ollama_model(name)
+            # Refresh the num_ctx ceiling so the HA Number entity reflects
+            # the new model's true context capacity (republishes discovery).
+            ctx_max = await _fetch_ollama_context_length(
+                os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
+                name,
+            )
+            if ctx_max:
+                await bridge.update_num_ctx_max(ctx_max)
 
         async def _cfg_num_ctx(value: int):
             try:
                 n = int(value)
             except (TypeError, ValueError):
                 n = 32768
-            n = max(2048, min(131072, n))
+            n = max(2048, min(int(bridge.num_ctx_max), n))
             if state.conversation is not None:
                 state.conversation.num_ctx = n
             await _persist("num_ctx", n)
@@ -1955,6 +1996,24 @@ async def lifespan(app: FastAPI):
             state.conversation.num_ctx if state.conversation is not None
             else state.runtime_config.get("num_ctx", 32768) or 32768
         )
+        # Seed num_ctx_max from the current model's native ceiling so the
+        # first publish_discovery() uses the right `max`.
+        current_model = (
+            state.conversation.ollama_model
+            if state.conversation is not None else ""
+        )
+        ctx_max = await _fetch_ollama_context_length(
+            os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
+            current_model,
+        )
+        if ctx_max:
+            bridge.num_ctx_max = ctx_max
+            # Clamp the cached current value to the ceiling we just learned.
+            if bridge._cached_config_num_ctx > ctx_max:
+                bridge._cached_config_num_ctx = ctx_max
+                if state.conversation is not None:
+                    state.conversation.num_ctx = ctx_max
+                await _persist("num_ctx", ctx_max)
         bridge._cached_config_auto_theme = state.auto_theme
         bridge._cached_config_calendar_default_source = str(
             state.runtime_config.get("calendar_default_source", "") or ""
