@@ -1,11 +1,14 @@
 /* Birch — Animated ambient effect.
    ---------------------------------
-   Soft warm motes drifting *diagonally* across the page, like afternoon
-   sunlight catching dust through a south-facing window. Visually
-   distinct from the sunset effect (which floats straight up like
-   golden-hour bokeh): motes here drift on a slow lateral path with a
-   subtle vertical bob, and the palette is warm copper/amber rather
-   than coral/peach. */
+   Stylised birch leaves (small almond shapes with a subtle midrib)
+   tumbling gently downward across the page. Each leaf has its own
+   slow rotation, a sinusoidal horizontal sway, and one of four warm
+   palette colours. Japandi-elegant: clean shapes, low count, gentle
+   motion — the page should feel like it's autumn through a sunlit
+   window.
+
+   Canvas-based so we can draw real shapes (ellipses + midrib lines)
+   with rotation per particle without going wild on DOM nodes. */
 
 export default function setup({ root }) {
     const canvas = root.ownerDocument.createElement("canvas");
@@ -23,18 +26,18 @@ export default function setup({ root }) {
     root.appendChild(canvas);
     const ctx = canvas.getContext("2d");
 
-    // Warm birch palette — copper, amber, bronze, cream. Slightly
-    // higher base alphas than sunset so the wash is noticeable on the
-    // lighter beige background (mix-blend isn't available on canvas
-    // particles the same way, so we lean on alpha instead).
+    // Warm autumn-birch palette. Each pair is [fill, midrib] so the
+    // midrib is a slightly darker tone of the same hue — keeps the
+    // leaf legible without looking flat.
     const PALETTE = [
-        "rgba(217, 122,  53, 0.65)",   // amber
-        "rgba(201, 110,  31, 0.62)",   // copper
-        "rgba(232, 165, 100, 0.60)",   // soft bronze
-        "rgba(255, 232, 184, 0.55)",   // cream
+        { fill: "rgba(217, 122,  53, 0.85)", rib: "rgba(140,  70,  20, 0.55)" },  // amber
+        { fill: "rgba(201, 110,  31, 0.82)", rib: "rgba(120,  60,  15, 0.55)" },  // copper
+        { fill: "rgba(232, 165, 100, 0.80)", rib: "rgba(150,  90,  40, 0.50)" },  // soft bronze
+        { fill: "rgba(255, 232, 184, 0.78)", rib: "rgba(165, 120,  60, 0.45)" },  // cream
+        { fill: "rgba(178,  90,  28, 0.85)", rib: "rgba(100,  50,  10, 0.55)" },  // deep copper
     ];
 
-    let particles = [];
+    let leaves = [];
     let raf = null;
     let onResize = null;
     let lastFrame = 0;
@@ -48,44 +51,76 @@ export default function setup({ root }) {
 
     function rand(min, max) { return min + Math.random() * (max - min); }
 
-    function spawnParticle(seedAnywhere) {
-        // Default drift direction is left-to-right with a slight downward
-        // tilt; sign of vx randomly flips per particle so the group
-        // doesn't look like a one-way conveyor belt.
-        const dirSign = Math.random() < 0.55 ? 1 : -1;
+    function spawnLeaf(seedAnywhere) {
+        // Leaves spawn off the top and drift downward; on first frame
+        // we seed across the viewport so the page is populated.
+        const size = rand(14, 26);   // half-length along the leaf's long axis
         return {
-            x: seedAnywhere
-                ? rand(0, window.innerWidth)
-                : (dirSign > 0 ? rand(-200, -20) : rand(window.innerWidth + 20, window.innerWidth + 200)),
-            y: rand(0, window.innerHeight),
-            r: rand(32, 86),                       // soft bokeh radius
-            vx: dirSign * rand(10, 26),            // px/sec
-            vy: rand(-3, 4),                       // gentle vertical wander
-            bobAmp: rand(6, 22),
-            bobSpeed: rand(0.0004, 0.0011),
+            x: rand(-40, window.innerWidth + 40),
+            y: seedAnywhere ? rand(0, window.innerHeight) : rand(-120, -20),
+            size,                              // long-axis half-length
+            ratio: rand(0.34, 0.46),           // short/long ratio (leaf "width")
+            rot: rand(0, Math.PI * 2),         // current rotation
+            rotSpeed: rand(-0.35, 0.35),       // rad/sec
+            vy: rand(24, 46),                  // downward fall speed, px/sec
+            swayAmp: rand(14, 36),             // horizontal sway amplitude
+            swaySpeed: rand(0.0004, 0.0011),
             phase: rand(0, Math.PI * 2),
             color: PALETTE[Math.floor(Math.random() * PALETTE.length)],
-            alpha: rand(0.55, 0.95),
+            alpha: rand(0.7, 1.0),
         };
     }
 
     function ensureCount() {
-        // Roughly the same density as the sunset effect so they feel
-        // equally lived-in.
-        const target = Math.min(30, Math.max(14, Math.floor(window.innerWidth * window.innerHeight / 65000)));
-        while (particles.length < target) particles.push(spawnParticle(false));
+        // Conservative count — leaves are bigger than the old blobs so
+        // we don't need many to feel populated.
+        const target = Math.min(22, Math.max(10, Math.floor(window.innerWidth * window.innerHeight / 90000)));
+        while (leaves.length < target) leaves.push(spawnLeaf(false));
     }
 
-    function drawParticle(p) {
-        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
-        grad.addColorStop(0, p.color);
-        grad.addColorStop(0.55, p.color.replace(/0\.\d+\)/, "0.20)"));
-        grad.addColorStop(1, "rgba(255, 220, 170, 0)");
-        ctx.globalAlpha = p.alpha;
+    function drawLeaf(l) {
+        const longR = l.size;
+        const shortR = l.size * l.ratio;
+        ctx.save();
+        ctx.translate(l.x, l.y);
+        ctx.rotate(l.rot);
+        ctx.globalAlpha = l.alpha;
+
+        // Leaf body — a softly-shaded ellipse. A subtle radial gradient
+        // gives a "lit from above" depth so leaves don't read as flat
+        // discs.
+        const grad = ctx.createRadialGradient(0, -shortR * 0.2, 0, 0, 0, longR);
+        grad.addColorStop(0, l.color.fill);
+        // Same hue but a bit deeper at the edges:
+        grad.addColorStop(1, l.color.fill.replace(/0\.\d+\)/, "0.45)"));
         ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, longR, shortR, 0, 0, Math.PI * 2);
         ctx.fill();
+
+        // Midrib — a single thin line down the long axis. This is what
+        // makes the shape read as "leaf" rather than "lozenge".
+        ctx.strokeStyle = l.color.rib;
+        ctx.lineWidth = Math.max(0.8, l.size * 0.06);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(-longR * 0.85, 0);
+        ctx.lineTo(longR * 0.85, 0);
+        ctx.stroke();
+
+        // Two tiny side veins for elegance — only on larger leaves so
+        // small ones stay clean.
+        if (l.size > 18) {
+            ctx.lineWidth = Math.max(0.5, l.size * 0.035);
+            ctx.beginPath();
+            ctx.moveTo(-longR * 0.2, 0);
+            ctx.lineTo(-longR * 0.05, -shortR * 0.55);
+            ctx.moveTo( longR * 0.05, 0);
+            ctx.lineTo( longR * 0.30,  shortR * 0.55);
+            ctx.stroke();
+        }
+
+        ctx.restore();
         ctx.globalAlpha = 1;
     }
 
@@ -95,17 +130,14 @@ export default function setup({ root }) {
         lastFrame = now;
         ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
         ensureCount();
-        for (const p of particles) {
-            p.x += p.vx * dt;
-            p.y += p.vy * dt + Math.sin(now * p.bobSpeed + p.phase) * p.bobAmp * dt * 0.4;
-            drawParticle(p);
+        for (const l of leaves) {
+            l.y += l.vy * dt;
+            l.x += Math.sin(now * l.swaySpeed + l.phase) * l.swayAmp * dt * 0.35;
+            l.rot += l.rotSpeed * dt;
+            drawLeaf(l);
         }
-        // Recycle particles that have drifted fully off either side or
-        // top/bottom.
-        particles = particles.filter(p =>
-            p.x + p.r > -20 && p.x - p.r < window.innerWidth + 20 &&
-            p.y + p.r > -200 && p.y - p.r < window.innerHeight + 200
-        );
+        // Recycle leaves that have fallen past the bottom.
+        leaves = leaves.filter(l => l.y - l.size * 2 < window.innerHeight + 40);
         raf = requestAnimationFrame(tick);
     }
 
@@ -115,11 +147,9 @@ export default function setup({ root }) {
             resize();
             onResize = () => resize();
             window.addEventListener("resize", onResize);
-            particles = [];
-            // Seed across the viewport so the page is populated from
-            // the first frame.
-            for (let i = 0; i < 18; i++) particles.push(spawnParticle(true));
-            requestAnimationFrame(() => { canvas.style.opacity = "0.8"; });
+            leaves = [];
+            for (let i = 0; i < 16; i++) leaves.push(spawnLeaf(true));
+            requestAnimationFrame(() => { canvas.style.opacity = "1"; });
             lastFrame = performance.now();
             raf = requestAnimationFrame(tick);
         },
@@ -132,7 +162,7 @@ export default function setup({ root }) {
             }
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             canvas.style.opacity = "0";
-            particles = [];
+            leaves = [];
         },
     };
 }
