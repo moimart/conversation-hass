@@ -32,6 +32,12 @@ from typing import Any, Awaitable, Callable
 log = logging.getLogger("hal.themes")
 
 
+# Well-known state-video keys. Only these are passed through to the
+# kiosk; unknown keys in the manifest are dropped silently. The kiosk
+# falls back to the static orb for any state that has no entry.
+_STATE_VIDEO_KEYS = ("idle", "listening", "processing", "speaking")
+
+
 @dataclass(frozen=True)
 class Theme:
     name: str
@@ -41,12 +47,16 @@ class Theme:
     kind: str               # "dark" or "light"
     has_effect: bool
     dir_path: str
-    # Hash of (manifest contents + theme.css mtime + effect.js mtime) for diffing.
+    # Optional map of state -> filename inside the theme dir. Filenames
+    # are validated to exist at load time; missing entries are dropped.
+    state_videos: tuple[tuple[str, str], ...]
+    # Hash of (manifest contents + theme.css mtime + effect.js mtime +
+    # state-video mtimes) for diffing.
     fingerprint: str
 
     def to_public(self) -> dict[str, Any]:
         """JSON-serializable summary for /api/themes."""
-        return {
+        d: dict[str, Any] = {
             "name": self.name,
             "display_name": self.display_name,
             "description": self.description,
@@ -54,6 +64,9 @@ class Theme:
             "kind": self.kind,
             "has_effect": self.has_effect,
         }
+        if self.state_videos:
+            d["state_videos"] = dict(self.state_videos)
+        return d
 
 
 def _file_mtime(path: str) -> float:
@@ -92,11 +105,37 @@ def _load_theme(dir_path: str, name: str) -> Theme | None:
     effect_filename = m.get("effect")
     effect_path = os.path.join(dir_path, effect_filename) if effect_filename else ""
     has_effect = bool(effect_filename) and os.path.isfile(effect_path)
+
+    # Parse optional state_videos. Only the four well-known keys are
+    # accepted; each entry's filename must exist inside the theme dir.
+    # Result is stored as a tuple-of-pairs so the dataclass stays
+    # hashable/frozen-friendly.
+    state_videos_pairs: list[tuple[str, str]] = []
+    raw_sv = m.get("state_videos")
+    if isinstance(raw_sv, dict):
+        for key in _STATE_VIDEO_KEYS:
+            val = raw_sv.get(key)
+            if not isinstance(val, str) or not val.strip():
+                continue
+            fn = val.strip()
+            # No path traversal — the kiosk fetches via /themes/<name>/<file>
+            if "/" in fn or "\\" in fn or fn in ("", ".", ".."):
+                log.debug(f"theme {name!r}: state_videos[{key!r}]={fn!r} rejected (path traversal)")
+                continue
+            if not os.path.isfile(os.path.join(dir_path, fn)):
+                log.debug(f"theme {name!r}: state_videos[{key!r}]={fn!r} missing on disk; dropped")
+                continue
+            state_videos_pairs.append((key, fn))
+
     fp_parts = [
         json.dumps(m, sort_keys=True),
         str(_file_mtime(css_path)),
         str(_file_mtime(effect_path)) if has_effect else "",
     ]
+    # Include video mtimes in the fingerprint so re-encoding a clip
+    # triggers a themes_changed broadcast.
+    for _, fn in state_videos_pairs:
+        fp_parts.append(str(_file_mtime(os.path.join(dir_path, fn))))
     fingerprint = "|".join(fp_parts)
     return Theme(
         name=name,
@@ -106,6 +145,7 @@ def _load_theme(dir_path: str, name: str) -> Theme | None:
         kind=kind,
         has_effect=has_effect,
         dir_path=dir_path,
+        state_videos=tuple(state_videos_pairs),
         fingerprint=fingerprint,
     )
 

@@ -27,10 +27,14 @@
     // it fetches /api/themes on startup, lazy-loads each theme's CSS on
     // first activation, and lazy-imports its optional effect.js module.
     const THEME_KEY = "hal-theme";
-    let themes = [];                 // [{name, display_name, has_effect, kind, ...}]
+    let themes = [];                 // [{name, display_name, has_effect, kind, state_videos?, ...}]
     let loadedCss = new Set();       // names whose stylesheet <link> we've already injected
     let loadedEffects = new Map();   // name -> { start, stop } controller from effect.js
     let currentTheme = null;
+    // Lazy-imported state-video controller (rpi/web/state_videos.js).
+    // Cached so we don't re-import every theme switch.
+    let stateVideoModule = null;
+    let stateVideoController = null;
 
     function injectThemeCss(name) {
         if (loadedCss.has(name)) return;
@@ -79,6 +83,35 @@
         if (theme && theme.has_effect) {
             const ctrl = await ensureEffect(name);
             try { ctrl && ctrl.start && ctrl.start(); } catch (e) { console.warn(e); }
+        }
+        // State-video layer: tear down whatever the previous theme had,
+        // then mount fresh if the new theme declares state_videos.
+        if (stateVideoController) {
+            try { stateVideoController.destroy(); } catch (e) { /* ignore */ }
+            stateVideoController = null;
+        }
+        const sv = theme && theme.state_videos;
+        if (sv && typeof sv === "object" && Object.keys(sv).length > 0) {
+            try {
+                if (!stateVideoModule) {
+                    stateVideoModule = await import("/state_videos.js");
+                }
+                const eyeContainer = document.querySelector(".eye-container");
+                if (eyeContainer && stateVideoModule.mountStateVideos) {
+                    stateVideoController = stateVideoModule.mountStateVideos(
+                        eyeContainer, name, sv,
+                    );
+                    // Sync immediately so first paint shows the right clip
+                    // (lookup uses the body class set above).
+                    const stateClass = Array.from(document.body.classList)
+                        .find(c => c.startsWith("state-"));
+                    if (stateClass && stateVideoController) {
+                        stateVideoController.setState(stateClass.slice("state-".length));
+                    }
+                }
+            } catch (e) {
+                console.warn(`theme ${name}: state_videos mount failed:`, e);
+            }
         }
         currentTheme = name;
     }
@@ -749,6 +782,11 @@
         if (state && labels[state]) {
             document.body.classList.add(`state-${state}`);
             statusText.textContent = labels[state];
+        }
+
+        // Crossfade the per-theme state-video to match.
+        if (stateVideoController && state) {
+            try { stateVideoController.setState(state); } catch (_) { /* ignore */ }
         }
 
         // Hide previous response when HAL starts thinking about a new question

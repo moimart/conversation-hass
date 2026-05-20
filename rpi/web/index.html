@@ -40,6 +40,12 @@
                      of animating filter: hue-rotate on every frame. -->
                 <div class="eye-core-hue"></div>
             </div>
+            <!-- Per-theme state-video layer: when the active theme
+                 declares state_videos in its manifest, state_videos.js
+                 populates this with <video> elements (one per unique
+                 source) that crossfade with HAL's state. Hidden via
+                 CSS while camera/stream takeover is active. -->
+            <div class="eye-state-video-layer" hidden></div>
             <video class="eye-stream" id="eye-stream" autoplay muted playsinline></video>
             <div class="eye-scan-line"></div>
         </div>

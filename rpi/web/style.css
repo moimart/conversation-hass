@@ -1154,3 +1154,41 @@ body.photo-frame-active .clock-display .clock-date {
         0 1px 4px rgba(0, 0, 0, 0.75),
         0 0 16px rgba(0, 0, 0, 0.4);
 }
+
+/* === Per-theme state-video layer ==========================================
+   Themes that declare `state_videos` in their manifest get a stack of
+   <video> elements injected into .eye-container by state_videos.js.
+   They sit inside the metallic bezel (same inset as .eye-bezel-inner)
+   and under the catchlight, so the orb's glass-dome feel is preserved
+   while the inner content is the looping clip.
+
+   Suppression: when the kiosk enters camera/stream/video-takeover mode,
+   the .camera-active / .stream-active classes already hide the iris,
+   pupil, and rings. We hide the video layer with the same trigger so
+   the camera image fully owns the lens. Calendar / photo-frame
+   overlays are fullscreen and cover the orb visually — the JS-side
+   pause handles perf there. */
+.eye-state-video-layer {
+    position: absolute;
+    inset: 29px;
+    border-radius: 50%;
+    overflow: hidden;
+    z-index: 2;
+    pointer-events: none;
+}
+.eye-state-video-layer video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+.eye-state-video-layer video.active {
+    opacity: 1;
+}
+.eye-container.camera-active .eye-state-video-layer,
+.eye-container.stream-active .eye-state-video-layer {
+    display: none;
+}
