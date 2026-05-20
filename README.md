@@ -1,20 +1,20 @@
-<h1 align="center">HAL — Local Voice Assistant for Home Assistant</h1>
+<h1 align="center">PAL — Local Voice Assistant for Home Assistant</h1>
 
 <p align="center"><em>A fully local, always-listening voice assistant with a personality, a face, and a memory.<br>No cloud. No subscriptions. Everything runs on your network.</em></p>
 
 <p align="center">
-  <img src="docs/themes/sunset_animated.jpg" width="420" alt="HAL kiosk — Sunset Animated theme with golden-hour bokeh and looping in-orb state video">
+  <img src="docs/themes/sunset_animated.jpg" width="420" alt="PAL kiosk — Sunset Animated theme with golden-hour bokeh and looping in-orb state video">
 </p>
 
 ---
 
-## What HAL does
+## What PAL does
 
 - 🎙️ **Listens continuously** through a USB speakerphone, transcribing every utterance in the room
 - 🗣️ **Talks back** in a voice you pick, through a Wyoming-protocol TTS service
 - 🏠 **Controls Home Assistant** via MCP tool-calling — switches, scenes, climate, media, all of it
 - 🧠 **Remembers** what you've told it (Shodh Hebbian long-term memory) so context survives across days
-- 👁️ **Shows itself** through a HAL-9000-inspired kiosk with an animated eye and 16 switchable themes — including two with looping in-orb state videos that change with HAL's mood
+- 👁️ **Shows itself** through a kiosk inspired by HAL-inspired AI system designs — an animated eye and 16 switchable themes, including two with looping in-orb state videos that change with PAL's mood
 - 📸 **Displays cameras, images, and videos** inside the orb (HA snapshots, live WebRTC, RTSP, HLS playlists)
 - 📅 **Pops up a calendar overlay** (month / week / day) pulled from any HA calendar, on voice or HA button
 - 🖼️ **Photo frame mode** — ambient full-screen image from a configurable HA `image.*` entity, white drop-shadow clock + Ken-Burns zoom, auto-crossfades when HA rotates the photo, dismisses on any kiosk action
@@ -28,7 +28,7 @@ Setup is two `docker compose` commands. See [Quick start](#quick-start) below.
 
 ## Themes
 
-Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_theme` tool), the MQTT `Theme` select, or the auto day/night scheduler. Two of them (`birch_animated`, `sunset_animated`) declare per-state looping videos in their manifest — short clips that play inside the orb and crossfade as HAL moves between idle / listening / processing / speaking. Any theme can opt in via the `state_videos` field. Authoring guide: [`THEMES.md`](./THEMES.md).
+Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_theme` tool), the MQTT `Theme` select, or the auto day/night scheduler. Two of them (`birch_animated`, `sunset_animated`) declare per-state looping videos in their manifest — short clips that play inside the orb and crossfade as PAL moves between idle / listening / processing / speaking. Any theme can opt in via the `state_videos` field. Authoring guide: [`THEMES.md`](./THEMES.md).
 
 | Preview | Theme | Vibe |
 |---|---|---|
@@ -41,24 +41,24 @@ Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_th
 | <img src="docs/themes/kitt.jpg" width="200"> | `kitt` | Knight Rider — saturated crimson on chrome-edged black, with the iconic red scanner sweeping along the bottom |
 | <img src="docs/themes/cyberpunk.jpg" width="200"> | `cyberpunk` | Night City — high-contrast neon yellow + electric cyan on black with animated scanlines and occasional glitch bars |
 | <img src="docs/themes/birch.jpg" width="200"> | `birch` | Warm beige Scandinavian wood tones — light-room friendly |
-| <img src="docs/themes/birch_animated.jpg" width="200"> | `birch_animated` | Birch palette with stylised autumn leaves drifting across the page, plus looping in-orb state videos that change with HAL's mood |
+| <img src="docs/themes/birch_animated.jpg" width="200"> | `birch_animated` | Birch palette with stylised autumn leaves drifting across the page, plus looping in-orb state videos that change with PAL's mood |
 | <img src="docs/themes/odyssey.jpg" width="200"> | `odyssey` | Bright white background, minimalist — for very bright rooms |
 | <img src="docs/themes/japandi.jpg" width="200"> | `japandi` | Earthy Japandi with subtle decorative background patterns |
 | <img src="docs/themes/material_you.jpg" width="200"> | `material_you` | Material You light theme tuned for birch wood + white furniture, with a slow lava-lamp drift of the Google brand colours in the background |
 | <img src="docs/themes/forest.jpg" width="200"> | `forest` | Moss green + amber on dark walnut — calm and organic |
 | <img src="docs/themes/sunset.jpg" width="200"> | `sunset` | Coral + peach on dusk plum — warm and gentle, with drifting golden-hour bokeh |
-| <img src="docs/themes/sunset_animated.jpg" width="200"> | `sunset_animated` | Sunset's plum/coral palette and bokeh drift, plus looping in-orb state videos that change with HAL's mood |
+| <img src="docs/themes/sunset_animated.jpg" width="200"> | `sunset_animated` | Sunset's plum/coral palette and bokeh drift, plus looping in-orb state videos that change with PAL's mood |
 
 ---
 
-## How you talk to HAL
+## How you talk to PAL
 
 | Mode                              | What it is                                                                                                                            |
 |-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
 | **Wake word**                     | Say `"hey hal"` (or whatever `WAKE_WORD` you set), pause, then your command. Chime fires + eye flashes when wake is detected.        |
 | **Push-to-Talk (PTT)**            | Bypass the wake word. Trigger via the desktop popup's hold-button, an HA dashboard button, an HTTP POST, an MQTT publish, or a persistent WebSocket. Hold-to-talk via Zigbee remote works too. See [`API.md`](./API.md#push-to-talk) + [`MQTT.md`](./MQTT.md#push-to-talk). |
 | **Typed text**                    | `POST /api/command` (or write to HA's `text.<id>_command` entity, or publish to MQTT `hal/<id>/command`) — runs the full LLM round with tools. |
-| **Verbatim announcement**         | `POST /api/speak` (or `text.<id>_speak`, or MQTT `hal/<id>/speak`) — HAL says the exact words you wrote, no LLM in the loop. |
+| **Verbatim announcement**         | `POST /api/speak` (or `text.<id>_speak`, or MQTT `hal/<id>/speak`) — PAL says the exact words you wrote, no LLM in the loop. |
 | **Follow-up window**              | After a turn ends, you have ~10 s to reply without repeating the wake word.                                                          |
 | **Always-on mode**                | Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM.                                                           |
 
