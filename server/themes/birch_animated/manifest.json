@@ -1,9 +1,10 @@
 {
     "name": "birch_animated",
     "display_name": "Birch — Animated",
-    "description": "Birch palette with cinematic in-orb video clips that follow HAL's state.",
+    "description": "Birch palette with drifting warm-light pools and cinematic in-orb video clips that follow HAL's state.",
     "version": "1.0.0",
     "kind": "light",
+    "effect": "effect.js",
     "state_videos": {
         "idle":       "idle_320.mp4",
         "listening":  "listening_320.mp4",
