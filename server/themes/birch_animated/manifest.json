@@ -6,9 +6,9 @@
     "kind": "light",
     "effect": "effect.js",
     "state_videos": {
-        "idle":       "idle_320.mp4",
+        "idle":       "idle_2.mp4",
         "listening":  "listening_320.mp4",
-        "processing": "listening_320.mp4",
+        "processing": "idle_320.mp4",
         "speaking":   "speaking_320.mp4"
     }
 }
