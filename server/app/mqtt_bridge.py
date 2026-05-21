@@ -79,6 +79,7 @@ class MQTTBridge:
         self.on_config_tts_voice: Callable[[str], Awaitable[None]] | None = None
         self.on_config_wake_word: Callable[[str], Awaitable[None]] | None = None
         self.on_config_ollama_model: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_fallback_ollama_model: Callable[[str], Awaitable[None]] | None = None
         self.on_config_num_ctx: Callable[[int], Awaitable[None]] | None = None
         self.on_config_auto_theme: Callable[[bool], Awaitable[None]] | None = None
         # Calendar overlay callbacks. on_calendar_show receives a dict like
@@ -133,6 +134,9 @@ class MQTTBridge:
         self._cached_config_tts_voice: str = ""
         self._cached_config_wake_word: str = ""
         self._cached_config_ollama_model: str = ""
+        # Empty string here means "no fallback" — must match the
+        # default sentinel option in the HA Discovery select payload.
+        self._cached_config_fallback_ollama_model: str = ""
         self._cached_config_num_ctx: int = 32768
         # Dynamic upper bound for the LLM context size — main.py refreshes
         # this from Ollama's /api/show whenever the model changes, so the
@@ -455,6 +459,24 @@ class MQTTBridge:
                 "entity_category": "config",
             },
         ))
+        # Fallback model: same option list as primary, plus an "(none)"
+        # sentinel at the top so the user can disable the fallback from
+        # the HA UI. The sentinel maps to empty-string on the wire.
+        _NONE_FALLBACK = "(none — disabled)"
+        configs.append((
+            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_fallback_ollama_model/config",
+            {
+                "name": "LLM Fallback Model",
+                "unique_id": f"{self.device_id}_config_fallback_ollama_model",
+                "state_topic":   f"{self.base}/config/fallback_ollama_model/state",
+                "command_topic": f"{self.base}/config/fallback_ollama_model/set",
+                "options": [_NONE_FALLBACK] + (list(self.model_options) if self.model_options else []),
+                "icon": "mdi:robot-confused-outline",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
         configs.append((
             f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_wake_word/config",
             {
@@ -728,6 +750,9 @@ class MQTTBridge:
                         await self.publish_config_wake_word(self._cached_config_wake_word)
                     if self._cached_config_ollama_model:
                         await self.publish_config_ollama_model(self._cached_config_ollama_model)
+                    await self.publish_config_fallback_ollama_model(
+                        self._cached_config_fallback_ollama_model
+                    )
                     await self.publish_config_num_ctx(self._cached_config_num_ctx)
                     await self.publish_config_auto_theme(self._cached_config_auto_theme)
                     await self.publish_config_calendar_default_source(
@@ -755,6 +780,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/config/theme_night/set")
                     await client.subscribe(f"{self.base}/config/tts_voice/set")
                     await client.subscribe(f"{self.base}/config/ollama_model/set")
+                    await client.subscribe(f"{self.base}/config/fallback_ollama_model/set")
                     await client.subscribe(f"{self.base}/config/num_ctx/set")
                     await client.subscribe(f"{self.base}/config/wake_word/set")
                     await client.subscribe(f"{self.base}/config/auto_theme/set")
@@ -863,6 +889,15 @@ class MQTTBridge:
             elif topic == f"{self.base}/config/ollama_model/set":
                 if self.on_config_ollama_model:
                     await self.on_config_ollama_model(payload.strip())
+
+            elif topic == f"{self.base}/config/fallback_ollama_model/set":
+                if self.on_config_fallback_ollama_model:
+                    raw = payload.strip()
+                    # Map the "(none — disabled)" sentinel back to the
+                    # empty-string wire value the runtime config uses.
+                    if raw.startswith("(none"):
+                        raw = ""
+                    await self.on_config_fallback_ollama_model(raw)
 
             elif topic == f"{self.base}/config/num_ctx/set":
                 if self.on_config_num_ctx:
@@ -1053,6 +1088,16 @@ class MQTTBridge:
     async def publish_config_ollama_model(self, value: str):
         self._cached_config_ollama_model = value
         await self._safe_publish(f"{self.base}/config/ollama_model/state", value)
+
+    async def publish_config_fallback_ollama_model(self, value: str):
+        # Empty wire value renders as the "(none — disabled)" sentinel
+        # in HA so the select shows the disabled option as selected.
+        value = (value or "").strip()
+        self._cached_config_fallback_ollama_model = value
+        await self._safe_publish(
+            f"{self.base}/config/fallback_ollama_model/state",
+            value if value else "(none — disabled)",
+        )
 
     async def publish_config_num_ctx(self, value: int):
         try:

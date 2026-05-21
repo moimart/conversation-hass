@@ -1637,6 +1637,7 @@ async def lifespan(app: FastAPI):
         system_prompt=system_prompt,
         num_ctx=int(cfg.get("num_ctx", os.environ.get("OLLAMA_NUM_CTX", "32768")) or 32768),
         num_predict=int(os.environ.get("OLLAMA_NUM_PREDICT", "512")),
+        fallback_ollama_model=str(cfg.get("fallback_ollama_model", "") or ""),
     )
 
     # Apply tts_voice from runtime config (overrides whatever the engine
@@ -1917,6 +1918,21 @@ async def lifespan(app: FastAPI):
             if ctx_max:
                 await bridge.update_num_ctx_max(ctx_max)
 
+        async def _cfg_fallback_ollama_model(name: str):
+            # Empty string = no fallback. Anything non-empty must be in
+            # the discovered model list (when we have one).
+            name = (name or "").strip()
+            if name and state.model_options and name not in state.model_options:
+                log.warning(
+                    f"config fallback_ollama_model rejected: {name!r} "
+                    f"not in {state.model_options}"
+                )
+                return
+            if state.conversation is not None:
+                state.conversation.fallback_ollama_model = name
+            await _persist("fallback_ollama_model", name)
+            await bridge.publish_config_fallback_ollama_model(name)
+
         async def _cfg_num_ctx(value: int):
             try:
                 n = int(value)
@@ -1991,6 +2007,9 @@ async def lifespan(app: FastAPI):
         )
         bridge._cached_config_ollama_model = (
             state.conversation.ollama_model if state.conversation is not None else ""
+        )
+        bridge._cached_config_fallback_ollama_model = (
+            state.conversation.fallback_ollama_model if state.conversation is not None else ""
         )
         bridge._cached_config_num_ctx = int(
             state.conversation.num_ctx if state.conversation is not None
@@ -2101,6 +2120,7 @@ async def lifespan(app: FastAPI):
         bridge.on_config_theme_night = _cfg_theme_night
         bridge.on_config_tts_voice = _cfg_tts_voice
         bridge.on_config_ollama_model = _cfg_ollama_model
+        bridge.on_config_fallback_ollama_model = _cfg_fallback_ollama_model
         bridge.on_config_num_ctx = _cfg_num_ctx
         bridge.on_config_wake_word = _cfg_wake_word
         bridge.on_config_auto_theme = _cfg_auto_theme

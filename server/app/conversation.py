@@ -44,11 +44,17 @@ class ConversationManager:
         system_prompt: str = "",
         num_ctx: int = 32768,
         num_predict: int = 512,
+        fallback_ollama_model: str = "",
     ):
         self.wake_word = wake_word.lower().strip() if wake_word else ""
         self.ollama_host = ollama_host.rstrip("/")
         self._system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.ollama_model = ollama_model
+        # Optional secondary model. Used only when the primary "collapses"
+        # — produces a completion of pure whitespace/nothing that fills the
+        # generation budget. Empty string = no fallback. See
+        # `_is_model_collapsed` for the detection rule.
+        self.fallback_ollama_model = (fallback_ollama_model or "").strip()
         self.mcp = mcp_client
         self.tts_engine = tts_engine
         self.memory = memory_client
@@ -305,13 +311,47 @@ class ConversationManager:
                 "memory_recall_s": memory_recall_s,
             }
 
+            # Collapse detection: if the model burned its generation
+            # budget producing nothing, optionally retry the SAME round
+            # with the fallback model. We don't touch `self.ollama_model`
+            # — next turn starts fresh on the primary.
+            if self._is_model_collapsed(response):
+                gen_n = (self._last_ollama_metrics or {}).get("gen_n", 0)
+                if self.fallback_ollama_model:
+                    log.warning(
+                        f"[llm] primary model {self.ollama_model!r} collapsed "
+                        f"(empty text, no tool calls, gen={gen_n}/{self.num_predict}); "
+                        f"retrying with fallback {self.fallback_ollama_model!r}"
+                    )
+                    t_round_fb = time.monotonic()
+                    response = await self._chat_completion(
+                        messages, model_override=self.fallback_ollama_model,
+                    )
+                    t_llm_total += time.monotonic() - t_round_fb
+                    self._llm_metrics_acc["llm_total_s"] = t_llm_total
+                    if self._is_model_collapsed(response):
+                        log.error(
+                            f"[llm] fallback model {self.fallback_ollama_model!r} "
+                            f"ALSO collapsed; giving up this turn"
+                        )
+                else:
+                    log.warning(
+                        f"[llm] primary model {self.ollama_model!r} collapsed "
+                        f"(empty text, no tool calls, gen={gen_n}/{self.num_predict}); "
+                        f"no fallback_ollama_model configured — returning empty"
+                    )
+
             # Check if the LLM wants to call a tool
             tool_calls = response.get("message", {}).get("tool_calls")
             assistant_text = response.get("message", {}).get("content", "")
             log.info(f"Ollama response: tool_calls={bool(tool_calls)}, text={assistant_text[:100] if assistant_text else '(empty)'}")
             if not tool_calls:
-                # No tool call — final text response
-                self.history.append({"role": "assistant", "content": assistant_text})
+                # No tool call — final text response. Only append to
+                # history if there's actually content; an empty string
+                # would just poison subsequent turns (this is what we
+                # saw with the collapsed gemma4:e4b prompts).
+                if assistant_text.strip():
+                    self.history.append({"role": "assistant", "content": assistant_text})
                 log.info(
                     f"[llm] DONE in {rounds} round(s) "
                     f"(llm {t_llm_total:.2f}s, tools {t_tools_total:.2f}s)"
@@ -350,10 +390,22 @@ class ConversationManager:
         self.history.append({"role": "assistant", "content": fallback})
         return fallback
 
-    async def _chat_completion(self, messages: list[dict]) -> dict:
-        """Call Ollama chat API with tool definitions."""
+    async def _chat_completion(
+        self,
+        messages: list[dict],
+        model_override: str | None = None,
+    ) -> dict:
+        """Call Ollama chat API with tool definitions.
+
+        `model_override` is used for one-shot fallback retries when the
+        primary model collapses (see `_is_model_collapsed`). When set, it
+        replaces `self.ollama_model` for this single call ONLY — the
+        instance attribute is untouched so subsequent rounds/turns go
+        back to the primary.
+        """
+        active_model = (model_override or self.ollama_model)
         payload = {
-            "model": self.ollama_model,
+            "model": active_model,
             "messages": messages,
             "stream": False,
             "keep_alive": -1,
@@ -402,14 +454,14 @@ class ConversationManager:
             for m in messages
         )
         log.info(
-            f"[ollama] {self.ollama_model} wall={wall:.2f}s "
+            f"[ollama] {active_model} wall={wall:.2f}s "
             f"load={load_s:.2f}s "
             f"prompt={prompt_n}t/{prompt_s:.2f}s ({prompt_tps:.0f} t/s) "
             f"gen={gen_n}t/{gen_s:.2f}s ({gen_tps:.0f} t/s) "
             f"msgs={msg_count} ctx≈{ctx_chars}c"
         )
         self._last_ollama_metrics = {
-            "model": self.ollama_model,
+            "model": active_model,
             "wall_s": wall,
             "load_s": load_s,
             "prompt_n": prompt_n,
@@ -420,3 +472,34 @@ class ConversationManager:
             "gen_tps": gen_tps,
         }
         return data
+
+    def _is_model_collapsed(self, response: dict) -> bool:
+        """Heuristic: did the model burn its generation budget on nothing?
+
+        Three signals must all hold:
+          - text is empty (or pure whitespace)
+          - no tool calls were emitted
+          - eval_count from Ollama is at the num_predict cap (>=95 %)
+
+        Signal #3 is what distinguishes a *collapsed* model from one
+        that thoughtfully decided to say nothing — a healthy "I have
+        nothing more" stops well before the cap. Ollama not returning
+        eval_count yields 0, which fails the ratio check, so we never
+        false-positive in that case.
+        """
+        if not isinstance(response, dict):
+            return False
+        msg = response.get("message") or {}
+        text = (msg.get("content") or "").strip()
+        if text:
+            return False
+        if msg.get("tool_calls"):
+            return False
+        gen_n = (self._last_ollama_metrics or {}).get("gen_n", 0)
+        try:
+            cap = int(self.num_predict)
+        except (TypeError, ValueError):
+            return False
+        if cap <= 0:
+            return False
+        return gen_n >= int(cap * 0.95)
