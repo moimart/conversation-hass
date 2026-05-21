@@ -4,10 +4,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
 # System dependencies for audio + build tools for PyAudio, plus the
-# three small DPMS binaries the display_backend dispatcher tries in
-# order (wlr-randr for Wayland kiosks, x11-xserver-utils for `xset` on
-# X11 kiosks, libraspberrypi-bin for `vcgencmd` on RPi firmware). The
-# corresponding host sockets / devices are bind-mounted via compose.
+# two DPMS binaries the display_backend dispatcher tries in order
+# (wlr-randr for Wayland kiosks, x11-xserver-utils → `xset` for X11
+# kiosks). vcgencmd as a Pi-specific fallback isn't installed here
+# because libraspberrypi-bin isn't available on the amd64 build leg;
+# wlr-randr already covers the wlroots/labwc RPi setup and we don't
+# need a third backend for now.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc python3-dev \
     portaudio19-dev \
@@ -18,7 +20,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     wlr-randr \
     x11-xserver-utils \
-    libraspberrypi-bin \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
