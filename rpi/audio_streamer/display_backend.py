@@ -53,12 +53,27 @@ class DisplayBackend:
 
 
 class WlrRandrBackend(DisplayBackend):
-    """wlr-randr — wlroots Wayland compositor (labwc, sway, hyprland)."""
+    """wlr-randr — wlroots Wayland compositor (labwc, sway, hyprland).
+
+    `--off` disables the output entirely; when we later re-enable it
+    with `--on` the compositor forgets the previously-applied rotation
+    / scale / position (because the output disappeared from the layout).
+    So before every `--off` we snapshot the current Transform / Scale /
+    Position, then re-apply them on `--on`. Initial snapshot happens at
+    backend detection time so we have a baseline even if the very first
+    call is `--off`.
+    """
 
     name = "wlr-randr"
 
+    # Values we mirror back on `--on`. None means "don't pass this flag".
+    # wlr-randr accepts: normal | 90 | 180 | 270 | flipped | flipped-90 …
     def __init__(self, output: str):
         self.output = output
+        self._transform: Optional[str] = None
+        self._scale: Optional[str] = None
+        self._position: Optional[str] = None
+        self._snapshot_layout()
 
     @classmethod
     def detect(cls) -> Optional["WlrRandrBackend"]:
@@ -95,12 +110,65 @@ class WlrRandrBackend(DisplayBackend):
         log.warning("wlr-randr installed but no output found in its listing")
         return None
 
+    def _snapshot_layout(self) -> None:
+        """Capture the current Transform / Scale / Position so we can
+        re-apply them after a future `--off` / `--on` cycle. Silent on
+        failure — if we can't read it, we just won't restore it."""
+        try:
+            out = subprocess.run(
+                ["wlr-randr"], capture_output=True, text=True, timeout=4.0,
+            ).stdout
+        except Exception:
+            return
+        in_block = False
+        new_transform = self._transform
+        new_scale = self._scale
+        new_position = self._position
+        for line in out.splitlines():
+            if re.match(rf"^{re.escape(self.output)}\b", line):
+                in_block = True
+                continue
+            if not in_block:
+                continue
+            if line and not line.startswith(" ") and not line.startswith("\t"):
+                break  # next output's block
+            m = re.search(r"Transform:\s*(\S+)", line)
+            if m:
+                new_transform = m.group(1)
+                continue
+            m = re.search(r"Scale:\s*([\d.]+)", line)
+            if m:
+                new_scale = m.group(1)
+                continue
+            m = re.search(r"Position:\s*(\d+),(\d+)", line)
+            if m:
+                new_position = f"{m.group(1)},{m.group(2)}"
+                continue
+        # Only update fields we actually read this time.
+        self._transform = new_transform
+        self._scale = new_scale
+        self._position = new_position
+
     def set(self, on: bool) -> None:
-        arg = "--on" if on else "--off"
-        subprocess.run(
-            ["wlr-randr", "--output", self.output, arg],
-            check=False, timeout=6.0,
-        )
+        if not on:
+            # Snapshot right before blanking so any rotation/scale the
+            # user changed at runtime survives the next wake.
+            self._snapshot_layout()
+            subprocess.run(
+                ["wlr-randr", "--output", self.output, "--off"],
+                check=False, timeout=6.0,
+            )
+            return
+        # Restore layout along with --on. wlr-randr lets us batch flags;
+        # it applies them all in one configure_done.
+        cmd = ["wlr-randr", "--output", self.output, "--on"]
+        if self._transform:
+            cmd += ["--transform", self._transform]
+        if self._scale:
+            cmd += ["--scale", self._scale]
+        if self._position:
+            cmd += ["--pos", self._position]
+        subprocess.run(cmd, check=False, timeout=6.0)
 
     def state(self) -> Optional[bool]:
         try:
