@@ -154,6 +154,11 @@ class WlrRandrBackend(DisplayBackend):
             # Snapshot right before blanking so any rotation/scale the
             # user changed at runtime survives the next wake.
             self._snapshot_layout()
+            log.info(
+                f"wlr-randr OFF — captured "
+                f"transform={self._transform!r} scale={self._scale!r} "
+                f"position={self._position!r} for next wake"
+            )
             subprocess.run(
                 ["wlr-randr", "--output", self.output, "--off"],
                 check=False, timeout=6.0,
@@ -168,7 +173,11 @@ class WlrRandrBackend(DisplayBackend):
             cmd += ["--scale", self._scale]
         if self._position:
             cmd += ["--pos", self._position]
-        subprocess.run(cmd, check=False, timeout=6.0)
+        log.info(f"wlr-randr ON — cmd={cmd!r}")
+        r = subprocess.run(cmd, check=False, timeout=6.0,
+                           capture_output=True, text=True)
+        if r.returncode != 0 or (r.stderr or "").strip():
+            log.warning(f"wlr-randr ON rc={r.returncode} stderr={r.stderr!r}")
 
     def state(self) -> Optional[bool]:
         try:
