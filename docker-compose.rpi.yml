@@ -16,16 +16,29 @@ services:
       - PULSE_PROP=media.role=phone
       - CHROMIUM_DEBUG_URL=${CHROMIUM_DEBUG_URL:-http://127.0.0.1:9222}
       - SNAPSHOT_INTERVAL_S=${SNAPSHOT_INTERVAL_S:-60}
+      # Display-power backend (DPMS): wlr-randr / xset / vcgencmd. The
+      # corresponding host sockets / devices are bind-mounted below.
+      - XDG_RUNTIME_DIR=/run/user/1000
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
+      - DISPLAY=${DISPLAY:-:0}
+      - PAL_DISPLAY_OUTPUT=${PAL_DISPLAY_OUTPUT:-}
     devices:
       - /dev/snd:/dev/snd
       - /dev/input:/dev/input
+      - /dev/vchiq:/dev/vchiq
     group_add:
       - audio
+      - video
     volumes:
       - /run/dbus:/run/dbus:ro
-      - /run/user/1000/pulse:/run/user/1000/pulse:ro
+      # Single read-only mount of the user-runtime dir covers both
+      # PulseAudio (under .../pulse) and the Wayland socket (wayland-1)
+      # used by wlr-randr for DPMS control.
+      - /run/user/1000:/run/user/1000:ro
       - ~/.config/pulse/cookie:/root/.config/pulse/cookie:ro
       - ./rpi/web:/app/web:ro
+      # X11 socket for the xset DPMS backend (no-op on Wayland-only hosts).
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
 
   sendspin:
     build:

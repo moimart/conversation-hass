@@ -153,6 +153,18 @@ the request is a silent no-op.
 | `<base>/photo_frame/show/set` | Several forms:<br>• `PRESS` (HA button default) — uses configured default<br>• Bare `image.weather_radar` / `camera.front_door`<br>• JSON `{"entity_id": "image.weather_radar"}` | Show the photo frame. Auto-dismisses on any kiosk activity. |
 | `<base>/photo_frame/hide/set` | (any) | Dismiss early. |
 
+### Display power (DPMS)
+
+Real hardware power-down via the kiosk-host display tools (`wlr-randr`
+/ `xset` / `vcgencmd`, auto-selected). Auto-wake fires on any incoming
+kiosk activity (wake word, PTT, takeover push, TTS reply). The number
+entity controls an optional idle-blank timeout; `0` = manual control
+only.
+
+| Topic | Payload | Effect |
+|---|---|---|
+| `<base>/display/set` | `ON` / `OFF` | Power the kiosk display on or off. |
+
 ### Live runtime config
 
 Each key has a `<state>` topic the bridge publishes to (retained) and a
@@ -171,6 +183,7 @@ Each key has a `<state>` topic the bridge publishes to (retained) and a
 | `calendar_default_source`| `<base>/config/calendar_default_source/{state,set}`| text       | empty = merge all calendars |
 | `calendar_dismiss_seconds`| `<base>/config/calendar_dismiss_seconds/{state,set}` | `5`-`600` (number) | default 30 |
 | `photo_frame_entity`     | `<base>/config/photo_frame_entity/{state,set}`     | text       | HA `image.*` (or `camera.*`) entity_id; empty = feature disabled |
+| `display_auto_off_seconds`| `<base>/config/display_auto_off_seconds/{state,set}` | `0`-`7200` (number) | Idle-blank timeout. `0` disables auto-off (manual control only). |
 
 ---
 

@@ -88,6 +88,13 @@ async def start_photo_frame(
     `entity_id` overrides `runtime_config["photo_frame_entity"]` when
     non-empty. If both are empty, returns `not_configured`.
     """
+    # Showing the photo frame counts as kiosk activity → wake the
+    # display first if it's currently blanked.
+    try:
+        from .main import _record_kiosk_activity  # avoid top-level cycle
+        _record_kiosk_activity(state)
+    except Exception:
+        pass
     # Resolve entity: explicit arg wins, otherwise the live runtime config.
     entity = (entity_id or "").strip()
     if not entity:

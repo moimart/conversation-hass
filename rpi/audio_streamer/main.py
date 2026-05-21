@@ -14,6 +14,8 @@ import pyaudio
 import websockets
 from aiohttp import web
 
+from .display_backend import detect_backend as _detect_display_backend
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 log = logging.getLogger("hal.rpi")
 
@@ -93,6 +95,13 @@ class AudioManager:
         # stream handler when connected). Used to forward
         # ma_volume_adjust messages.
         self._server_ws = None
+
+        # Display power backend (DPMS). Picks wlr-randr / xset /
+        # vcgencmd at startup depending on which the host exposes.
+        # None means no backend was usable — the server will see the
+        # display feature degrade gracefully (HA entity unavailable,
+        # voice tool returns "not supported").
+        self._display = _detect_display_backend()
 
     # --- Device probing ---
 
@@ -428,6 +437,52 @@ class AudioManager:
             log.info(f"Volume set to {self.tts_volume:.0%} (via server)")
             await self.broadcast_to_ui({"type": "volume_sync", "level": self.tts_volume})
             await ws.send(json.dumps({"type": "volume_sync", "level": self.tts_volume}))
+
+        elif msg_type == "display_set":
+            # Server requested a display-power change. Dispatcher
+            # picked the right backend at startup; this is just a
+            # subprocess call.
+            target_on = (str(msg.get("state", "")).lower() == "on")
+            if self._display is None:
+                log.warning("display_set received but no display backend available")
+                await ws.send(json.dumps({
+                    "type": "display_state",
+                    "state": "unknown",
+                    "available": False,
+                }))
+                return
+            try:
+                self._display.set(target_on)
+                log.info(
+                    f"display set to {'on' if target_on else 'off'} via "
+                    f"{self._display.name}"
+                )
+            except Exception as e:
+                log.warning(f"display backend {self._display.name} set failed: {e}")
+            # Confirm the new state back to the server. We trust the
+            # backend's set() rather than re-querying — query is
+            # best-effort and racy with the actual transition.
+            await ws.send(json.dumps({
+                "type": "display_state",
+                "state": "on" if target_on else "off",
+                "available": True,
+                "backend": self._display.name,
+            }))
+
+        elif msg_type == "display_query":
+            # Optional health probe — server can ask "what's available?".
+            if self._display is None:
+                await ws.send(json.dumps({
+                    "type": "display_state", "state": "unknown", "available": False,
+                }))
+            else:
+                live = self._display.state()
+                await ws.send(json.dumps({
+                    "type": "display_state",
+                    "state": ("on" if live else "off") if live is not None else "unknown",
+                    "available": True,
+                    "backend": self._display.name,
+                }))
 
         elif msg_type in (
             "transcription", "response", "wake", "state", "set_theme",

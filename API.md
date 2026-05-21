@@ -324,6 +324,72 @@ curl -XPOST http://hal:8765/api/volume \
 
 ---
 
+## Display power (DPMS)
+
+Real hardware DPMS — the panel actually powers off, not just a black
+overlay. The RPi-side container picks the first available backend at
+startup: `wlr-randr` (Wayland kiosks, including labwc on the RPi),
+`xset` (X11 kiosks), or `vcgencmd` (Pi-firmware fallback). If none of
+the three is available, all control routes return
+`{"status":"unavailable"}` and the HA switch is greyed out.
+
+### `GET /api/display`
+
+Return the current display power state and the idle-blank timeout.
+
+**Response** `200`
+
+```json
+{ "state": "on", "auto_off_seconds": 300, "available": true }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `state` | `"on"` \| `"off"` | The server's view of the panel state. |
+| `auto_off_seconds` | int | How long with no kiosk activity before auto-blank. `0` = disabled. |
+| `available` | bool | False = no DPMS backend found on the kiosk host. |
+
+```bash
+curl http://hal:8765/api/display
+```
+
+### `POST /api/display`
+
+Turn the kiosk display on or off.
+
+**Request body**
+
+```json
+{ "state": "off" }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `state` | `"on"` \| `"off"` \| `"toggle"` | required |
+
+**Response** `200`
+
+```json
+{ "status": "ok", "state": "off" }
+```
+
+`{"status":"rpi_disconnected","state":"off"}` if the audio_websocket is
+down (the change is still stored server-side and will apply on
+reconnect). `{"status":"unavailable",...}` if the kiosk container has
+no working DPMS backend.
+
+Any incoming kiosk activity — wake-word fire, PTT, calendar / photo
+frame / camera / image / video takeover, HAL TTS playback — auto-wakes
+the display before the activity proceeds.
+
+```bash
+curl -XPOST http://hal:8765/api/display \
+     -H 'Content-Type: application/json' \
+     -d '{"state":"off"}'
+```
+
+---
+
 ## Snapshots
 
 ### `POST /api/snapshot`

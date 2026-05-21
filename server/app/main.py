@@ -87,6 +87,16 @@ class AppState:
     # Open via photo_frame.start_photo_frame, closed via stop_photo_frame
     # or by the kiosk's photo_frame_dismissed message.
     photo_frame_session: object | None = None
+    # Display power (DPMS). state is "on" or "off"; auto_off_seconds
+    # of 0 means "no idle blanking" (manual control only).
+    display_state: str = "on"
+    display_last_activity: float = 0.0
+    display_auto_off_seconds: int = 0
+    # Reports back whether any DPMS backend was found in the RPi
+    # container. False = HA Display switch becomes a no-op and the
+    # LLM tool returns "not supported on this kiosk".
+    display_available: bool = True
+    display_auto_off_task: object | None = None
 
 
 def _generate_chime() -> bytes:
@@ -248,6 +258,70 @@ async def _push_to_rpi(state: AppState, msg: dict) -> bool:
     except Exception as e:
         log.warning(f"Could not send {msg.get('type')} to RPi: {e}")
         return False
+
+
+async def _set_display(state: AppState, target: str) -> bool:
+    """Set the kiosk display power to "on" or "off".
+
+    Updates server-side state, pushes the imperative `display_set`
+    message to the RPi container (which dispatches to the right host
+    binary), and republishes the new state to HA via MQTT. Returns
+    False if the RPi container isn't connected — caller can surface
+    that to the API client.
+    """
+    target = (target or "").strip().lower()
+    if target not in ("on", "off"):
+        return False
+    state.display_state = target
+    state.display_last_activity = time.time()
+    pushed = await _push_to_rpi(state, {"type": "display_set", "state": target})
+    if state.mqtt_bridge:
+        try:
+            await state.mqtt_bridge.publish_display_state(target)
+        except Exception as e:
+            log.debug(f"publish_display_state failed: {e}")
+    log.info(f"display → {target} (rpi reachable: {pushed})")
+    return pushed
+
+
+def _record_kiosk_activity(state: AppState) -> None:
+    """Mark the kiosk as active right now. If the display is currently
+    off, schedule a wake. Caller-side fire-and-forget is fine — wake is
+    queued via asyncio.create_task so the caller's hot path stays fast.
+    """
+    state.display_last_activity = time.time()
+    if state.display_state == "off":
+        # Wake before whatever's happening proceeds. We use a task so
+        # the caller (which may be in a state-change hook) doesn't
+        # block on a WS send.
+        asyncio.create_task(_set_display(state, "on"))
+
+
+async def _display_auto_off_loop(state: AppState) -> None:
+    """Background task: blank the display after `display_auto_off_seconds`
+    of no activity. 0 means disabled. The check is cheap; we poll every
+    5 s so the worst-case blank latency is interval + cadence ≈ 5 s.
+    """
+    log.info("Display auto-off loop started")
+    try:
+        while True:
+            await asyncio.sleep(5)
+            timeout = int(state.display_auto_off_seconds or 0)
+            if timeout <= 0:
+                continue
+            if state.display_state != "on":
+                continue
+            idle = time.time() - (state.display_last_activity or 0.0)
+            if idle >= timeout:
+                log.info(
+                    f"display: idle {idle:.0f}s ≥ {timeout}s — blanking"
+                )
+                await _set_display(state, "off")
+    except asyncio.CancelledError:
+        log.info("Display auto-off loop cancelled")
+        raise
+    except Exception as e:
+        log.error(f"Display auto-off loop crashed: {e}")
 
 
 async def _ma_call(state: AppState, service: str, extra: dict | None = None) -> None:
@@ -413,6 +487,7 @@ async def _dispatch_play_video(
     muted: bool = False,
 ) -> bool:
     """Push a play_video message to the kiosk. Clears any active stream first."""
+    _record_kiosk_activity(state)
     await _stop_active_stream(state)  # mutual exclusion with WebRTC streams
     msg = {
         "type": "play_video",
@@ -696,6 +771,7 @@ async def _dispatch_show_image(
     exclusion). Returns True if we got the message out — even if the kiosk
     websocket is closed (the UI broadcast is best-effort).
     """
+    _record_kiosk_activity(state)
     await _stop_active_stream(state)
     await _stop_active_video(state)
     msg = {
@@ -872,6 +948,7 @@ async def _show_calendar(
     `anchor_date` empty → today; otherwise ISO date string (see
     `_parse_anchor_date`) to show a specific day/week/month.
     """
+    _record_kiosk_activity(state)
     view = (view or "month").lower().strip()
     if view not in _VALID_CAL_VIEWS:
         view = "month"
@@ -1528,6 +1605,35 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         hide_photo_frame_tool,
     )
 
+    async def set_display_power_tool(args: dict) -> str:
+        target = (args.get("state") or "").strip().lower()
+        if target not in ("on", "off"):
+            return "state must be 'on' or 'off'"
+        if not state.display_available:
+            return "Display power control is not supported on this kiosk (no DPMS backend)."
+        ok = await _set_display(state, target)
+        if not ok:
+            return "Kiosk is not connected; could not change the display power."
+        return f"Display turned {target}."
+
+    tools.register(
+        "set_display_power",
+        (
+            "Turn the kiosk display (the screen) on or off using real DPMS. "
+            "Use when the user says 'turn off the screen', 'blank the display', "
+            "'wake the screen', 'go dark', 'screen on/off', etc. "
+            "Argument 'state' must be 'on' or 'off'."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "state": {"type": "string", "enum": ["on", "off"]},
+            },
+            "required": ["state"],
+        },
+        set_display_power_tool,
+    )
+
     return tools
 
 
@@ -1662,6 +1768,10 @@ async def lifespan(app: FastAPI):
         state.theme_scheduler_task = asyncio.create_task(_theme_scheduler(state))
     else:
         state.theme_scheduler_task = None
+
+    # Display auto-off loop — runs always. The poll itself is cheap; it
+    # only acts when display_auto_off_seconds > 0.
+    state.display_auto_off_task = asyncio.create_task(_display_auto_off_loop(state))
 
     # Theme registry: poll for added/removed plug-ins. The on_change
     # callback is wired further down (after the MQTT bridge is up) so
@@ -2046,6 +2156,16 @@ async def lifespan(app: FastAPI):
         bridge._cached_config_photo_frame_entity = str(
             state.runtime_config.get("photo_frame_entity", "") or ""
         )
+        # Display power: pull the timeout from config; the imperative
+        # state defaults to "on" (the RPi's first display_state relay
+        # after connect will correct it if reality differs).
+        state.display_auto_off_seconds = int(
+            state.runtime_config.get("display_auto_off_seconds", 0) or 0
+        )
+        state.display_state = "on"
+        state.display_last_activity = time.time()
+        bridge._cached_display_state = "on"
+        bridge._cached_config_display_auto_off_seconds = state.display_auto_off_seconds
 
         async def _mqtt_calendar_show(args: dict):
             view = (args.get("view") or "month").lower()
@@ -2107,6 +2227,23 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     log.warning(f"start_muted: could not push mute_set to RPi: {e}")
 
+        async def _mqtt_display_set(on: bool):
+            await _set_display(state, "on" if on else "off")
+
+        async def _cfg_display_auto_off_seconds(seconds: int):
+            try:
+                n = int(seconds)
+            except (TypeError, ValueError):
+                n = 0
+            n = max(0, min(7200, n))
+            state.display_auto_off_seconds = n
+            # Activity timestamp resets on config change so the user
+            # doesn't get caught by a stale "already idle for 10 min"
+            # the instant they enable the feature.
+            state.display_last_activity = time.time()
+            await _persist("display_auto_off_seconds", n)
+            await bridge.publish_config_display_auto_off_seconds(n)
+
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
         bridge.on_theme_set = _mqtt_theme
@@ -2132,6 +2269,8 @@ async def lifespan(app: FastAPI):
         bridge.on_config_calendar_default_source = _cfg_calendar_default_source
         bridge.on_config_calendar_dismiss_seconds = _cfg_calendar_dismiss_seconds
         bridge.on_config_start_muted = _cfg_start_muted
+        bridge.on_display_set = _mqtt_display_set
+        bridge.on_config_display_auto_off_seconds = _cfg_display_auto_off_seconds
 
         async def _mqtt_ptt_start():
             from .ptt import start_ptt
@@ -2221,6 +2360,10 @@ async def audio_endpoint(websocket: WebSocket):
 
     async def on_wake_word():
         """Callback: play chime on RPi and flash the UI."""
+        # Wake the display first so the chime / listening cue actually
+        # appears on the panel. Fire-and-forget — the chime audio is
+        # already on its way.
+        _record_kiosk_activity(state)
         try:
             await broadcast_to_ui(state, {"type": "wake"})
             await websocket.send_json({"type": "wake"})
@@ -2233,6 +2376,9 @@ async def audio_endpoint(websocket: WebSocket):
 
     async def on_response(text: str, audio_bytes: bytes | None):
         """Callback: send LLM response + TTS audio back to RPi."""
+        # If HAL is about to speak, the display must be on for the
+        # response panel + state-video crossfade to be visible.
+        _record_kiosk_activity(state)
         try:
             await websocket.send_json({"type": "response", "text": text})
             await broadcast_to_ui(state, {"type": "response", "text": text})
@@ -2395,6 +2541,22 @@ async def audio_endpoint(websocket: WebSocket):
                     reason = str(msg.get("reason") or "kiosk")
                     await stop_photo_frame(state, reason=reason)
 
+                elif msg_type == "display_state":
+                    # Confirmation from the RPi container after a
+                    # display_set call (or a periodic probe). Keep our
+                    # server-side state in sync and republish to HA so
+                    # the switch reflects reality.
+                    reported = (str(msg.get("state") or "")).lower()
+                    available = bool(msg.get("available", True))
+                    state.display_available = available
+                    if reported in ("on", "off") and reported != state.display_state:
+                        state.display_state = reported
+                    if state.mqtt_bridge:
+                        try:
+                            await state.mqtt_bridge.publish_display_state(state.display_state)
+                        except Exception as e:
+                            log.debug(f"publish_display_state from upstream relay failed: {e}")
+
                 elif msg_type == "webrtc_signal":
                     # Kiosk → server signaling for an active stream session.
                     # offer is sent on stream start; candidate is sent during ICE.
@@ -2537,6 +2699,40 @@ async def post_ptt_cancel():
     from .ptt import end_ptt
     state = _get_state(app)
     return await end_ptt(state, cancel=True)
+
+
+class DisplayRequest(BaseModel):
+    # "on", "off", or "toggle". Anything else → 422.
+    state: str
+
+
+@app.get("/api/display")
+async def get_display():
+    """Return the kiosk display power state and idle-blank timeout."""
+    state = _get_state(app)
+    return {
+        "state": state.display_state,
+        "auto_off_seconds": int(state.display_auto_off_seconds or 0),
+        "available": bool(state.display_available),
+    }
+
+
+@app.post("/api/display")
+async def post_display(req: DisplayRequest):
+    """Turn the kiosk display on or off (DPMS). 'toggle' flips current state."""
+    state = _get_state(app)
+    target = (req.state or "").strip().lower()
+    if target == "toggle":
+        target = "off" if state.display_state == "on" else "on"
+    if target not in ("on", "off"):
+        return {"status": "error", "message": "state must be on|off|toggle"}
+    if not state.display_available:
+        return {"status": "unavailable", "message": "no display backend on the kiosk host"}
+    pushed = await _set_display(state, target)
+    return {
+        "status": "ok" if pushed else "rpi_disconnected",
+        "state": state.display_state,
+    }
 
 
 class PhotoFrameStartRequest(BaseModel):

@@ -18,6 +18,7 @@
 - 📸 **Displays cameras, images, and videos** inside the orb (HA snapshots, live WebRTC, RTSP, HLS playlists)
 - 📅 **Pops up a calendar overlay** (month / week / day) pulled from any HA calendar, on voice or HA button
 - 🖼️ **Photo frame mode** — ambient full-screen image from a configurable HA `image.*` entity, white drop-shadow clock + Ken-Burns zoom, auto-crossfades when HA rotates the photo, dismisses on any kiosk action
+- 💤 **Display power (DPMS)** — actually powers the panel off (not just a black overlay), with optional idle auto-blank; wakes automatically on the next wake word / PTT / TTS / takeover. Same code path on RPi (Wayland) and x86 (Wayland or X11).
 - 🎯 **Wake word** *or* **Push-to-Talk** — your choice per situation (PTT triggerable from HA, an HTTP call, a WebSocket, or the desktop popup app)
 - 🎵 **Multi-room audio** via an optional Music-Assistant Sendspin sidecar with PulseAudio role-ducking
 - 🔌 **Speaks every protocol your house already speaks** — REST, MQTT, WebSocket — and HA auto-discovers it as a single device with sensors, switches, selects, text inputs, and buttons

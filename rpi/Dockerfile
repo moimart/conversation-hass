@@ -3,7 +3,11 @@ FROM python:3.11-slim-bookworm
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# System dependencies for audio + build tools for PyAudio
+# System dependencies for audio + build tools for PyAudio, plus the
+# three small DPMS binaries the display_backend dispatcher tries in
+# order (wlr-randr for Wayland kiosks, x11-xserver-utils for `xset` on
+# X11 kiosks, libraspberrypi-bin for `vcgencmd` on RPi firmware). The
+# corresponding host sockets / devices are bind-mounted via compose.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc python3-dev \
     portaudio19-dev \
@@ -12,6 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils \
     libpulse0 \
     libsndfile1 \
+    wlr-randr \
+    x11-xserver-utils \
+    libraspberrypi-bin \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

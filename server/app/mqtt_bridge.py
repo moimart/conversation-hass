@@ -106,6 +106,11 @@ class MQTTBridge:
         # flows through the existing mute switch; this is just the
         # boot-time default.
         self.on_config_start_muted: Callable[[bool], Awaitable[None]] | None = None
+        # Display power callbacks. `on_display_set` is the imperative
+        # switch payload (ON/OFF), `on_config_display_auto_off_seconds`
+        # is the idle-blank timeout config (0 = disabled).
+        self.on_display_set: Callable[[bool], Awaitable[None]] | None = None
+        self.on_config_display_auto_off_seconds: Callable[[int], Awaitable[None]] | None = None
         # Lists populated by main.py at startup so the select entities
         # advertise the right options. Empty lists publish a "none found"
         # placeholder so the entity still appears in HA.
@@ -149,6 +154,10 @@ class MQTTBridge:
         self._cached_config_start_muted: bool = False
         # Photo-frame config cache (entity_id, default "")
         self._cached_config_photo_frame_entity: str = ""
+        # Display power: imperative state ("on"|"off") and idle-blank
+        # timeout in seconds (0 = disabled).
+        self._cached_display_state: str = "on"
+        self._cached_config_display_auto_off_seconds: int = 0
 
     @property
     def connected(self) -> bool:
@@ -612,6 +621,40 @@ class MQTTBridge:
                 "entity_category": "config",
             },
         ))
+        # Display power: a top-level switch (not in Configuration) so it's
+        # one tap from the device card, plus a Configuration-section
+        # number for the idle-blank timeout.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/display/config",
+            {
+                "name": "Display",
+                "unique_id": f"{self.device_id}_display",
+                "state_topic":   f"{self.base}/display/state",
+                "command_topic": f"{self.base}/display/set",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "icon": "mdi:monitor",
+                "availability": avail,
+                "device": device,
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/number/{self.device_id}/config_display_auto_off_seconds/config",
+            {
+                "name": "Display Auto-off Seconds",
+                "unique_id": f"{self.device_id}_config_display_auto_off_seconds",
+                "state_topic":   f"{self.base}/config/display_auto_off_seconds/state",
+                "command_topic": f"{self.base}/config/display_auto_off_seconds/set",
+                "min": 0,
+                "max": 7200,
+                "step": 30,
+                "unit_of_measurement": "s",
+                "icon": "mdi:monitor-off",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
 
         # Push-to-Talk: three button entities under the device's
         # Configuration section. HA dashboards, automations, and
@@ -765,6 +808,10 @@ class MQTTBridge:
                     await self.publish_config_photo_frame_entity(
                         self._cached_config_photo_frame_entity
                     )
+                    await self.publish_display_state(self._cached_display_state)
+                    await self.publish_config_display_auto_off_seconds(
+                        self._cached_config_display_auto_off_seconds
+                    )
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -795,6 +842,8 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/photo_frame/show/set")
                     await client.subscribe(f"{self.base}/photo_frame/hide/set")
                     await client.subscribe(f"{self.base}/config/photo_frame_entity/set")
+                    await client.subscribe(f"{self.base}/display/set")
+                    await client.subscribe(f"{self.base}/config/display_auto_off_seconds/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -955,6 +1004,19 @@ class MQTTBridge:
             elif topic == f"{self.base}/config/start_muted/set":
                 if self.on_config_start_muted:
                     await self.on_config_start_muted(payload.strip().upper() == "ON")
+
+            elif topic == f"{self.base}/display/set":
+                if self.on_display_set:
+                    await self.on_display_set(payload.strip().upper() == "ON")
+
+            elif topic == f"{self.base}/config/display_auto_off_seconds/set":
+                if self.on_config_display_auto_off_seconds:
+                    try:
+                        seconds = int(float(payload.strip()))
+                    except ValueError:
+                        seconds = 0
+                    seconds = max(0, min(7200, seconds))
+                    await self.on_config_display_auto_off_seconds(seconds)
 
             elif topic == f"{self.base}/ptt/start":
                 if self.on_ptt_start:
@@ -1166,4 +1228,26 @@ class MQTTBridge:
         await self._safe_publish(
             f"{self.base}/config/photo_frame_entity/state",
             value or "",
+        )
+
+    async def publish_display_state(self, value: str):
+        v = (value or "").strip().lower()
+        if v not in ("on", "off"):
+            v = "on"
+        self._cached_display_state = v
+        await self._safe_publish(
+            f"{self.base}/display/state",
+            "ON" if v == "on" else "OFF",
+        )
+
+    async def publish_config_display_auto_off_seconds(self, value: int):
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            n = 0
+        n = max(0, min(7200, n))
+        self._cached_config_display_auto_off_seconds = n
+        await self._safe_publish(
+            f"{self.base}/config/display_auto_off_seconds/state",
+            str(n),
         )

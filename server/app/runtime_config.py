@@ -32,6 +32,7 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "calendar_default_source":   ("CALENDAR_DEFAULT_SOURCE", ""),
     "start_muted":               ("START_MUTED", False),
     "photo_frame_entity":        ("PHOTO_FRAME_ENTITY", ""),
+    "display_auto_off_seconds":  ("DISPLAY_AUTO_OFF_SECONDS", 0),
 }
 
 

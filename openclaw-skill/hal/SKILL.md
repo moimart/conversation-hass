@@ -120,6 +120,33 @@ curl -sS "$HAL_SERVER_URL/api/mute"
 # → {"muted": true|false}
 ```
 
+## Display power (DPMS)
+
+Turn the kiosk's physical display on or off (real DPMS — the panel
+actually powers off, not just a black overlay). Auto-wakes on any
+incoming kiosk activity (wake word, PTT, takeover, TTS reply).
+
+```sh
+# Read current state + idle-blank timeout
+curl -sS "$HAL_SERVER_URL/api/display"
+# → {"state":"on","auto_off_seconds":0,"available":true}
+
+# Manual on / off / toggle
+curl -sS -X POST "$HAL_SERVER_URL/api/display" \
+  -H "Content-Type: application/json" \
+  -d '{"state":"off"}'
+
+# Or via voice through the LLM:
+curl -sS -X POST "$HAL_SERVER_URL/api/command" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "turn off the screen"}'
+```
+
+`available: false` in the GET response means the kiosk host has no
+supported DPMS backend (wlr-randr / xset / vcgencmd). In that state
+the POST returns `{"status":"unavailable"}` and the voice tool replies
+with the same.
+
 ## Health check
 
 Verify HAL is alive and which subsystems are connected:
