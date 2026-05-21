@@ -24,9 +24,6 @@ services:
     devices:
       - /dev/snd:/dev/snd
       - /dev/input:/dev/input
-      # RPi-firmware DPMS uses /dev/vchiq. Harmless on x86 — vcgencmd
-      # detection there will simply fail and the dispatcher falls through.
-      - /dev/vchiq:/dev/vchiq
     group_add:
       - audio
       - video

@@ -170,9 +170,9 @@ class VcgencmdBackend(DisplayBackend):
     def detect(cls) -> Optional["VcgencmdBackend"]:
         if not shutil.which("vcgencmd"):
             return None
-        # /dev/vchiq is the firmware-IPC device. If it's not bind-mounted
-        # in, vcgencmd will silently no-op or error.
-        if not os.path.exists("/dev/vchiq"):
+        # Firmware IPC device. On older Pis it's /dev/vchiq; on Pi 5 /
+        # Bookworm it's /dev/vcio. Either is good enough for vcgencmd.
+        if not (os.path.exists("/dev/vchiq") or os.path.exists("/dev/vcio")):
             return None
         return cls()
 
