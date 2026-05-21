@@ -17,7 +17,7 @@ services:
       # Display-power backend (DPMS): wlr-randr / xset / vcgencmd. The
       # corresponding host sockets / devices are bind-mounted below.
       - XDG_RUNTIME_DIR=/run/user/1000
-      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
       - DISPLAY=${DISPLAY:-:0}
       # Optional pin for wlr-randr if auto-detection picks the wrong output.
       - PAL_DISPLAY_OUTPUT=${PAL_DISPLAY_OUTPUT:-}
