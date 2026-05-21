@@ -32,6 +32,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from typing import Optional
 
 log = logging.getLogger("hal.display")
@@ -178,6 +180,81 @@ class WlrRandrBackend(DisplayBackend):
                            capture_output=True, text=True)
         if r.returncode != 0 or (r.stderr or "").strip():
             log.warning(f"wlr-randr ON rc={r.returncode} stderr={r.stderr!r}")
+        # When the panel goes deep into standby, the next HDMI hot-plug
+        # detect can race the compositor: our --on --transform fires
+        # before the EDID has been re-read, then labwc reapplies its
+        # default rotation when the output re-attaches. Worker thread
+        # polls the live state for the next ~15 s; if it doesn't match
+        # what we saved, we re-apply. Bounded retries, then give up.
+        threading.Thread(
+            target=self._reconcile_after_wake,
+            daemon=True,
+            name="wlr-randr-reconcile",
+        ).start()
+
+    def _reconcile_after_wake(self) -> None:
+        """Re-apply the saved transform/scale/position until the live
+        state matches (or up to 15 s have passed)."""
+        deadline = time.monotonic() + 15.0
+        attempts = 0
+        while time.monotonic() < deadline:
+            time.sleep(1.0)
+            try:
+                out = subprocess.run(
+                    ["wlr-randr"], capture_output=True, text=True, timeout=4.0,
+                ).stdout
+            except Exception:
+                continue
+            live_transform = None
+            live_scale = None
+            live_enabled = None
+            in_block = False
+            for line in out.splitlines():
+                if re.match(rf"^{re.escape(self.output)}\b", line):
+                    in_block = True
+                    continue
+                if not in_block:
+                    continue
+                if line and not line.startswith(" ") and not line.startswith("\t"):
+                    break
+                m = re.search(r"Enabled:\s*(yes|no)", line)
+                if m:
+                    live_enabled = m.group(1) == "yes"
+                m = re.search(r"Transform:\s*(\S+)", line)
+                if m:
+                    live_transform = m.group(1)
+                m = re.search(r"Scale:\s*([\d.]+)", line)
+                if m:
+                    live_scale = m.group(1)
+            if live_enabled is False:
+                # The panel is still off (deep standby) — wait more.
+                continue
+            want_t = self._transform
+            want_s = self._scale
+            t_ok = (not want_t) or live_transform == want_t
+            s_ok = (not want_s) or live_scale == want_s
+            if t_ok and s_ok:
+                if attempts > 0:
+                    log.info(
+                        f"wlr-randr reconcile: settled after {attempts} re-apply(s) "
+                        f"(transform={live_transform})"
+                    )
+                return
+            # Drift detected — re-apply.
+            attempts += 1
+            cmd = ["wlr-randr", "--output", self.output]
+            if want_t:
+                cmd += ["--transform", want_t]
+            if want_s:
+                cmd += ["--scale", want_s]
+            if self._position:
+                cmd += ["--pos", self._position]
+            log.warning(
+                f"wlr-randr reconcile: live transform={live_transform!r} "
+                f"!= want={want_t!r}; reapplying ({attempts})"
+            )
+            subprocess.run(cmd, check=False, timeout=6.0)
+        log.warning("wlr-randr reconcile: gave up after 15 s")
 
     def state(self) -> Optional[bool]:
         try:
