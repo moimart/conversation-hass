@@ -78,10 +78,12 @@ async def start_ptt(state: "AppState") -> dict:
     Returns a small dict suitable for an HTTP response — `{"status": "...",
     "session": bool}`."""
     # Pressing PTT counts as kiosk activity → wake the display AND reset
-    # the photo-frame idle timer.
+    # the photo-frame idle timer. PTT also starts voice recognition, so
+    # dismiss any active photo frame to free the screen for the response.
     try:
-        from .main import _record_user_activity
+        from .main import _record_user_activity, _dismiss_photo_frame_async
         _record_user_activity(state)
+        _dismiss_photo_frame_async(state, reason="ptt")
     except Exception:
         pass
     conv = state.conversation

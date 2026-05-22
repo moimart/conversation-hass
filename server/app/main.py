@@ -314,6 +314,20 @@ def _record_user_activity(state: AppState) -> None:
     _record_kiosk_activity(state)
 
 
+def _dismiss_photo_frame_async(state: AppState, reason: str) -> None:
+    """Fire-and-forget tear-down of an active photo-frame session.
+
+    Used when a command arrives or voice recognition starts processing:
+    the frame must yield to the new activity. No-op if nothing is open.
+    Scheduled as a task so callers (wake-word callback, command handler)
+    don't block on the HA unsubscribe.
+    """
+    if state.photo_frame_session is None:
+        return
+    from .photo_frame import stop_photo_frame
+    asyncio.create_task(stop_photo_frame(state, reason=reason))
+
+
 async def _display_auto_off_loop(state: AppState) -> None:
     """Background task: blank the display after `display_auto_off_seconds`
     of no activity. 0 means disabled. The check is cheap; we poll every
@@ -2049,6 +2063,8 @@ async def lifespan(app: FastAPI):
             if not text or not conversation:
                 return
             log.info(f"MQTT command: {text!r}")
+            _record_user_activity(state)
+            _dismiss_photo_frame_async(state, reason="command")
             transcription_msg = {
                 "type": "transcription",
                 "text": text,
@@ -2481,6 +2497,9 @@ async def audio_endpoint(websocket: WebSocket):
         # appears on the panel. Fire-and-forget — the chime audio is
         # already on its way.
         _record_user_activity(state)
+        # Voice recognition is starting — dismiss the photo frame so
+        # the listening cue / response panel has the screen.
+        _dismiss_photo_frame_async(state, reason="wake_word")
         try:
             await broadcast_to_ui(state, {"type": "wake"})
             await websocket.send_json({"type": "wake"})
@@ -2932,6 +2951,9 @@ async def post_command(req: CommandRequest):
 
     if not conversation:
         return {"status": "error", "message": "Server not ready"}
+
+    _record_user_activity(state)
+    _dismiss_photo_frame_async(state, reason="command")
 
     log.info(f"REST command received: '{text[:80]}'")
 
