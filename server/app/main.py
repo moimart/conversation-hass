@@ -97,6 +97,12 @@ class AppState:
     # LLM tool returns "not supported on this kiosk".
     display_available: bool = True
     display_auto_off_task: object | None = None
+    # Photo-frame idle auto-activation. Distinct from display idle:
+    # bumped only by genuine user/system activity, NOT by the photo
+    # frame itself opening (would re-arm forever). 0 = feature off.
+    photo_frame_idle_minutes: int = 0
+    user_last_activity: float = 0.0
+    photo_frame_idle_task: object | None = None
 
 
 def _generate_chime() -> bytes:
@@ -297,6 +303,17 @@ def _record_kiosk_activity(state: AppState) -> None:
         asyncio.create_task(_set_display(state, "on"))
 
 
+def _record_user_activity(state: AppState) -> None:
+    """Bump both display-wake and photo-frame-idle timers. Use for
+    genuine user/system activity (PTT, wake, takeovers, HAL speaking).
+
+    The photo frame opening itself uses _record_kiosk_activity directly
+    so it doesn't re-arm its own idle timer.
+    """
+    state.user_last_activity = time.time()
+    _record_kiosk_activity(state)
+
+
 async def _display_auto_off_loop(state: AppState) -> None:
     """Background task: blank the display after `display_auto_off_seconds`
     of no activity. 0 means disabled. The check is cheap; we poll every
@@ -322,6 +339,42 @@ async def _display_auto_off_loop(state: AppState) -> None:
         raise
     except Exception as e:
         log.error(f"Display auto-off loop crashed: {e}")
+
+
+async def _photo_frame_idle_loop(state: AppState) -> None:
+    """Background task: auto-activate the photo frame after
+    `photo_frame_idle_minutes` of no user activity. 0 means disabled.
+    Polls every 15 s (coarser than display since the threshold is in
+    minutes anyway). Skips if a session is already open.
+    """
+    log.info("Photo-frame idle loop started")
+    try:
+        while True:
+            await asyncio.sleep(15)
+            minutes = int(state.photo_frame_idle_minutes or 0)
+            if minutes <= 0:
+                continue
+            if state.photo_frame_session is not None:
+                continue
+            idle_s = time.time() - (state.user_last_activity or 0.0)
+            if idle_s >= minutes * 60:
+                log.info(
+                    f"photo_frame: idle {idle_s:.0f}s ≥ {minutes}min — activating"
+                )
+                # Reset BEFORE calling so a permanent failure (e.g. RPi
+                # disconnected, no entity configured) doesn't spam every
+                # 15 s — next attempt is one full window away.
+                state.user_last_activity = time.time()
+                try:
+                    from .photo_frame import start_photo_frame
+                    await start_photo_frame(state, "")
+                except Exception as e:
+                    log.warning(f"Photo-frame idle auto-start failed: {e}")
+    except asyncio.CancelledError:
+        log.info("Photo-frame idle loop cancelled")
+        raise
+    except Exception as e:
+        log.error(f"Photo-frame idle loop crashed: {e}")
 
 
 async def _ma_call(state: AppState, service: str, extra: dict | None = None) -> None:
@@ -487,7 +540,7 @@ async def _dispatch_play_video(
     muted: bool = False,
 ) -> bool:
     """Push a play_video message to the kiosk. Clears any active stream first."""
-    _record_kiosk_activity(state)
+    _record_user_activity(state)
     await _stop_active_stream(state)  # mutual exclusion with WebRTC streams
     msg = {
         "type": "play_video",
@@ -771,7 +824,7 @@ async def _dispatch_show_image(
     exclusion). Returns True if we got the message out — even if the kiosk
     websocket is closed (the UI broadcast is best-effort).
     """
-    _record_kiosk_activity(state)
+    _record_user_activity(state)
     await _stop_active_stream(state)
     await _stop_active_video(state)
     msg = {
@@ -948,7 +1001,7 @@ async def _show_calendar(
     `anchor_date` empty → today; otherwise ISO date string (see
     `_parse_anchor_date`) to show a specific day/week/month.
     """
-    _record_kiosk_activity(state)
+    _record_user_activity(state)
     view = (view or "month").lower().strip()
     if view not in _VALID_CAL_VIEWS:
         view = "month"
@@ -1634,6 +1687,46 @@ def _build_local_tools(state: AppState) -> LocalToolsClient:
         set_display_power_tool,
     )
 
+    async def set_photo_frame_idle_minutes_tool(args: dict) -> str:
+        try:
+            n = int(args.get("minutes", 0))
+        except (TypeError, ValueError):
+            return "minutes must be an integer between 0 and 720"
+        n = max(0, min(720, n))
+        cb = getattr(state.mqtt_bridge, "on_config_photo_frame_idle_minutes", None) if state.mqtt_bridge else None
+        if cb is None:
+            # No MQTT bridge running — still apply locally + persist so
+            # the loop picks it up.
+            state.photo_frame_idle_minutes = n
+            state.user_last_activity = time.time()
+            try:
+                state.runtime_config.set("photo_frame_idle_minutes", n)
+            except Exception as e:
+                log.warning(f"set_photo_frame_idle_minutes: persist failed: {e}")
+        else:
+            await cb(n)
+        if n == 0:
+            return "Photo-frame idle auto-activation disabled."
+        return f"Photo frame will auto-activate after {n} minutes of inactivity."
+
+    tools.register(
+        "set_photo_frame_idle_minutes",
+        (
+            "Set how many minutes of inactivity must pass before the kiosk "
+            "auto-activates the photo frame. 0 disables the feature. "
+            "Use when the user says 'auto-show the photo frame after N minutes', "
+            "'enable the screensaver after an hour', 'turn off the auto photo frame', etc."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "minutes": {"type": "integer", "minimum": 0, "maximum": 720},
+            },
+            "required": ["minutes"],
+        },
+        set_photo_frame_idle_minutes_tool,
+    )
+
     return tools
 
 
@@ -1772,6 +1865,9 @@ async def lifespan(app: FastAPI):
     # Display auto-off loop — runs always. The poll itself is cheap; it
     # only acts when display_auto_off_seconds > 0.
     state.display_auto_off_task = asyncio.create_task(_display_auto_off_loop(state))
+
+    # Photo-frame idle auto-activation. No-op when the setting is 0.
+    state.photo_frame_idle_task = asyncio.create_task(_photo_frame_idle_loop(state))
 
     # Theme registry: poll for added/removed plug-ins. The on_change
     # callback is wired further down (after the MQTT bridge is up) so
@@ -2166,6 +2262,12 @@ async def lifespan(app: FastAPI):
         state.display_last_activity = time.time()
         bridge._cached_display_state = "on"
         bridge._cached_config_display_auto_off_seconds = state.display_auto_off_seconds
+        # Photo-frame idle auto-activation.
+        state.photo_frame_idle_minutes = int(
+            state.runtime_config.get("photo_frame_idle_minutes", 0) or 0
+        )
+        state.user_last_activity = time.time()
+        bridge._cached_config_photo_frame_idle_minutes = state.photo_frame_idle_minutes
 
         async def _mqtt_calendar_show(args: dict):
             view = (args.get("view") or "month").lower()
@@ -2244,6 +2346,20 @@ async def lifespan(app: FastAPI):
             await _persist("display_auto_off_seconds", n)
             await bridge.publish_config_display_auto_off_seconds(n)
 
+        async def _cfg_photo_frame_idle_minutes(minutes: int):
+            try:
+                n = int(minutes)
+            except (TypeError, ValueError):
+                n = 0
+            n = max(0, min(720, n))
+            state.photo_frame_idle_minutes = n
+            # Reset the idle baseline so the user isn't immediately
+            # caught by a stale "idle for an hour" the instant they
+            # enable the feature.
+            state.user_last_activity = time.time()
+            await _persist("photo_frame_idle_minutes", n)
+            await bridge.publish_config_photo_frame_idle_minutes(n)
+
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
         bridge.on_theme_set = _mqtt_theme
@@ -2271,6 +2387,7 @@ async def lifespan(app: FastAPI):
         bridge.on_config_start_muted = _cfg_start_muted
         bridge.on_display_set = _mqtt_display_set
         bridge.on_config_display_auto_off_seconds = _cfg_display_auto_off_seconds
+        bridge.on_config_photo_frame_idle_minutes = _cfg_photo_frame_idle_minutes
 
         async def _mqtt_ptt_start():
             from .ptt import start_ptt
@@ -2363,7 +2480,7 @@ async def audio_endpoint(websocket: WebSocket):
         # Wake the display first so the chime / listening cue actually
         # appears on the panel. Fire-and-forget — the chime audio is
         # already on its way.
-        _record_kiosk_activity(state)
+        _record_user_activity(state)
         try:
             await broadcast_to_ui(state, {"type": "wake"})
             await websocket.send_json({"type": "wake"})
@@ -2378,7 +2495,7 @@ async def audio_endpoint(websocket: WebSocket):
         """Callback: send LLM response + TTS audio back to RPi."""
         # If HAL is about to speak, the display must be on for the
         # response panel + state-video crossfade to be visible.
-        _record_kiosk_activity(state)
+        _record_user_activity(state)
         try:
             await websocket.send_json({"type": "response", "text": text})
             await broadcast_to_ui(state, {"type": "response", "text": text})
@@ -2540,6 +2657,9 @@ async def audio_endpoint(websocket: WebSocket):
                     from .photo_frame import stop_photo_frame
                     reason = str(msg.get("reason") or "kiosk")
                     await stop_photo_frame(state, reason=reason)
+                    # Treat dismissal as user activity so the idle loop
+                    # doesn't immediately re-arm the frame on the next tick.
+                    _record_user_activity(state)
 
                 elif msg_type == "display_state":
                     # Confirmation from the RPi container after a
@@ -2755,6 +2875,43 @@ async def post_photo_frame_end():
     from .photo_frame import stop_photo_frame
     state = _get_state(app)
     return await stop_photo_frame(state, reason="explicit")
+
+
+class PhotoFrameIdleRequest(BaseModel):
+    # Minutes of inactivity before the photo frame auto-activates.
+    # 0 disables the feature. Anything else clamped to 0..720.
+    minutes: int
+
+
+@app.get("/api/photo_frame/idle")
+async def get_photo_frame_idle():
+    """Return the photo-frame idle auto-activation setting (minutes)."""
+    state = _get_state(app)
+    return {
+        "minutes": int(state.photo_frame_idle_minutes or 0),
+        "active": state.photo_frame_session is not None,
+    }
+
+
+@app.post("/api/photo_frame/idle")
+async def post_photo_frame_idle(req: PhotoFrameIdleRequest):
+    """Set the photo-frame idle auto-activation threshold in minutes.
+    0 disables the feature."""
+    state = _get_state(app)
+    try:
+        n = int(req.minutes)
+    except (TypeError, ValueError):
+        n = 0
+    n = max(0, min(720, n))
+    cb = getattr(state.mqtt_bridge, "on_config_photo_frame_idle_minutes", None) if state.mqtt_bridge else None
+    if cb is not None:
+        await cb(n)
+    else:
+        state.photo_frame_idle_minutes = n
+        state.user_last_activity = time.time()
+        if state.runtime_config is not None:
+            state.runtime_config.set("photo_frame_idle_minutes", n)
+    return {"status": "ok", "minutes": int(state.photo_frame_idle_minutes or 0)}
 
 
 @app.post("/api/command")

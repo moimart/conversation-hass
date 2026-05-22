@@ -390,6 +390,54 @@ curl -XPOST http://hal:8765/api/display \
 
 ---
 
+## Photo-frame idle auto-activation
+
+The kiosk can auto-fall-back to the photo frame after a configurable
+idle period. `0` minutes disables the feature. Range 0–720 (12 h).
+
+Activity that resets the timer: wake word, PTT, video / image /
+calendar / camera takeover, HAL TTS playback, and a
+`photo_frame_dismissed` event from the kiosk. The photo frame itself
+opening does **not** reset the timer — that would re-arm it forever and
+prevent re-trigger after a manual dismiss.
+
+### `GET /api/photo_frame/idle`
+
+**Response** `200`
+
+```json
+{ "minutes": 30, "active": false }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `minutes` | int | Idle threshold in minutes; `0` = disabled. |
+| `active` | bool | Whether a photo-frame session is currently open. |
+
+### `POST /api/photo_frame/idle`
+
+**Request body**
+
+```json
+{ "minutes": 30 }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `minutes` | int | required; clamped to `0..720`. `0` disables. |
+
+```bash
+curl -XPOST http://hal:8765/api/photo_frame/idle \
+     -H 'Content-Type: application/json' \
+     -d '{"minutes": 30}'
+```
+
+Also exposed via MQTT (`hal/<id>/config/photo_frame_idle_minutes/{state,set}`)
+and the HA Number entity `Photo Frame Idle Minutes` (Configuration
+category), both auto-discovered.
+
+---
+
 ## Snapshots
 
 ### `POST /api/snapshot`

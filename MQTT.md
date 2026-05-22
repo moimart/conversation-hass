@@ -184,6 +184,7 @@ Each key has a `<state>` topic the bridge publishes to (retained) and a
 | `calendar_dismiss_seconds`| `<base>/config/calendar_dismiss_seconds/{state,set}` | `5`-`600` (number) | default 30 |
 | `photo_frame_entity`     | `<base>/config/photo_frame_entity/{state,set}`     | text       | HA `image.*` (or `camera.*`) entity_id; empty = feature disabled |
 | `display_auto_off_seconds`| `<base>/config/display_auto_off_seconds/{state,set}` | `0`-`7200` (number) | Idle-blank timeout. `0` disables auto-off (manual control only). |
+| `photo_frame_idle_minutes`| `<base>/config/photo_frame_idle_minutes/{state,set}` | `0`-`720` (number) | Auto-activate photo frame after this many idle minutes. `0` disables. |
 
 ---
 

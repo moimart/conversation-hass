@@ -33,6 +33,7 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "start_muted":               ("START_MUTED", False),
     "photo_frame_entity":        ("PHOTO_FRAME_ENTITY", ""),
     "display_auto_off_seconds":  ("DISPLAY_AUTO_OFF_SECONDS", 0),
+    "photo_frame_idle_minutes":  ("PHOTO_FRAME_IDLE_MINUTES", 0),
 }
 
 

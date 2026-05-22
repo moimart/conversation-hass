@@ -111,6 +111,8 @@ class MQTTBridge:
         # is the idle-blank timeout config (0 = disabled).
         self.on_display_set: Callable[[bool], Awaitable[None]] | None = None
         self.on_config_display_auto_off_seconds: Callable[[int], Awaitable[None]] | None = None
+        # Photo-frame idle auto-activation timeout, in minutes (0 = disabled).
+        self.on_config_photo_frame_idle_minutes: Callable[[int], Awaitable[None]] | None = None
         # Lists populated by main.py at startup so the select entities
         # advertise the right options. Empty lists publish a "none found"
         # placeholder so the entity still appears in HA.
@@ -158,6 +160,8 @@ class MQTTBridge:
         # timeout in seconds (0 = disabled).
         self._cached_display_state: str = "on"
         self._cached_config_display_auto_off_seconds: int = 0
+        # Photo-frame idle-minutes cache for republish-on-connect.
+        self._cached_config_photo_frame_idle_minutes: int = 0
 
     @property
     def connected(self) -> bool:
@@ -655,6 +659,23 @@ class MQTTBridge:
                 "entity_category": "config",
             },
         ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/number/{self.device_id}/config_photo_frame_idle_minutes/config",
+            {
+                "name": "Photo Frame Idle Minutes",
+                "unique_id": f"{self.device_id}_config_photo_frame_idle_minutes",
+                "state_topic":   f"{self.base}/config/photo_frame_idle_minutes/state",
+                "command_topic": f"{self.base}/config/photo_frame_idle_minutes/set",
+                "min": 0,
+                "max": 720,
+                "step": 1,
+                "unit_of_measurement": "min",
+                "icon": "mdi:image-multiple-outline",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
 
         # Push-to-Talk: three button entities under the device's
         # Configuration section. HA dashboards, automations, and
@@ -812,6 +833,9 @@ class MQTTBridge:
                     await self.publish_config_display_auto_off_seconds(
                         self._cached_config_display_auto_off_seconds
                     )
+                    await self.publish_config_photo_frame_idle_minutes(
+                        self._cached_config_photo_frame_idle_minutes
+                    )
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -844,6 +868,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/config/photo_frame_entity/set")
                     await client.subscribe(f"{self.base}/display/set")
                     await client.subscribe(f"{self.base}/config/display_auto_off_seconds/set")
+                    await client.subscribe(f"{self.base}/config/photo_frame_idle_minutes/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -1017,6 +1042,15 @@ class MQTTBridge:
                         seconds = 0
                     seconds = max(0, min(7200, seconds))
                     await self.on_config_display_auto_off_seconds(seconds)
+
+            elif topic == f"{self.base}/config/photo_frame_idle_minutes/set":
+                if self.on_config_photo_frame_idle_minutes:
+                    try:
+                        minutes = int(float(payload.strip()))
+                    except ValueError:
+                        minutes = 0
+                    minutes = max(0, min(720, minutes))
+                    await self.on_config_photo_frame_idle_minutes(minutes)
 
             elif topic == f"{self.base}/ptt/start":
                 if self.on_ptt_start:
@@ -1249,5 +1283,17 @@ class MQTTBridge:
         self._cached_config_display_auto_off_seconds = n
         await self._safe_publish(
             f"{self.base}/config/display_auto_off_seconds/state",
+            str(n),
+        )
+
+    async def publish_config_photo_frame_idle_minutes(self, value: int):
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            n = 0
+        n = max(0, min(720, n))
+        self._cached_config_photo_frame_idle_minutes = n
+        await self._safe_publish(
+            f"{self.base}/config/photo_frame_idle_minutes/state",
             str(n),
         )

@@ -77,10 +77,11 @@ async def start_ptt(state: "AppState") -> dict:
 
     Returns a small dict suitable for an HTTP response — `{"status": "...",
     "session": bool}`."""
-    # Pressing PTT counts as kiosk activity → wake the display.
+    # Pressing PTT counts as kiosk activity → wake the display AND reset
+    # the photo-frame idle timer.
     try:
-        from .main import _record_kiosk_activity
-        _record_kiosk_activity(state)
+        from .main import _record_user_activity
+        _record_user_activity(state)
     except Exception:
         pass
     conv = state.conversation

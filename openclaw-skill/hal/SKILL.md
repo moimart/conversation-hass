@@ -147,6 +147,34 @@ supported DPMS backend (wlr-randr / xset / vcgencmd). In that state
 the POST returns `{"status":"unavailable"}` and the voice tool replies
 with the same.
 
+## Photo-frame idle auto-activation
+
+After `N` minutes of no activity the kiosk auto-activates the photo
+frame (uses the configured `photo_frame_entity`). `0` disables. Wake
+word, PTT, video/image/calendar takeover, HAL TTS, and a kiosk-side
+dismissal all reset the timer.
+
+```sh
+# Read current threshold + whether a session is open
+curl -sS "$HAL_SERVER_URL/api/photo_frame/idle"
+# → {"minutes": 30, "active": false}
+
+# Set the threshold (clamped to 0..720)
+curl -sS -X POST "$HAL_SERVER_URL/api/photo_frame/idle" \
+  -H "Content-Type: application/json" \
+  -d '{"minutes": 30}'
+
+# Disable
+curl -sS -X POST "$HAL_SERVER_URL/api/photo_frame/idle" \
+  -H "Content-Type: application/json" \
+  -d '{"minutes": 0}'
+
+# Or via voice through the LLM:
+curl -sS -X POST "$HAL_SERVER_URL/api/command" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "auto-show the photo frame after 30 minutes"}'
+```
+
 ## Health check
 
 Verify HAL is alive and which subsystems are connected:
