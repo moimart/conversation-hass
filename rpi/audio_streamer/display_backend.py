@@ -192,11 +192,23 @@ class WlrRandrBackend(DisplayBackend):
             name="wlr-randr-reconcile",
         ).start()
 
+    # Reconciler window large enough to outlast a deep-standby HDMI
+    # re-handshake (labwc has been seen resetting rotation up to ~30 s
+    # after --on when the panel had been off all night).
+    _RECONCILE_WINDOW_S = 90.0
+    # Require the rotation to hold across this many consecutive polls
+    # (≈ this many seconds) before we declare victory. Matching on the
+    # very first poll right after --on is meaningless — labwc may
+    # still re-clobber it once the EDID is re-read.
+    _RECONCILE_STABLE_POLLS = 8
+
     def _reconcile_after_wake(self) -> None:
         """Re-apply the saved transform/scale/position until the live
-        state matches (or up to 15 s have passed)."""
-        deadline = time.monotonic() + 15.0
+        state has held for `_RECONCILE_STABLE_POLLS` consecutive polls
+        (or up to `_RECONCILE_WINDOW_S` have passed)."""
+        deadline = time.monotonic() + self._RECONCILE_WINDOW_S
         attempts = 0
+        stable_streak = 0
         while time.monotonic() < deadline:
             time.sleep(1.0)
             try:
@@ -228,19 +240,23 @@ class WlrRandrBackend(DisplayBackend):
                     live_scale = m.group(1)
             if live_enabled is False:
                 # The panel is still off (deep standby) — wait more.
+                stable_streak = 0
                 continue
             want_t = self._transform
             want_s = self._scale
             t_ok = (not want_t) or live_transform == want_t
             s_ok = (not want_s) or live_scale == want_s
             if t_ok and s_ok:
-                if attempts > 0:
+                stable_streak += 1
+                if stable_streak >= self._RECONCILE_STABLE_POLLS:
                     log.info(
-                        f"wlr-randr reconcile: settled after {attempts} re-apply(s) "
-                        f"(transform={live_transform})"
+                        f"wlr-randr reconcile: settled after {attempts} re-apply(s), "
+                        f"stable for {stable_streak}s (transform={live_transform})"
                     )
-                return
+                    return
+                continue
             # Drift detected — re-apply.
+            stable_streak = 0
             attempts += 1
             cmd = ["wlr-randr", "--output", self.output]
             if want_t:
@@ -254,7 +270,10 @@ class WlrRandrBackend(DisplayBackend):
                 f"!= want={want_t!r}; reapplying ({attempts})"
             )
             subprocess.run(cmd, check=False, timeout=6.0)
-        log.warning("wlr-randr reconcile: gave up after 15 s")
+        log.warning(
+            f"wlr-randr reconcile: gave up after {self._RECONCILE_WINDOW_S:.0f}s "
+            f"({attempts} re-apply(s), final stable_streak={stable_streak})"
+        )
 
     def state(self) -> Optional[bool]:
         try:
