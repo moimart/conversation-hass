@@ -1,6 +1,6 @@
 ---
 name: hal
-description: Control HAL — local voice assistant for Home Assistant. Send spoken commands, adjust speaker volume, toggle mic mute, and switch the web UI theme.
+description: Control HAL — local voice assistant for Home Assistant. Send spoken commands, adjust speaker volume, toggle mic mute, switch the web UI theme, drive push-to-talk, open or auto-trigger the photo frame, toggle the kiosk display (DPMS), and pop up the calendar.
 metadata.openclaw.requires.bins: ["curl"]
 metadata.openclaw.requires.config: ["HAL_SERVER_URL"]
 ---
@@ -28,20 +28,25 @@ When you POST a natural-language command to `/api/command`, HAL's LLM has these 
 - Anything Home Assistant exposes through its MCP server
 
 **HAL UI / hardware:**
-- Switch the kiosk theme: "switch the theme to japandi"
+- Switch the kiosk theme: "switch the theme to japandi" (registry is dynamic; see Theme control for how to list available themes)
 - Set or adjust speaker volume: "turn the volume up", "set volume to 30%"
 - Toggle mic mute
 - Make HAL speak text exactly: "say out loud: dinner is ready"
+- Turn the kiosk display (panel) on or off via real DPMS: "turn off the screen", "wake the screen" (`set_display_power`)
+- Auto-blank the display after N idle seconds (set via voice or REST; see Display power)
+- Auto-activate the photo frame after N idle minutes: "auto-show the photo frame after 30 minutes" (`set_photo_frame_idle_minutes`)
 
-**Orb display (image / video / camera):**
+**Orb display (image / video / camera / photo frame / calendar):**
 - Snapshot from a Home Assistant camera: "show me the front door camera" — paints a JPEG inside HAL's orb for ~2.5 minutes (`show_camera`)
 - Live WebRTC stream from a HA camera: "watch the kitchen camera live", "stream the porch" — opens a low-latency feed for up to 5 minutes (`stream_camera`)
 - Live RTSP URL (any IP cam, NVR, Frigate go2rtc, etc.): "stream the rtsp at rtsp://user:pass@host/path" — uses the bundled go2rtc sidecar (`stream_rtsp`)
 - Arbitrary image URL: "show the picture at https://example.com/x.jpg" or "put X on screen for 30 seconds" — fetches and displays for 60 s by default (`show_image`)
 - HTTP video / HLS playlist: "play the video at https://example.com/clip.mp4" or "play this looping silently: <url>" — auto-stops on end of file unless `loop=true`; auto-ducks audio when HAL speaks (`play_video`)
 - Stop any active orb display: "stop streaming", "stop the video", "don't show the camera anymore" (`stop_streaming` clears webrtc + video)
+- Show the photo frame (a configured HA `image.*` / `camera.*` entity, Ken-Burns + clock): "show the photo frame", "open the slideshow" (`show_photo_frame`); dismiss: "hide the photo frame", "stop the slideshow" (`hide_photo_frame`)
+- Pop up the calendar overlay: "show my calendar for this week", "what's on the calendar tomorrow", "open the month view" (`show_calendar`); dismiss: "hide the calendar" (`hide_calendar`)
 
-The orb shows one thing at a time — starting any new display replaces whatever's there.
+The orb shows one thing at a time — starting any new display replaces whatever's there. The photo frame and calendar each preempt other displays the same way.
 
 ## Send a spoken command to the LLM
 
@@ -63,6 +68,10 @@ Examples:
 - `{"text": "put the picture at https://example.com/cat.jpg on screen for 2 minutes"}`
 - `{"text": "play https://example.com/clip.mp4 muted"}`
 - `{"text": "stop streaming"}`
+- `{"text": "show my calendar for this week"}`
+- `{"text": "show the photo frame"}`
+- `{"text": "turn off the screen"}`
+- `{"text": "auto-show the photo frame after 30 minutes"}`
 
 ## Speak text out loud verbatim (bypass the LLM)
 
@@ -120,6 +129,26 @@ curl -sS "$HAL_SERVER_URL/api/mute"
 # → {"muted": true|false}
 ```
 
+## Push-to-talk (PTT)
+
+Open a listening session without saying the wake word. STT begins immediately and runs until you end (or cancel) the session. The kiosk shows the PTT chip + orb glow; an active photo frame dismisses automatically.
+
+```sh
+# Start listening (idempotent; second start while open is a no-op)
+curl -sS -X POST "$HAL_SERVER_URL/api/ptt/start"
+# → {"status":"ok","session":true}
+
+# End and process the captured audio through the LLM
+curl -sS -X POST "$HAL_SERVER_URL/api/ptt/end"
+# → {"status":"ok","session":false}
+
+# Cancel without running the LLM (drops the captured audio)
+curl -sS -X POST "$HAL_SERVER_URL/api/ptt/cancel"
+# → {"status":"cancelled","session":false}
+```
+
+`{"status":"rpi_disconnected"}` means the Raspberry Pi audio client is not currently connected — STT cannot run, the press is refused. If a session is already open, a second `/start` returns `{"status":"already_active"}`. Releases that come back faster than ~250 ms are debounced and end as cancellations.
+
 ## Display power (DPMS)
 
 Turn the kiosk's physical display on or off (real DPMS — the panel
@@ -146,6 +175,32 @@ curl -sS -X POST "$HAL_SERVER_URL/api/command" \
 supported DPMS backend (wlr-randr / xset / vcgencmd). In that state
 the POST returns `{"status":"unavailable"}` and the voice tool replies
 with the same.
+
+## Photo frame (open / dismiss on demand)
+
+Open the photo frame on the kiosk — full-screen image (HA `image.*` or `camera.*` entity) with white drop-shadow clock and Ken-Burns zoom. If `photo_frame_entity` is configured in runtime config, no body is needed; otherwise pass `entity_id` explicitly.
+
+```sh
+# Open using the configured default entity
+curl -sS -X POST "$HAL_SERVER_URL/api/photo_frame/start"
+# → {"status":"ok","session":true}
+
+# Open a specific entity (overrides the configured default for this session)
+curl -sS -X POST "$HAL_SERVER_URL/api/photo_frame/start" \
+  -H "Content-Type: application/json" \
+  -d '{"entity_id": "image.living_room_slideshow"}'
+
+# Dismiss
+curl -sS -X POST "$HAL_SERVER_URL/api/photo_frame/end"
+# → {"status":"ok","session":false}
+
+# Or via voice through the LLM:
+curl -sS -X POST "$HAL_SERVER_URL/api/command" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "show the photo frame"}'
+```
+
+Statuses returned by `/start`: `ok` (opened), `already_active` (same entity already showing — pushes a refresh image), `not_configured` (no entity given AND `photo_frame_entity` is empty), `invalid_entity` (must start with `image.` or `camera.`), `fetch_failed` (HA unreachable or non-image MIME). A user-initiated dismissal from the kiosk (pointer, state change) also tears the session down server-side.
 
 ## Photo-frame idle auto-activation
 
@@ -186,21 +241,33 @@ curl -sS "$HAL_SERVER_URL/health"
 
 ## Read what HAL last said
 
-Useful when you want to confirm or react to HAL's most recent reply. Two paths:
+Useful when you want to confirm or react to HAL's most recent reply:
 
 ```sh
-# REST: latest snapshot of the kiosk page (JPEG)
-curl -sS -o /tmp/hal.jpg "$HAL_SERVER_URL/api/snapshot.jpg"
-
-# Or: published on MQTT as a Home Assistant sensor entity
+# Published on MQTT as a Home Assistant sensor entity:
 #   sensor.<HAL_DEVICE_ID>_last_response
 # State = truncated text (≤250 chars), attribute "full_text" = full reply.
 # Read via HA's REST API or the homeassistant CLI if you have access.
 ```
 
+## Grab a screenshot of the kiosk
+
+For visual confirmation of what HAL is currently showing (orb state, active photo frame, calendar overlay, camera view, etc.), fetch the latest kiosk snapshot. The RPi audio_streamer posts a fresh JPEG to the server every `SNAPSHOT_INTERVAL_S` seconds (default 60).
+
+```sh
+curl -sS -o /tmp/hal.jpg "$HAL_SERVER_URL/api/snapshot.jpg"
+```
+
 ## Theme control
 
-HAL's web UI has four themes (`dark`, `birch`, `odyssey`, `japandi`). The HAL server picks the theme automatically at dusk/dawn, but you can also drive it through the LLM by issuing a natural-language command:
+HAL's web UI theme is a plug-in registry; the available set changes as themes are added/removed under `server/themes/`. List the current set with:
+
+```sh
+curl -sS "$HAL_SERVER_URL/api/themes"
+# → {"themes":[{"name":"birch", ...},{"name":"dark", ...}, ...]}
+```
+
+The HAL server picks the theme automatically at dusk/dawn when auto-theme is enabled, but you can also drive it through the LLM:
 
 ```sh
 curl -sS -X POST "$HAL_SERVER_URL/api/command" \
