@@ -2576,7 +2576,17 @@ async def audio_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "ping"})
                 elapsed = time.monotonic() - last_pong
                 if elapsed > pong_timeout:
-                    log.error(f"No pong from RPi in {elapsed:.0f}s — connection likely dead")
+                    # Zombie connection — TCP still open but no pongs.
+                    # Close the WS so the handler's receive loop exits
+                    # and the client sees ConnectionClosed and reconnects.
+                    log.error(
+                        f"No pong from RPi in {elapsed:.0f}s — closing zombie WS"
+                    )
+                    try:
+                        await websocket.close(code=1011, reason="pong-timeout")
+                    except Exception as ce:
+                        log.warning(f"Keepalive: ws.close raised {ce}")
+                    break
             except Exception as e:
                 log.error(f"Keepalive send failed: {e}")
                 break

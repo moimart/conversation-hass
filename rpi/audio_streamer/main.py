@@ -568,7 +568,38 @@ class AudioManager:
                                 msg = json.loads(message)
                                 await self.handle_server_message(msg.get("type", ""), msg, ws)
 
-                    await asyncio.gather(send_audio(), receive_messages())
+                    # FIRST_COMPLETED so a clean server-side close (which
+                    # ends `receive_messages` without raising) still tears
+                    # the whole thing down — otherwise `send_audio` can
+                    # sit forever in its mute/tts-sleep loop and the
+                    # outer reconnect logic never fires.
+                    send_task = asyncio.create_task(send_audio())
+                    recv_task = asyncio.create_task(receive_messages())
+                    try:
+                        done, pending = await asyncio.wait(
+                            {send_task, recv_task},
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        for t in pending:
+                            t.cancel()
+                            try:
+                                await t
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                        # Surface exceptions from the finisher so the
+                        # outer reconnect except-block can handle them.
+                        for t in done:
+                            exc = t.exception()
+                            if exc is not None:
+                                raise exc
+                        # If we got here, the WS closed cleanly server-side.
+                        # Force a reconnect by raising ConnectionClosed.
+                        raise websockets.ConnectionClosed(None, None)
+                    finally:
+                        if not send_task.done():
+                            send_task.cancel()
+                        if not recv_task.done():
+                            recv_task.cancel()
 
             except (websockets.ConnectionClosed, ConnectionRefusedError, OSError) as e:
                 log.warning(f"Connection lost: {e}. Reconnecting in 5s...")
