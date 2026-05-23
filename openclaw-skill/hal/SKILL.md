@@ -176,31 +176,175 @@ supported DPMS backend (wlr-randr / xset / vcgencmd). In that state
 the POST returns `{"status":"unavailable"}` and the voice tool replies
 with the same.
 
-## Photo frame (open / dismiss on demand)
+## Show an image on the orb
 
-Open the photo frame on the kiosk — full-screen image (HA `image.*` or `camera.*` entity) with white drop-shadow clock and Ken-Burns zoom. If `photo_frame_entity` is configured in runtime config, no body is needed; otherwise pass `entity_id` explicitly.
+Display an arbitrary image on the kiosk orb for a configurable duration.
+No REST endpoint — use MQTT or the LLM voice path.
 
 ```sh
-# Open using the configured default entity
+# Via MQTT — plain URL (default 60 s)
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/image/set" \
+  -m "https://example.com/photo.jpg"
+
+# Via MQTT — JSON with duration
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/image/set" \
+  -m '{"url":"https://example.com/photo.jpg","duration_s":120}'
+
+# Via LLM voice path
+curl -sS -X POST "$HAL_SERVER_URL/api/command" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "show the picture at https://example.com/photo.jpg for 2 minutes"}'
+```
+
+The MQTT topic also accepts raw `image/jpeg` bytes as the payload (for
+binary pushes from automations).
+
+## Play a video on the orb
+
+Play an HTTP video (MP4, WebM) or HLS playlist on the kiosk orb.
+Auto-stops at end of file unless `loop` is set. Audio ducks
+automatically when HAL speaks.
+
+```sh
+# Via MQTT — plain URL
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/video/set" \
+  -m "https://example.com/clip.mp4"
+
+# Via MQTT — JSON with options
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/video/set" \
+  -m '{"url":"https://example.com/clip.mp4","loop":true,"muted":true,"duration_s":300}'
+
+# Via LLM voice path
+curl -sS -X POST "$HAL_SERVER_URL/api/command" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "play https://example.com/clip.mp4 looping and muted"}'
+```
+
+## Show a HA camera on the orb
+
+Paint a snapshot from a Home Assistant `camera.*` or `image.*` entity
+inside the orb. For `camera.*` entities, set `live: true` to open a
+low-latency WebRTC stream instead of a static snapshot.
+
+```sh
+# Via MQTT — entity_id only (snapshot, default ~2.5 min)
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/camera/set" \
+  -m "camera.front_door"
+
+# Via MQTT — JSON with live streaming + custom duration
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/camera/set" \
+  -m '{"entity_id":"camera.front_door","live":true,"duration_s":300}'
+
+# Via LLM voice path (snapshot)
+curl -sS -X POST "$HAL_SERVER_URL/api/command" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "show me the front door camera"}'
+
+# Via LLM voice path (live WebRTC)
+curl -sS -X POST "$HAL_SERVER_URL/api/command" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "stream the front door camera live"}'
+```
+
+`live: true` is ignored for `image.*` entities (they have no video
+feed). The orb shows one thing at a time — starting a new display
+replaces whatever's there.
+
+## Stream an RTSP source on the orb
+
+Open a WebRTC stream from any RTSP URL (IP cam, NVR, Frigate, go2rtc)
+via the bundled go2rtc sidecar. Default duration 5 minutes.
+
+```sh
+# Via MQTT — plain URL
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/rtsp/set" \
+  -m "rtsp://admin:pass@10.0.0.20:554/stream1"
+
+# Via MQTT — JSON with custom duration
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/rtsp/set" \
+  -m '{"rtsp_url":"rtsp://admin:pass@10.0.0.20:554/stream1","duration_s":600}'
+
+# Via LLM voice path
+curl -sS -X POST "$HAL_SERVER_URL/api/command" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "stream the rtsp at rtsp://admin:pass@10.0.0.20:554/stream1"}'
+```
+
+## Show the calendar overlay
+
+Pop up a calendar overlay on the kiosk (month / week / day view).
+Merges all HA calendars by default; pass `calendar_name` to filter.
+Auto-dismisses after `calendar_dismiss_seconds` (default 30, configurable
+via MQTT / runtime config).
+
+```sh
+# Via MQTT — bare view name
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/calendar/show/set" \
+  -m "week"
+
+# Via MQTT — JSON with options
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/calendar/show/set" \
+  -m '{"view":"month","calendar_name":"Family","anchor_date":"2026-06-01","duration_s":60}'
+
+# Dismiss
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/calendar/hide/set" \
+  -m ""
+
+# Via LLM voice path
+curl -sS -X POST "$HAL_SERVER_URL/api/command" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "show my calendar for this week"}'
+```
+
+Views: `month` (default), `week`, `day`. If the bare payload is a
+string that isn't a view name, it's treated as `calendar_name`.
+
+## Photo frame (open / dismiss on demand)
+
+Open the photo frame on the kiosk — full-screen image (HA `image.*` or `camera.*` entity) with white drop-shadow clock and Ken-Burns zoom. If `photo_frame_entity` is configured in runtime config, no body is needed; otherwise pass `entity_id` explicitly. Auto-crossfades when HA rotates the underlying image.
+
+```sh
+# REST — open using the configured default entity
 curl -sS -X POST "$HAL_SERVER_URL/api/photo_frame/start"
 # → {"status":"ok","session":true}
 
-# Open a specific entity (overrides the configured default for this session)
+# REST — open a specific entity
 curl -sS -X POST "$HAL_SERVER_URL/api/photo_frame/start" \
   -H "Content-Type: application/json" \
   -d '{"entity_id": "image.living_room_slideshow"}'
 
-# Dismiss
+# REST — dismiss
 curl -sS -X POST "$HAL_SERVER_URL/api/photo_frame/end"
 # → {"status":"ok","session":false}
 
-# Or via voice through the LLM:
+# MQTT — open (bare entity_id or JSON)
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/photo_frame/show/set" \
+  -m "image.google_photos_rotator_next_photo"
+
+# MQTT — dismiss
+mosquitto_pub -h "$MQTT_HOST" \
+  -t "hal/$HAL_DEVICE_ID/photo_frame/hide/set" \
+  -m ""
+
+# Via LLM voice path
 curl -sS -X POST "$HAL_SERVER_URL/api/command" \
   -H "Content-Type: application/json" \
   -d '{"text": "show the photo frame"}'
 ```
 
-Statuses returned by `/start`: `ok` (opened), `already_active` (same entity already showing — pushes a refresh image), `not_configured` (no entity given AND `photo_frame_entity` is empty), `invalid_entity` (must start with `image.` or `camera.`), `fetch_failed` (HA unreachable or non-image MIME). A user-initiated dismissal from the kiosk (pointer, state change) also tears the session down server-side.
+Statuses returned by `/start`: `ok` (opened), `already_active` (same entity already showing — pushes a refresh image), `not_configured` (no entity given AND `photo_frame_entity` is empty), `invalid_entity` (must start with `image.` or `camera.`), `fetch_failed` (HA unreachable or non-image MIME). The photo frame is automatically dismissed when a command is received, wake word fires, or PTT starts.
 
 ## Photo-frame idle auto-activation
 
