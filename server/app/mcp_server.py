@@ -146,22 +146,11 @@ def _register_tool(
 ) -> None:
     """Bridge a local_tools entry into the FastMCP server."""
     description = schema.get("description", "")
-    input_schema = schema.get("input_schema", {})
-    properties = input_schema.get("properties", {})
-    required = input_schema.get("required", [])
 
-    # FastMCP's @mcp.tool expects a function with typed params.
-    # We create a wrapper that accepts **kwargs and routes to the handler.
     async def wrapper(**kwargs) -> str:
         return await handler(kwargs)
 
-    # Register with the raw add_tool API for dynamic schemas
-    from mcp.server.fastmcp.tools import Tool
-
-    tool = Tool(
-        fn=wrapper,
-        name=name,
-        description=description,
-        parameters=input_schema,
-    )
-    mcp._tool_manager._tools[name] = tool
+    # Use the public add_tool API with the wrapper function
+    wrapper.__name__ = name
+    wrapper.__doc__ = description
+    mcp.add_tool(wrapper, name=name, description=description)
