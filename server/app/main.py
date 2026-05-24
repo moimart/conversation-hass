@@ -1907,6 +1907,12 @@ async def lifespan(app: FastAPI):
         os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     )
 
+    # MCP server: expose HAL's tools to external agents (e.g. OpenClaw).
+    from .mcp_server import build_mcp_server
+    hal_mcp = build_mcp_server(state)
+    app.mount("/mcp", hal_mcp.streamable_http_app())
+    log.info("MCP server mounted at /mcp")
+
     # OpenClaw Gateway — optional alternative conversation engine.
     state.openclaw_gateway_url = str(cfg.get("openclaw_gateway_url", "") or "").strip()
     state.openclaw_enabled = bool(cfg.get("openclaw_enabled", False))
