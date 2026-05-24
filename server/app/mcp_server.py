@@ -1,13 +1,13 @@
-"""MCP server exposing HAL's local tools to external agents (e.g. OpenClaw).
+"""MCP server exposing HAL's tools to external agents (e.g. OpenClaw).
 
 Mounted on the main FastAPI app at /mcp as a Starlette sub-application
-using the Streamable HTTP transport. External MCP clients (like
-OpenClaw's mcporter) connect to http://<hal>:8765/mcp to discover and
-call HAL's tools natively — no curl or SKILL.md needed.
+using the Streamable HTTP transport. External MCP clients connect to
+http://<hal>:8765/mcp to discover and call tools natively.
 """
 
 from __future__ import annotations
 
+import base64
 import logging
 from typing import TYPE_CHECKING
 
@@ -18,139 +18,115 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("hal.mcp_server")
 
-_mcp: FastMCP | None = None
-
 
 def build_mcp_server(state: "AppState") -> FastMCP:
-    """Create the MCP server and register HAL's tools on it.
-
-    Called once during lifespan startup, after local_tools are built.
-    The returned FastMCP instance's .streamable_http_app() is mounted
-    on the FastAPI app.
-    """
-    global _mcp
+    """Create the MCP server with HAL's tools registered via decorators."""
     mcp = FastMCP(
         "HAL Voice Assistant",
         instructions=(
             "HAL is a voice assistant kiosk with a display (the orb). "
             "Use these tools to control volume, mute, display power, "
             "show images/videos/cameras on the orb, open the photo frame "
-            "or calendar, and speak text aloud."
+            "or calendar, and speak text aloud. When you execute an action, "
+            "always respond with a brief spoken confirmation."
         ),
     )
 
-    # Bridge each local tool into the MCP server. The local_tools
-    # registry has (schema, async_handler) pairs. We wrap each handler
-    # into an MCP tool with the same name, description, and JSON schema.
-    if state.local_tools:
-        for name, (schema, handler) in state.local_tools._tools.items():
-            _register_tool(mcp, name, schema, handler, state)
+    async def _call(name: str, args: dict) -> str:
+        if state.local_tools and name in state.local_tools.tool_names:
+            return await state.local_tools.call_tool(name, args)
+        return f"Tool {name} not available"
 
-    # Also register a few direct-action tools that aren't in local_tools
-    # but are useful for external agents.
+    @mcp.tool(name="set_volume", description="Set the kiosk speaker volume. Use 'direction' (up/down) and optional 'step' (0.0-1.0, default 0.1).")
+    async def set_volume(direction: str, step: float = 0.1) -> str:
+        return await _call("audio_set_volume", {"direction": direction, "step": step})
 
-    @mcp.tool(
-        name="speak",
-        description=(
-            "Make HAL speak text verbatim through the kiosk speaker. "
-            "Use for announcements, notifications, or when the exact "
-            "wording matters. The text goes straight to TTS — no LLM."
-        ),
-    )
-    async def speak(text: str) -> str:
-        if not text.strip():
-            return "Error: empty text"
-        if state.tts_engine and state.audio_websocket:
-            audio = await state.tts_engine.synthesize(text)
-            if audio:
-                try:
-                    ws = state.audio_websocket
-                    await ws.send_json({"type": "response", "text": text})
-                    await ws.send_json({"type": "tts_start", "size": len(audio)})
-                    chunk_size = 8192
-                    for i in range(0, len(audio), chunk_size):
-                        await ws.send_bytes(audio[i : i + chunk_size])
-                    await ws.send_json({"type": "tts_end"})
-                    return f"Speaking: {text[:80]}"
-                except Exception as e:
-                    return f"TTS send failed: {e}"
-            return "TTS synthesis returned no audio"
-        return "TTS or kiosk not available"
+    @mcp.tool(name="adjust_volume", description="Adjust volume to a specific level (0.0-1.0).")
+    async def adjust_volume(level: float) -> str:
+        return await _call("audio_adjust_volume", {"level": level})
 
-    @mcp.tool(
-        name="show_image_url",
-        description=(
-            "Display an image from a URL on the kiosk orb for a given "
-            "duration. Use for showing pictures, diagrams, photos."
-        ),
-    )
-    async def show_image_url(url: str, duration_s: int = 60) -> str:
+    @mcp.tool(name="toggle_mute", description="Toggle the microphone mute on the kiosk.")
+    async def toggle_mute() -> str:
+        return await _call("audio_toggle_mute", {})
+
+    @mcp.tool(name="set_theme", description="Switch the kiosk UI theme. Pass a theme name.")
+    async def set_theme(name: str) -> str:
+        return await _call("ui_set_theme", {"name": name})
+
+    @mcp.tool(name="get_theme", description="Get the current kiosk UI theme name.")
+    async def get_theme() -> str:
+        return await _call("ui_get_theme", {})
+
+    @mcp.tool(name="speak_verbatim", description="Make HAL speak text exactly as given through the kiosk speaker. Bypasses the LLM.")
+    async def speak_verbatim(text: str) -> str:
+        return await _call("speak_verbatim", {"text": text})
+
+    @mcp.tool(name="show_camera", description="Show a snapshot from a HA camera entity on the kiosk orb.")
+    async def show_camera(entity_id: str, duration_s: int = 150) -> str:
+        return await _call("show_camera", {"entity_id": entity_id, "duration_s": duration_s})
+
+    @mcp.tool(name="stream_camera", description="Open a live WebRTC stream from a HA camera entity on the kiosk orb.")
+    async def stream_camera(entity_id: str, duration_s: int = 300) -> str:
+        return await _call("stream_camera", {"entity_id": entity_id, "duration_s": duration_s})
+
+    @mcp.tool(name="stream_rtsp", description="Stream an RTSP URL on the kiosk orb via go2rtc.")
+    async def stream_rtsp(rtsp_url: str, duration_s: int = 300) -> str:
+        return await _call("stream_rtsp", {"rtsp_url": rtsp_url, "duration_s": duration_s})
+
+    @mcp.tool(name="show_image", description="Show an image (by URL) on the kiosk orb.")
+    async def show_image(url: str, duration_s: int = 60) -> str:
         from .main import _push_image_payload
         try:
-            result = await _push_image_payload(state, url, default_duration=duration_s)
-            return result
+            return await _push_image_payload(state, url, default_duration=duration_s)
         except Exception as e:
             return f"Error: {e}"
 
-    @mcp.tool(
-        name="play_video_url",
-        description=(
-            "Play a video from a URL on the kiosk orb. Supports MP4, "
-            "WebM, HLS. Audio ducks when HAL speaks."
-        ),
-    )
-    async def play_video_url(
-        url: str,
-        duration_s: int = 300,
-        loop: bool = False,
-        muted: bool = False,
-    ) -> str:
-        from .main import _dispatch_play_video
-        ok = await _dispatch_play_video(
-            state, url, duration_s=duration_s, loop=loop, muted=muted,
-        )
-        return "Playing video" if ok else "Kiosk not connected"
+    @mcp.tool(name="play_video", description="Play a video URL (MP4/WebM/HLS) on the kiosk orb.")
+    async def play_video(url: str, duration_s: int = 300, loop: bool = False, muted: bool = False) -> str:
+        return await _call("play_video", {"url": url, "duration_s": duration_s, "loop": loop, "muted": muted})
 
-    @mcp.tool(
-        name="show_qr_code",
-        description=(
-            "Display a QR code on the kiosk orb for a URL or text. "
-            "Use when the user needs to open a link on their phone."
-        ),
-    )
+    @mcp.tool(name="stop_streaming", description="Stop any active video/camera stream on the kiosk orb.")
+    async def stop_streaming() -> str:
+        return await _call("stop_streaming", {})
+
+    @mcp.tool(name="show_calendar", description="Pop up a calendar overlay on the kiosk. Views: month, week, day.")
+    async def show_calendar(view: str = "month", calendar_name: str = "", anchor_date: str = "") -> str:
+        return await _call("show_calendar", {"view": view, "calendar_name": calendar_name, "anchor_date": anchor_date})
+
+    @mcp.tool(name="hide_calendar", description="Dismiss the calendar overlay.")
+    async def hide_calendar() -> str:
+        return await _call("hide_calendar", {})
+
+    @mcp.tool(name="show_photo_frame", description="Open the photo frame on the kiosk (full-screen ambient image with clock).")
+    async def show_photo_frame(entity_id: str = "") -> str:
+        return await _call("show_photo_frame", {"entity_id": entity_id})
+
+    @mcp.tool(name="hide_photo_frame", description="Dismiss the photo frame.")
+    async def hide_photo_frame() -> str:
+        return await _call("hide_photo_frame", {})
+
+    @mcp.tool(name="set_display_power", description="Turn the kiosk display on or off (real DPMS). State: 'on' or 'off'.")
+    async def set_display_power(state_val: str) -> str:
+        return await _call("set_display_power", {"state": state_val})
+
+    @mcp.tool(name="set_photo_frame_idle_minutes", description="Set minutes of inactivity before auto-activating the photo frame. 0 disables.")
+    async def set_photo_frame_idle_minutes(minutes: int) -> str:
+        return await _call("set_photo_frame_idle_minutes", {"minutes": minutes})
+
+    @mcp.tool(name="get_sun_times", description="Get sunrise/sunset times from Home Assistant.")
+    async def get_sun_times() -> str:
+        return await _call("get_sun_times", {})
+
+    @mcp.tool(name="show_qr_code", description="Display a QR code on the kiosk orb for a URL or text.")
     async def show_qr_code(data: str, duration_s: int = 30) -> str:
-        import base64
         from .qr_code import generate_qr_png
         from .main import _dispatch_show_image
         qr_bytes = generate_qr_png(data)
         if not qr_bytes:
             return "QR generation failed"
         b64 = base64.b64encode(qr_bytes).decode("ascii")
-        ok = await _dispatch_show_image(
-            state, b64, "image/png", duration_s, entity_id="qr-code",
-        )
+        ok = await _dispatch_show_image(state, b64, "image/png", duration_s, entity_id="qr-code")
         return "QR code displayed" if ok else "Kiosk not connected"
 
-    _mcp = mcp
-    tool_count = len(mcp.list_tools())
-    log.info(f"MCP server built with {tool_count} tools")
+    log.info(f"MCP server built with {len(mcp._tool_manager._tools)} tools")
     return mcp
-
-
-def _register_tool(
-    mcp: FastMCP,
-    name: str,
-    schema: dict,
-    handler,
-    state: "AppState",
-) -> None:
-    """Bridge a local_tools entry into the FastMCP server."""
-    description = schema.get("description", "")
-
-    async def wrapper(**kwargs) -> str:
-        return await handler(kwargs)
-
-    # Use the public add_tool API with the wrapper function
-    wrapper.__name__ = name
-    wrapper.__doc__ = description
-    mcp.add_tool(wrapper, name=name, description=description)
