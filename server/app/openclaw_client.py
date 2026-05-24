@@ -151,7 +151,8 @@ class OpenClawClient:
         self._send_lock = asyncio.Lock()
         self._connected = asyncio.Event()
         self._session_key: str = ""
-        self._agent_text_parts: list[str] = []
+        self._agent_last_text: str = ""
+        self._agent_done: asyncio.Event | None = None
         self._scopes: list[str] = []
 
     @property
@@ -305,7 +306,8 @@ class OpenClawClient:
             await self._create_session()
 
         t0 = time.monotonic()
-        self._agent_text_parts.clear()
+        self._agent_last_text = ""
+        self._agent_done = asyncio.Event()
 
         msg_id = await self._send({
             "type": "req",
@@ -313,24 +315,70 @@ class OpenClawClient:
             "params": {"key": self._session_key, "message": text},
         })
 
+        # sessions.send returns immediately with {status:"started"}.
+        # The actual agent text arrives via `chat` events. Wait for
+        # those events, detecting completion when no new chat arrives
+        # for a settling period after the initial response.
         loop = asyncio.get_event_loop()
         fut: asyncio.Future = loop.create_future()
         self._pending[msg_id] = fut
         try:
-            result = await asyncio.wait_for(fut, timeout=timeout)
+            await asyncio.wait_for(fut, timeout=15.0)
+        except asyncio.TimeoutError:
+            log.warning("OpenClaw sessions.send ack timed out (continuing)")
         finally:
             self._pending.pop(msg_id, None)
 
-        elapsed = time.monotonic() - t0
-        log.info(f"OpenClaw agent responded in {elapsed:.2f}s")
+        # Wait for agent text — chat events stream in. We detect
+        # completion when _agent_done is set (by _handle_event seeing
+        # an agent-complete signal) OR by settling timeout.
+        try:
+            await asyncio.wait_for(
+                self._wait_for_agent_text(), timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            log.warning(
+                f"OpenClaw agent timed out after {timeout}s "
+                f"(partial text len={len(self._agent_last_text)})"
+            )
 
-        # Combine streamed text parts + parse for media
-        full_text = "".join(self._agent_text_parts)
-        payload = result.get("payload", result) if isinstance(result, dict) else {}
-        response = self._parse_response(payload, streamed_text=full_text)
-        response.raw = result
+        elapsed = time.monotonic() - t0
+        final_text = self._agent_last_text
+        log.info(
+            f"OpenClaw agent done in {elapsed:.2f}s "
+            f"(text_len={len(final_text)})"
+        )
+
+        response = self._parse_response({}, streamed_text=final_text)
         response.agent_time_s = elapsed
+        self._agent_done = None
         return response
+
+    async def _wait_for_agent_text(self) -> None:
+        """Wait for the agent to finish streaming text. Returns when
+        no new chat event arrives for 3 s after at least one chat was
+        received, or when an explicit done signal arrives.
+        """
+        # Wait until we have at least some text
+        deadline = time.monotonic() + 120.0
+        while not self._agent_last_text and time.monotonic() < deadline:
+            if self._agent_done and self._agent_done.is_set():
+                return
+            await asyncio.sleep(0.5)
+
+        # Settle: wait until text stops changing for 3 s
+        last_seen = self._agent_last_text
+        stable_since = time.monotonic()
+        while time.monotonic() < deadline:
+            if self._agent_done and self._agent_done.is_set():
+                return
+            await asyncio.sleep(0.5)
+            current = self._agent_last_text
+            if current != last_seen:
+                last_seen = current
+                stable_since = time.monotonic()
+            elif time.monotonic() - stable_since >= 3.0:
+                return
 
     async def _create_session(self) -> None:
         msg_id = await self._send({
@@ -423,14 +471,34 @@ class OpenClawClient:
         payload = msg.get("payload", {})
         if not isinstance(payload, dict):
             return
-        content = payload.get("content", "") or payload.get("text", "")
-        if content and isinstance(content, str):
-            self._agent_text_parts.append(content)
-        if event:
-            log.debug(
-                f"OpenClaw event: {event} "
-                f"content_len={len(content) if content else 0}"
-            )
+
+        if event == "chat":
+            # chat events carry cumulative assistant text:
+            # {role:"assistant", content:[{type:"text", text:"..."}]}
+            role = payload.get("role", "")
+            if role == "assistant":
+                content_blocks = payload.get("content", [])
+                if isinstance(content_blocks, list):
+                    text = ""
+                    for block in content_blocks:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text += block.get("text", "")
+                    if text:
+                        self._agent_last_text = text
+                elif isinstance(content_blocks, str):
+                    self._agent_last_text = content_blocks
+        elif event == "agent":
+            # agent events may signal completion
+            data = payload.get("data", payload)
+            if isinstance(data, dict):
+                status = data.get("status", "")
+                if status in ("completed", "done", "finished", "idle"):
+                    if self._agent_done:
+                        self._agent_done.set()
+        elif event in ("tick", "health", "heartbeat"):
+            pass
+        else:
+            log.debug(f"OpenClaw event: {event} keys={list(payload.keys())[:8]}")
 
     # ------------------------------------------------------------------
     # Response parsing
