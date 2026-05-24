@@ -1,17 +1,33 @@
 {
-  "name": "@hal/openclaw-channel-hal-voice",
+  "name": "@openclaw/hal-voice",
   "version": "1.0.0",
   "type": "module",
-  "description": "OpenClaw channel plugin for HAL voice assistant kiosk",
-  "exports": {
-    ".": "./dist/index.js",
-    "./setup-entry": "./dist/setup-entry.js"
+  "description": "OpenClaw HAL Voice Kiosk channel plugin",
+  "peerDependencies": {
+    "openclaw": ">=2026.5.20"
   },
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch"
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
   },
-  "devDependencies": {
-    "typescript": "^5.5.0"
-  }
+  "openclaw": {
+    "runtimeExtensions": [
+      "./dist/index.js"
+    ],
+    "channel": {
+      "id": "hal-voice",
+      "label": "HAL Voice Kiosk",
+      "selectionLabel": "HAL Voice (HTTP webhook)",
+      "detailLabel": "HAL Voice Kiosk",
+      "blurb": "Voice assistant kiosk with STT/TTS and display."
+    },
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "files": [
+    "dist/**",
+    "openclaw.plugin.json"
+  ]
 }
