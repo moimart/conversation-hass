@@ -208,7 +208,13 @@ class ConversationManager:
             if self.openclaw_client is not None:
                 try:
                     oc_response = await self._run_openclaw(full_text)
-                    response_text = oc_response.text or "Done."
+                    if oc_response.raw.get("webhook"):
+                        # Channel mode: response arrives later via /api/speak.
+                        # Suppress all local TTS — just go idle.
+                        self._suppress_final_tts = True
+                        response_text = ""
+                    else:
+                        response_text = oc_response.text or "Done."
                     if self.on_openclaw_media:
                         try:
                             await self.on_openclaw_media(oc_response)

@@ -1916,12 +1916,14 @@ async def lifespan(app: FastAPI):
     # OpenClaw Gateway — optional alternative conversation engine.
     state.openclaw_gateway_url = str(cfg.get("openclaw_gateway_url", "") or "").strip()
     state.openclaw_enabled = bool(cfg.get("openclaw_enabled", False))
-    if state.openclaw_gateway_url:
+    openclaw_webhook = str(cfg.get("openclaw_webhook_url", "") or "").strip()
+    if state.openclaw_gateway_url or openclaw_webhook:
         from .openclaw_client import OpenClawClient
         openclaw_pw = str(cfg.get("openclaw_gateway_password", "") or "").strip()
         state.openclaw_client = OpenClawClient(
             gateway_url=state.openclaw_gateway_url,
             password=openclaw_pw,
+            channel_webhook_url=openclaw_webhook,
         )
         if state.openclaw_enabled:
             try:

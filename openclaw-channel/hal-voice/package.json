@@ -1,0 +1,17 @@
+{
+  "name": "@hal/openclaw-channel-hal-voice",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "OpenClaw channel plugin for HAL voice assistant kiosk",
+  "exports": {
+    ".": "./dist/index.js",
+    "./setup-entry": "./dist/setup-entry.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

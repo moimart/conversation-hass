@@ -131,7 +131,15 @@ class OpenClawResponse:
 # ------------------------------------------------------------------
 
 class OpenClawClient:
-    """WebSocket client for an OpenClaw Gateway with Ed25519 device auth."""
+    """Client for an OpenClaw Gateway — supports both WebSocket (dashboard)
+    and HTTP webhook (channel plugin) modes.
+
+    When `channel_webhook_url` is set, `send_message` uses a simple HTTP
+    POST to the channel webhook instead of the WS session API. The agent
+    response comes back asynchronously via HAL's /api/speak (pushed by
+    the channel plugin's outbound handler). This gives the agent full
+    tool access (mcporter, MCP, exec) that dashboard sessions lack.
+    """
 
     def __init__(
         self,
@@ -139,10 +147,12 @@ class OpenClawClient:
         password: str = "",
         agent_id: str = "main",
         identity_path: Path | None = None,
+        channel_webhook_url: str = "",
     ):
         self.gateway_url = gateway_url.rstrip("/")
         self._password = password
         self.agent_id = agent_id
+        self._channel_webhook_url = channel_webhook_url.rstrip("/") if channel_webhook_url else ""
         self._identity = _load_or_create_identity(identity_path or _IDENTITY_PATH)
         self._ws: websockets.WebSocketClientProtocol | None = None
         self._next_id = 1
@@ -288,11 +298,20 @@ class OpenClawClient:
     # Send a message to the agent
     # ------------------------------------------------------------------
 
+    @property
+    def use_channel(self) -> bool:
+        return bool(self._channel_webhook_url)
+
     async def send_message(
         self,
         text: str,
         timeout: float = 120.0,
     ) -> OpenClawResponse:
+        # Channel mode: fire-and-forget HTTP POST to the webhook.
+        # The agent response comes back asynchronously via /api/speak.
+        if self._channel_webhook_url:
+            return await self._send_via_webhook(text)
+
         if not self._ws or not self.connected:
             raise ConnectionError("OpenClaw Gateway not connected")
         if "operator.write" not in self._scopes:
@@ -379,6 +398,42 @@ class OpenClawClient:
                 stable_since = time.monotonic()
             elif time.monotonic() - stable_since >= 3.0:
                 return
+
+    async def _send_via_webhook(self, text: str) -> OpenClawResponse:
+        """POST text to the channel webhook. Fire-and-forget — the agent
+        response arrives later via HAL's /api/speak (pushed by the
+        channel plugin's outbound handler). Returns an empty response
+        so the caller knows not to TTS anything."""
+        import httpx
+
+        t0 = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    self._channel_webhook_url,
+                    json={
+                        "text": text,
+                        "sender": "kiosk-user",
+                        "hal_server_url": self.gateway_url.replace(
+                            "/hal-voice/webhook", ""
+                        ),
+                    },
+                )
+                resp.raise_for_status()
+                log.info(
+                    f"OpenClaw webhook POST ok ({resp.status_code}, "
+                    f"{time.monotonic() - t0:.2f}s)"
+                )
+        except Exception as e:
+            log.error(f"OpenClaw webhook POST failed: {e}")
+            raise
+
+        # Return empty response — the real response comes via /api/speak
+        return OpenClawResponse(
+            text="",
+            agent_time_s=time.monotonic() - t0,
+            raw={"webhook": True},
+        )
 
     async def _create_session(self) -> None:
         msg_id = await self._send({

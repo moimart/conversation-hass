@@ -37,6 +37,7 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "openclaw_enabled":          ("OPENCLAW_ENABLED", False),
     "openclaw_gateway_url":      ("OPENCLAW_GATEWAY_URL", ""),
     "openclaw_gateway_password": ("OPENCLAW_GATEWAY_PASSWORD", ""),
+    "openclaw_webhook_url":      ("OPENCLAW_WEBHOOK_URL", ""),
 }
 
 
