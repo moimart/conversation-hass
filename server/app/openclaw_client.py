@@ -2,13 +2,15 @@
 
 Connects to an OpenClaw Gateway instance and routes user text to the
 agent, returning structured responses with text + optional rich media.
-Modeled after ha_ws.py (same project).
 
 Gateway protocol (WebSocket, JSON text frames):
-  connect  → {type:"connect", ...}        → {type:"connected", ...}
-  request  → {type:"req", id, method, params}
-  response ← {type:"res", id, ok, payload|error}
-  events   ← {type:"event", event, payload, seq?}
+  challenge ← {type:"event", event:"connect.challenge", payload:{nonce}}
+  connect   → {type:"req", method:"connect", params:{auth, client, device, ...}}
+  response  ← {type:"res", id, ok, payload}
+  events    ← {type:"event", event, payload}
+
+Device authentication uses Ed25519 key pairs with a v3 signed payload:
+  v3|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce|platform|deviceFamily
 
 Reference: https://docs.openclaw.ai/concepts/architecture
 """
@@ -16,11 +18,15 @@ Reference: https://docs.openclaw.ai/concepts/architecture
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import websockets
@@ -31,9 +37,82 @@ _IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg")
 _VIDEO_EXTS = (".mp4", ".webm", ".m3u8", ".mov", ".avi")
 _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\((https?://[^\s)]+)\)")
 _MD_LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\((https?://[^\s)]+)\)")
-_BARE_URL_RE = re.compile(r"(?<!\()(https?://[^\s)>\]]+)")
 _MD_STRIP_RE = re.compile(r"[*_~`#>\[\]!]")
 
+_IDENTITY_PATH = Path(
+    os.environ.get("OPENCLAW_DEVICE_IDENTITY", "/app/runtime/openclaw-device.json")
+)
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+# ------------------------------------------------------------------
+# Device identity (Ed25519 keypair + derived deviceId)
+# ------------------------------------------------------------------
+
+def _load_or_create_identity(path: Path) -> dict:
+    """Load or generate an Ed25519 device identity for Gateway pairing."""
+    if path.is_file():
+        try:
+            return json.loads(path.read_text())
+        except Exception as e:
+            log.warning(f"Corrupt device identity at {path}: {e} — regenerating")
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+
+    priv = Ed25519PrivateKey.generate()
+    pub_raw = priv.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+    )
+    identity = {
+        "deviceId": hashlib.sha256(pub_raw).hexdigest(),
+        "publicKeyPem": priv.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode(),
+        "privateKeyPem": priv.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode(),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(identity, indent=2))
+    log.info(f"Generated OpenClaw device identity: {identity['deviceId']}")
+    return identity
+
+
+def _sign_v3_payload(
+    priv_pem: str,
+    device_id: str,
+    client_id: str,
+    client_mode: str,
+    role: str,
+    scopes: list[str],
+    signed_at_ms: int,
+    token: str,
+    nonce: str,
+    platform: str,
+    device_family: str,
+) -> str:
+    """Build and sign a v3 device auth payload. Returns base64url signature."""
+    from cryptography.hazmat.primitives import serialization as _ser
+
+    payload = "|".join([
+        "v3", device_id, client_id, client_mode, role,
+        ",".join(scopes), str(signed_at_ms),
+        token, nonce, platform, device_family,
+    ])
+    key = _ser.load_pem_private_key(priv_pem.encode(), password=None)
+    return _b64url(key.sign(payload.encode("utf-8")))
+
+
+# ------------------------------------------------------------------
+# Response dataclass
+# ------------------------------------------------------------------
 
 @dataclass
 class OpenClawResponse:
@@ -47,36 +126,47 @@ class OpenClawResponse:
     agent_time_s: float = 0.0
 
 
+# ------------------------------------------------------------------
+# Client
+# ------------------------------------------------------------------
+
 class OpenClawClient:
-    """WebSocket client for an OpenClaw Gateway."""
+    """WebSocket client for an OpenClaw Gateway with Ed25519 device auth."""
 
     def __init__(
         self,
         gateway_url: str,
-        channel_id: str = "",
-        agent_id: str = "",
+        password: str = "",
+        agent_id: str = "main",
+        identity_path: Path | None = None,
     ):
         self.gateway_url = gateway_url.rstrip("/")
-        self.channel_id = channel_id
+        self._password = password
         self.agent_id = agent_id
+        self._identity = _load_or_create_identity(identity_path or _IDENTITY_PATH)
         self._ws: websockets.WebSocketClientProtocol | None = None
         self._next_id = 1
         self._pending: dict[str, asyncio.Future] = {}
         self._reader_task: asyncio.Task | None = None
         self._send_lock = asyncio.Lock()
         self._connected = asyncio.Event()
-        self._session_id: str = ""
+        self._session_key: str = ""
+        self._agent_text_parts: list[str] = []
+        self._scopes: list[str] = []
 
     @property
     def connected(self) -> bool:
         return self._connected.is_set()
+
+    @property
+    def needs_pairing(self) -> bool:
+        return self.connected and "operator.write" not in self._scopes
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def connect(self) -> None:
-        """Open the WebSocket and run the Gateway handshake."""
         if self.connected:
             return
         log.info(f"Connecting to OpenClaw Gateway at {self.gateway_url}")
@@ -87,29 +177,89 @@ class OpenClawClient:
             ping_timeout=20,
         )
 
-        # Handshake: send connect frame, wait for connected ack.
-        handshake: dict[str, Any] = {"type": "connect"}
-        if self.channel_id:
-            handshake["channel"] = self.channel_id
-        if self.agent_id:
-            handshake["agent"] = self.agent_id
-        await self._ws.send(json.dumps(handshake))
+        # Receive the connect.challenge
         raw = await asyncio.wait_for(self._ws.recv(), timeout=10.0)
-        hello = json.loads(raw)
-        log.debug(f"OpenClaw handshake response: {hello}")
-        hello_type = str(hello.get("type", "")).lower()
-        if hello_type not in ("connected", "ack", "res"):
-            log.warning(
-                f"OpenClaw: unexpected handshake type {hello_type!r}, "
-                "continuing anyway (protocol discovery)"
-            )
-        self._session_id = str(hello.get("session", hello.get("id", "")))
+        challenge = json.loads(raw)
+        log.debug(f"OpenClaw challenge: {challenge}")
+        nonce = challenge.get("payload", {}).get("nonce", "")
+        if not nonce:
+            raise RuntimeError("OpenClaw: connect.challenge missing nonce")
+
+        # Build signed connect frame
+        device_id = self._identity["deviceId"]
+        pub_raw = self._pub_raw()
+        pub_b64 = _b64url(pub_raw)
+        signed_at_ms = int(time.time() * 1000)
+        scopes = ["operator.admin", "operator.read", "operator.write"]
+
+        sig = _sign_v3_payload(
+            priv_pem=self._identity["privateKeyPem"],
+            device_id=device_id,
+            client_id="gateway-client",
+            client_mode="backend",
+            role="operator",
+            scopes=scopes,
+            signed_at_ms=signed_at_ms,
+            token="",
+            nonce=nonce,
+            platform="linux",
+            device_family="server",
+        )
+
+        auth: dict[str, Any] = {}
+        if self._password:
+            auth["password"] = self._password
+
+        connect_frame = {
+            "type": "req", "id": "connect", "method": "connect",
+            "params": {
+                "auth": auth,
+                "role": "operator",
+                "scopes": scopes,
+                "minProtocol": 4,
+                "maxProtocol": 4,
+                "client": {
+                    "id": "gateway-client",
+                    "mode": "backend",
+                    "version": "2026.5.20",
+                    "platform": "linux",
+                    "deviceFamily": "server",
+                },
+                "device": {
+                    "id": device_id,
+                    "publicKey": pub_b64,
+                    "signature": sig,
+                    "signedAt": signed_at_ms,
+                    "nonce": nonce,
+                },
+            },
+        }
+        await self._ws.send(json.dumps(connect_frame))
+        resp_raw = await asyncio.wait_for(self._ws.recv(), timeout=10.0)
+        resp = json.loads(resp_raw)
+        log.debug(f"OpenClaw connect response: {json.dumps(resp)[:500]}")
+
+        if not resp.get("ok"):
+            err = resp.get("error", {}).get("message", str(resp))
+            details = resp.get("error", {}).get("details", {})
+            code = details.get("code", "")
+            if code == "PAIRING_REQUIRED":
+                log.warning(
+                    f"OpenClaw device needs pairing approval — run "
+                    f"'openclaw devices approve --latest' on the Gateway host. "
+                    f"Device ID: {device_id}"
+                )
+            raise RuntimeError(f"OpenClaw connect failed: {err}")
+
+        auth_resp = resp.get("payload", {}).get("auth", {})
+        self._scopes = auth_resp.get("scopes", [])
+        log.info(
+            f"OpenClaw Gateway connected "
+            f"(role={auth_resp.get('role')}, scopes={self._scopes})"
+        )
 
         self._reader_task = asyncio.create_task(self._reader())
         self._connected.set()
-        log.info(
-            f"OpenClaw Gateway connected (session={self._session_id or 'n/a'})"
-        )
 
     async def disconnect(self) -> None:
         self._connected.clear()
@@ -130,6 +280,7 @@ class OpenClawClient:
             if not fut.done():
                 fut.set_exception(ConnectionError("OpenClaw disconnected"))
         self._pending.clear()
+        self._session_key = ""
         log.info("OpenClaw Gateway disconnected")
 
     # ------------------------------------------------------------------
@@ -139,24 +290,27 @@ class OpenClawClient:
     async def send_message(
         self,
         text: str,
-        conversation_id: str = "",
         timeout: float = 120.0,
     ) -> OpenClawResponse:
-        """Send user text to the OpenClaw agent and wait for the response.
-
-        Timeout defaults to 120 s — agentic chains can be slow.
-        """
         if not self._ws or not self.connected:
             raise ConnectionError("OpenClaw Gateway not connected")
+        if "operator.write" not in self._scopes:
+            raise PermissionError(
+                "OpenClaw device not paired (no operator.write scope). "
+                "Run 'openclaw devices approve --latest' on the Gateway host."
+            )
+
+        # Ensure we have a session
+        if not self._session_key:
+            await self._create_session()
 
         t0 = time.monotonic()
+        self._agent_text_parts.clear()
+
         msg_id = await self._send({
             "type": "req",
-            "method": "agent",
-            "params": {
-                "message": text,
-                **({"conversation_id": conversation_id} if conversation_id else {}),
-            },
+            "method": "sessions.send",
+            "params": {"key": self._session_key, "message": text},
         })
 
         loop = asyncio.get_event_loop()
@@ -170,15 +324,40 @@ class OpenClawClient:
         elapsed = time.monotonic() - t0
         log.info(f"OpenClaw agent responded in {elapsed:.2f}s")
 
+        # Combine streamed text parts + parse for media
+        full_text = "".join(self._agent_text_parts)
         payload = result.get("payload", result) if isinstance(result, dict) else {}
-        response = self._parse_response(payload)
+        response = self._parse_response(payload, streamed_text=full_text)
         response.raw = result
         response.agent_time_s = elapsed
         return response
 
+    async def _create_session(self) -> None:
+        msg_id = await self._send({
+            "type": "req",
+            "method": "sessions.create",
+            "params": {"agentId": self.agent_id},
+        })
+        loop = asyncio.get_event_loop()
+        fut: asyncio.Future = loop.create_future()
+        self._pending[msg_id] = fut
+        try:
+            result = await asyncio.wait_for(fut, timeout=15.0)
+        finally:
+            self._pending.pop(msg_id, None)
+        self._session_key = result.get("payload", {}).get("key", "")
+        if not self._session_key:
+            raise RuntimeError(f"OpenClaw sessions.create failed: {result}")
+        log.info(f"OpenClaw session created: {self._session_key}")
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _pub_raw(self) -> bytes:
+        from cryptography.hazmat.primitives import serialization as _ser
+        pub = _ser.load_pem_public_key(self._identity["publicKeyPem"].encode())
+        return pub.public_bytes(_ser.Encoding.Raw, _ser.PublicFormat.Raw)
 
     async def _send(self, payload: dict) -> str:
         if not self._ws:
@@ -217,14 +396,9 @@ class OpenClawClient:
                                 )
                             )
                 elif msg_type == "event":
-                    event_name = msg.get("event", "")
-                    log.debug(
-                        f"OpenClaw event: {event_name} "
-                        f"seq={msg.get('seq', '')} "
-                        f"payload_keys={list((msg.get('payload') or {}).keys())}"
-                    )
+                    self._handle_event(msg)
                 elif msg_type == "ack":
-                    log.debug(f"OpenClaw ack for {msg_id}")
+                    pass
                 elif msg_type in ("heartbeat", "ping"):
                     if msg_type == "ping":
                         try:
@@ -234,7 +408,7 @@ class OpenClawClient:
                         except Exception:
                             pass
                 else:
-                    log.debug(f"OpenClaw unhandled frame: {msg}")
+                    log.debug(f"OpenClaw unhandled frame type={msg_type}")
         except asyncio.CancelledError:
             raise
         except websockets.ConnectionClosed as e:
@@ -244,31 +418,43 @@ class OpenClawClient:
         finally:
             self._connected.clear()
 
+    def _handle_event(self, msg: dict) -> None:
+        event = msg.get("event", "")
+        payload = msg.get("payload", {})
+        if not isinstance(payload, dict):
+            return
+        content = payload.get("content", "") or payload.get("text", "")
+        if content and isinstance(content, str):
+            self._agent_text_parts.append(content)
+        if event:
+            log.debug(
+                f"OpenClaw event: {event} "
+                f"content_len={len(content) if content else 0}"
+            )
+
     # ------------------------------------------------------------------
-    # Response parsing (resilient to multiple possible formats)
+    # Response parsing
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_response(payload: dict) -> OpenClawResponse:
-        """Extract text, images, videos, and links from an agent payload.
-
-        The exact response schema is partially documented, so we handle
-        several plausible shapes and log the raw payload at DEBUG for
-        iterative discovery.
-        """
+    def _parse_response(
+        payload: dict,
+        streamed_text: str = "",
+    ) -> OpenClawResponse:
         resp = OpenClawResponse()
         if not isinstance(payload, dict):
-            resp.text = str(payload) if payload else ""
+            resp.text = str(payload) if payload else streamed_text
             return resp
 
-        # Text: try common keys
-        text = ""
-        for key in ("message", "text", "content", "response", "reply"):
-            if key in payload and isinstance(payload[key], str):
-                text = payload[key]
-                break
+        # Text: prefer streamed content, fall back to payload keys
+        text = streamed_text
+        if not text:
+            for key in ("message", "text", "content", "response", "reply"):
+                if key in payload and isinstance(payload[key], str):
+                    text = payload[key]
+                    break
 
-        # Structured media arrays (if the agent returns them)
+        # Structured media arrays
         if isinstance(payload.get("images"), list):
             for item in payload["images"]:
                 if isinstance(item, dict):
@@ -294,7 +480,7 @@ class OpenClawClient:
                 elif url:
                     resp.links.append(url)
 
-        # Extract markdown images from text
+        # Extract markdown media from text
         if text:
             for url in _MD_IMAGE_RE.findall(text):
                 resp.images.append({"url": url})
@@ -307,10 +493,12 @@ class OpenClawClient:
                 else:
                     resp.links.append(url)
 
-        # Clean text for TTS: strip markdown images/links/formatting
+        # Clean text for TTS
         if text:
             clean = _MD_IMAGE_RE.sub("", text)
-            clean = _MD_LINK_RE.sub(lambda m: m.group(0).split("]")[0].lstrip("["), clean)
+            clean = _MD_LINK_RE.sub(
+                lambda m: m.group(0).split("]")[0].lstrip("["), clean,
+            )
             clean = _MD_STRIP_RE.sub("", clean)
             clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
             resp.text = clean

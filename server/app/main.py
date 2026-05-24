@@ -1912,8 +1912,10 @@ async def lifespan(app: FastAPI):
     state.openclaw_enabled = bool(cfg.get("openclaw_enabled", False))
     if state.openclaw_gateway_url:
         from .openclaw_client import OpenClawClient
+        openclaw_pw = str(cfg.get("openclaw_gateway_password", "") or "").strip()
         state.openclaw_client = OpenClawClient(
             gateway_url=state.openclaw_gateway_url,
+            password=openclaw_pw,
         )
         if state.openclaw_enabled:
             try:
@@ -2476,8 +2478,10 @@ async def lifespan(app: FastAPI):
                     from .openclaw_client import OpenClawClient
                     if state.openclaw_client:
                         await state.openclaw_client.disconnect()
+                    openclaw_pw = str(state.runtime_config.get("openclaw_gateway_password", "") or "").strip()
                     state.openclaw_client = OpenClawClient(
-                        gateway_url=state.openclaw_gateway_url
+                        gateway_url=state.openclaw_gateway_url,
+                        password=openclaw_pw,
                     )
                     try:
                         await state.openclaw_client.connect()
@@ -2504,7 +2508,8 @@ async def lifespan(app: FastAPI):
                 from .openclaw_client import OpenClawClient
                 if state.openclaw_client:
                     await state.openclaw_client.disconnect()
-                state.openclaw_client = OpenClawClient(gateway_url=url)
+                openclaw_pw = str(state.runtime_config.get("openclaw_gateway_password", "") or "").strip()
+                state.openclaw_client = OpenClawClient(gateway_url=url, password=openclaw_pw)
                 try:
                     await state.openclaw_client.connect()
                     if state.conversation:

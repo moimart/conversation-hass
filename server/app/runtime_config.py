@@ -36,6 +36,7 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "photo_frame_idle_minutes":  ("PHOTO_FRAME_IDLE_MINUTES", 0),
     "openclaw_enabled":          ("OPENCLAW_ENABLED", False),
     "openclaw_gateway_url":      ("OPENCLAW_GATEWAY_URL", ""),
+    "openclaw_gateway_password": ("OPENCLAW_GATEWAY_PASSWORD", ""),
 }
 
 
