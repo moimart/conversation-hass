@@ -444,6 +444,12 @@ class OpenClawClient:
                                 )
                             )
                 elif msg_type == "event":
+                    ev = msg.get("event", "")
+                    if ev not in ("tick", "health", "heartbeat"):
+                        log.info(
+                            f"OpenClaw event: {ev} "
+                            f"payload_keys={list((msg.get('payload') or {}).keys())[:8]}"
+                        )
                     self._handle_event(msg)
                 elif msg_type == "ack":
                     pass
@@ -473,22 +479,42 @@ class OpenClawClient:
             return
 
         if event == "chat":
-            # chat events carry cumulative assistant text, nested:
-            # payload.content = {role, content:[{type:"text", text:"..."}], timestamp}
-            msg = payload.get("content", payload.get("data", payload))
-            if isinstance(msg, dict):
-                role = msg.get("role", "")
-                if role == "assistant":
-                    content_blocks = msg.get("content", [])
-                    if isinstance(content_blocks, list):
-                        text = ""
-                        for block in content_blocks:
-                            if isinstance(block, dict) and block.get("type") == "text":
-                                text += block.get("text", "")
-                        if text:
-                            self._agent_last_text = text
-                    elif isinstance(content_blocks, str):
-                        self._agent_last_text = content_blocks
+            # chat events carry cumulative assistant text. The message
+            # dict may be at payload, payload.content, or payload.data.
+            # Shape: {role:"assistant", content:[{type:"text", text:"..."}]}
+            for candidate in [
+                payload,
+                payload.get("content") if isinstance(payload.get("content"), dict) else None,
+                payload.get("data") if isinstance(payload.get("data"), dict) else None,
+            ]:
+                if not isinstance(candidate, dict):
+                    continue
+                role = candidate.get("role", "")
+                if role != "assistant":
+                    continue
+                content_blocks = candidate.get("content", [])
+                if isinstance(content_blocks, list):
+                    text = ""
+                    for block in content_blocks:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text += block.get("text", "")
+                    if text:
+                        self._agent_last_text = text
+                        log.info(
+                            f"OpenClaw chat: {len(text)} chars "
+                            f"(preview: {text[:80]!r})"
+                        )
+                        return
+                elif isinstance(content_blocks, str) and content_blocks:
+                    self._agent_last_text = content_blocks
+                    log.info(f"OpenClaw chat: {len(content_blocks)} chars")
+                    return
+            # Didn't match any known shape — log for debugging
+            log.warning(
+                f"OpenClaw chat: unrecognized payload shape "
+                f"keys={list(payload.keys())[:10]} "
+                f"types={{k: type(v).__name__ for k, v in list(payload.items())[:5]}}"
+            )
         elif event == "agent":
             # agent events may signal completion
             data = payload.get("data", payload)
