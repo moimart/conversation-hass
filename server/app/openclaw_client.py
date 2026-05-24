@@ -473,20 +473,22 @@ class OpenClawClient:
             return
 
         if event == "chat":
-            # chat events carry cumulative assistant text:
-            # {role:"assistant", content:[{type:"text", text:"..."}]}
-            role = payload.get("role", "")
-            if role == "assistant":
-                content_blocks = payload.get("content", [])
-                if isinstance(content_blocks, list):
-                    text = ""
-                    for block in content_blocks:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text += block.get("text", "")
-                    if text:
-                        self._agent_last_text = text
-                elif isinstance(content_blocks, str):
-                    self._agent_last_text = content_blocks
+            # chat events carry cumulative assistant text, nested:
+            # payload.content = {role, content:[{type:"text", text:"..."}], timestamp}
+            msg = payload.get("content", payload.get("data", payload))
+            if isinstance(msg, dict):
+                role = msg.get("role", "")
+                if role == "assistant":
+                    content_blocks = msg.get("content", [])
+                    if isinstance(content_blocks, list):
+                        text = ""
+                        for block in content_blocks:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                text += block.get("text", "")
+                        if text:
+                            self._agent_last_text = text
+                    elif isinstance(content_blocks, str):
+                        self._agent_last_text = content_blocks
         elif event == "agent":
             # agent events may signal completion
             data = payload.get("data", payload)
