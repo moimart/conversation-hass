@@ -518,13 +518,27 @@ class OpenClawClient:
                 f"types={{k: type(v).__name__ for k, v in list(payload.items())[:5]}}"
             )
         elif event == "agent":
-            # agent events may signal completion
-            data = payload.get("data", payload)
+            data = payload.get("data", {})
             if isinstance(data, dict):
-                status = data.get("status", "")
-                if status in ("completed", "done", "finished", "idle"):
+                stream = payload.get("stream", "")
+                # Log tool use and assistant text from agent events
+                if stream == "content_block_delta":
+                    delta = data.get("delta", {})
+                    if isinstance(delta, dict) and delta.get("type") == "text_delta":
+                        chunk = delta.get("text", "")
+                        if chunk:
+                            self._agent_last_text += chunk
+                elif stream == "message_stop" or data.get("status") in (
+                    "completed", "done", "finished", "idle",
+                ):
                     if self._agent_done:
                         self._agent_done.set()
+                # Log non-heartbeat agent events at INFO for diagnostics
+                if not payload.get("isHeartbeat"):
+                    log.info(
+                        f"OpenClaw agent stream={stream} "
+                        f"data_keys={list(data.keys())[:6]}"
+                    )
         elif event in ("tick", "health", "heartbeat"):
             pass
         else:
