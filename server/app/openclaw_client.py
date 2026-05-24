@@ -480,9 +480,11 @@ class OpenClawClient:
 
         if event == "chat":
             # chat events carry cumulative assistant text. The message
-            # dict may be at payload, payload.content, or payload.data.
+            # dict may be at payload.message, payload.content, payload.data,
+            # or payload itself.
             # Shape: {role:"assistant", content:[{type:"text", text:"..."}]}
             for candidate in [
+                payload.get("message") if isinstance(payload.get("message"), dict) else None,
                 payload,
                 payload.get("content") if isinstance(payload.get("content"), dict) else None,
                 payload.get("data") if isinstance(payload.get("data"), dict) else None,
