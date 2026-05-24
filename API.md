@@ -438,6 +438,35 @@ category), both auto-discovered.
 
 ---
 
+## OpenClaw conversation engine
+
+HAL can optionally route voice commands to an OpenClaw Gateway instead
+of the built-in Ollama LLM. When enabled, user text goes to the
+OpenClaw agent, which processes it with its own LLM and tools (including
+HAL's SKILL.md for kiosk control). Responses are TTS-spoken; rich media
+(images, videos, links) in the response is displayed on the orb.
+
+Configured via two live runtime settings (MQTT/HA):
+
+| Setting | MQTT topic | Values |
+|---|---|---|
+| `openclaw_gateway_url` | `config/openclaw_gateway_url/{state,set}` | WebSocket URL (e.g. `ws://openclaw:4100/ws`) |
+| `openclaw_enabled` | `config/openclaw_enabled/{state,set}` | `ON` / `OFF` |
+
+Both appear as HA entities: a **Text** input for the URL and a
+**Switch** to activate. When the switch is flipped ON, HAL connects to
+the Gateway and starts routing conversations through it. When OFF (or
+on failure), Ollama handles conversation as usual.
+
+Visible in the health endpoint:
+
+```bash
+curl -sS http://hal:8765/health
+# → {..., "openclaw_enabled": true, "openclaw_connected": true}
+```
+
+---
+
 ## Snapshots
 
 ### `POST /api/snapshot`

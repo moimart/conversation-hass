@@ -12,3 +12,4 @@ soundfile==0.12.1
 mcp>=1.0.0
 nemo_toolkit[asr]>=2.0.0
 aiomqtt==2.3.0
+qrcode[pil]==8.0

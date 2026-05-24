@@ -96,6 +96,13 @@ class ConversationManager:
         self.on_state_change: Callable[[str], Awaitable[None]] | None = None
         # Fired with a timing/metrics dict at the end of every task.
         self.on_metrics: Callable[[dict], Awaitable[None]] | None = None
+        # Fired with an OpenClawResponse when the agent returns media.
+        self.on_openclaw_media: Callable | None = None
+
+        # Optional OpenClaw client. When set (non-None), user text is
+        # routed to the OpenClaw Gateway instead of Ollama. Attach /
+        # detach via the runtime config toggle in main.py.
+        self.openclaw_client = None  # OpenClawClient | None
 
         # Per-task scratch space for timing collection.
         self._llm_metrics_acc: dict = {}
@@ -198,7 +205,20 @@ class ConversationManager:
         tts_s = 0.0
 
         try:
-            response_text = await self._run_llm_with_tools(full_text)
+            if self.openclaw_client is not None:
+                try:
+                    oc_response = await self._run_openclaw(full_text)
+                    response_text = oc_response.text or "Done."
+                    if self.on_openclaw_media:
+                        try:
+                            await self.on_openclaw_media(oc_response)
+                        except Exception as me:
+                            log.warning(f"OpenClaw media dispatch failed: {me}")
+                except Exception as e:
+                    log.error(f"OpenClaw failed ({e}), falling back to Ollama")
+                    response_text = await self._run_llm_with_tools(full_text)
+            else:
+                response_text = await self._run_llm_with_tools(full_text)
             t_after_llm = time.monotonic()
 
             # Store conversation exchange in long-term memory
@@ -266,6 +286,23 @@ class ConversationManager:
                 await self.on_response(error_msg, audio)
 
         await self._set_state("idle")
+
+    async def _run_openclaw(self, user_text: str):
+        """Route user text to the OpenClaw Gateway and return an OpenClawResponse."""
+        self.history.append({"role": "user", "content": user_text})
+        if len(self.history) > self.max_history:
+            self.history = self.history[-self.max_history:]
+        response = await self.openclaw_client.send_message(user_text)
+        if response.text:
+            self.history.append({"role": "assistant", "content": response.text})
+        self._llm_metrics_acc = {
+            "llm_total_s": response.agent_time_s,
+            "tools_total_s": 0.0,
+            "memory_recall_s": 0.0,
+            "rounds": 1,
+        }
+        self._last_ollama_metrics = {"model": "openclaw"}
+        return response
 
     async def _run_llm_with_tools(self, user_text: str) -> str:
         """

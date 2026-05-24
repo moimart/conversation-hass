@@ -103,6 +103,10 @@ class AppState:
     photo_frame_idle_minutes: int = 0
     user_last_activity: float = 0.0
     photo_frame_idle_task: object | None = None
+    # OpenClaw Gateway — optional alternative conversation engine.
+    openclaw_client: object | None = None  # OpenClawClient
+    openclaw_enabled: bool = False
+    openclaw_gateway_url: str = ""
 
 
 def _generate_chime() -> bytes:
@@ -858,6 +862,39 @@ async def _dispatch_show_image(
             log.warning(f"show_image ws send failed: {e}")
     await broadcast_to_ui(state, msg)
     return sent
+
+
+async def _handle_openclaw_media(state: AppState, response) -> None:
+    """Dispatch rich media from an OpenClaw agent response to the kiosk orb."""
+    import base64
+
+    for img in (response.images or []):
+        url = img.get("url", "")
+        b64 = img.get("b64", "")
+        mime = img.get("mime", "image/jpeg")
+        if url and not b64:
+            fetched = await _fetch_image_url(url)
+            if fetched:
+                raw_bytes, mime = fetched
+                b64 = base64.b64encode(raw_bytes).decode("ascii")
+        if b64:
+            await _dispatch_show_image(state, b64, mime, 60, entity_id="openclaw")
+            return
+
+    for vid in (response.videos or []):
+        url = vid.get("url", "")
+        if url:
+            await _dispatch_play_video(state, url, duration_s=300, muted=False)
+            return
+
+    for link in (response.links or []):
+        from .qr_code import generate_qr_png
+        qr_bytes = generate_qr_png(link)
+        if qr_bytes:
+            import base64 as b64mod
+            b64 = b64mod.b64encode(qr_bytes).decode("ascii")
+            await _dispatch_show_image(state, b64, "image/png", 30, entity_id="openclaw-qr")
+            return
 
 
 async def _push_image_payload(state: AppState, raw: bytes | str, default_duration: int = 60) -> str:
@@ -1870,6 +1907,30 @@ async def lifespan(app: FastAPI):
         os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     )
 
+    # OpenClaw Gateway — optional alternative conversation engine.
+    state.openclaw_gateway_url = str(cfg.get("openclaw_gateway_url", "") or "").strip()
+    state.openclaw_enabled = bool(cfg.get("openclaw_enabled", False))
+    if state.openclaw_gateway_url:
+        from .openclaw_client import OpenClawClient
+        state.openclaw_client = OpenClawClient(
+            gateway_url=state.openclaw_gateway_url,
+        )
+        if state.openclaw_enabled:
+            try:
+                await state.openclaw_client.connect()
+                state.conversation.openclaw_client = state.openclaw_client
+                log.info("OpenClaw Gateway connected — engine active")
+            except Exception as e:
+                log.warning(f"OpenClaw Gateway connection failed: {e}")
+                state.openclaw_client = None
+        else:
+            log.info(f"OpenClaw Gateway configured ({state.openclaw_gateway_url}) but disabled")
+
+    async def _on_openclaw_media(response):
+        await _handle_openclaw_media(state, response)
+
+    state.conversation.on_openclaw_media = _on_openclaw_media
+
     # Daily dusk/dawn theme scheduler
     if state.auto_theme:
         state.theme_scheduler_task = asyncio.create_task(_theme_scheduler(state))
@@ -2284,6 +2345,9 @@ async def lifespan(app: FastAPI):
         )
         state.user_last_activity = time.time()
         bridge._cached_config_photo_frame_idle_minutes = state.photo_frame_idle_minutes
+        # OpenClaw state.
+        bridge._cached_config_openclaw_enabled = state.openclaw_enabled
+        bridge._cached_config_openclaw_gateway_url = state.openclaw_gateway_url
 
         async def _mqtt_calendar_show(args: dict):
             view = (args.get("view") or "month").lower()
@@ -2405,6 +2469,58 @@ async def lifespan(app: FastAPI):
         bridge.on_config_display_auto_off_seconds = _cfg_display_auto_off_seconds
         bridge.on_config_photo_frame_idle_minutes = _cfg_photo_frame_idle_minutes
 
+        async def _cfg_openclaw_enabled(enabled: bool):
+            state.openclaw_enabled = bool(enabled)
+            if enabled and state.openclaw_gateway_url:
+                if state.openclaw_client is None or not state.openclaw_client.connected:
+                    from .openclaw_client import OpenClawClient
+                    if state.openclaw_client:
+                        await state.openclaw_client.disconnect()
+                    state.openclaw_client = OpenClawClient(
+                        gateway_url=state.openclaw_gateway_url
+                    )
+                    try:
+                        await state.openclaw_client.connect()
+                    except Exception as e:
+                        log.warning(f"OpenClaw connect failed: {e}")
+                        state.openclaw_client = None
+                if state.openclaw_client and state.conversation:
+                    state.conversation.openclaw_client = state.openclaw_client
+                    log.info("OpenClaw engine activated")
+            else:
+                if state.conversation:
+                    state.conversation.openclaw_client = None
+                if state.openclaw_client:
+                    await state.openclaw_client.disconnect()
+                    state.openclaw_client = None
+                log.info("OpenClaw engine deactivated — using Ollama")
+            await _persist("openclaw_enabled", bool(enabled))
+            await bridge.publish_config_openclaw_enabled(bool(enabled))
+
+        async def _cfg_openclaw_gateway_url(url: str):
+            url = (url or "").strip()
+            state.openclaw_gateway_url = url
+            if state.openclaw_enabled and url:
+                from .openclaw_client import OpenClawClient
+                if state.openclaw_client:
+                    await state.openclaw_client.disconnect()
+                state.openclaw_client = OpenClawClient(gateway_url=url)
+                try:
+                    await state.openclaw_client.connect()
+                    if state.conversation:
+                        state.conversation.openclaw_client = state.openclaw_client
+                    log.info(f"OpenClaw reconnected to {url}")
+                except Exception as e:
+                    log.warning(f"OpenClaw connect to {url} failed: {e}")
+                    state.openclaw_client = None
+                    if state.conversation:
+                        state.conversation.openclaw_client = None
+            await _persist("openclaw_gateway_url", url)
+            await bridge.publish_config_openclaw_gateway_url(url)
+
+        bridge.on_config_openclaw_enabled = _cfg_openclaw_enabled
+        bridge.on_config_openclaw_gateway_url = _cfg_openclaw_gateway_url
+
         async def _mqtt_ptt_start():
             from .ptt import start_ptt
             await start_ptt(state)
@@ -2442,6 +2558,8 @@ async def lifespan(app: FastAPI):
         await state.mqtt_bridge.stop()
     if state.mcp_client:
         await state.mcp_client.disconnect_all()
+    if state.openclaw_client:
+        await state.openclaw_client.disconnect()
 
 
 app = FastAPI(title="HAL Voice Server", lifespan=lifespan)
@@ -2818,6 +2936,8 @@ async def health():
         "mcp_connected": state.mcp_client is not None and len(state.mcp_client.tool_names) > 0,
         "tts_available": state.tts_engine is not None,
         "memory_available": state.memory_client is not None and state.memory_client.available,
+        "openclaw_enabled": state.openclaw_enabled,
+        "openclaw_connected": state.openclaw_client is not None and state.openclaw_client.connected,
     }
 
 

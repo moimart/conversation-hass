@@ -11,6 +11,15 @@ You can control a self-hosted HAL voice assistant via its REST API. HAL is a 200
 
 The base URL of the AI server is exposed as `$HAL_SERVER_URL` (set in OpenClaw config). All requests use JSON.
 
+> **Loop prevention:** When OpenClaw IS the conversation engine
+> (HAL's `openclaw_enabled` switch is ON), do NOT call `/api/command`.
+> That endpoint feeds text back into the conversation engine — which
+> in this mode IS OpenClaw — creating an infinite loop. Use the
+> direct REST endpoints (`/api/speak`, `/api/photo_frame/start`,
+> `/api/volume`, `/api/display`, etc.) and direct MQTT topics
+> (`image/set`, `camera/set`, `video/set`, `rtsp/set`,
+> `calendar/show/set`) instead.
+
 ## When to use this skill
 
 - The user asks to "tell HAL", "ask HAL", "command HAL", or anything addressed to HAL
