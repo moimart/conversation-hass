@@ -1,4 +1,4 @@
-"""MCP server exposing HAL's tools to external agents (e.g. OpenClaw).
+"""MCP server exposing HAL's tools to external MCP clients.
 
 Mounted on the main FastAPI app at /mcp as a Starlette sub-application
 using the Streamable HTTP transport. External MCP clients connect to

@@ -34,10 +34,6 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "photo_frame_entity":        ("PHOTO_FRAME_ENTITY", ""),
     "display_auto_off_seconds":  ("DISPLAY_AUTO_OFF_SECONDS", 0),
     "photo_frame_idle_minutes":  ("PHOTO_FRAME_IDLE_MINUTES", 0),
-    "openclaw_enabled":          ("OPENCLAW_ENABLED", False),
-    "openclaw_gateway_url":      ("OPENCLAW_GATEWAY_URL", ""),
-    "openclaw_gateway_password": ("OPENCLAW_GATEWAY_PASSWORD", ""),
-    "openclaw_webhook_url":      ("OPENCLAW_WEBHOOK_URL", ""),
 }
 
 
