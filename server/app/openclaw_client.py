@@ -535,10 +535,15 @@ class OpenClawClient:
                         self._agent_done.set()
                 # Log non-heartbeat agent events at INFO for diagnostics
                 if not payload.get("isHeartbeat"):
-                    log.info(
-                        f"OpenClaw agent stream={stream} "
-                        f"data_keys={list(data.keys())[:6]}"
-                    )
+                    extra = ""
+                    if stream == "item":
+                        title = data.get("title", "")
+                        status = data.get("status", "")
+                        kind = data.get("kind", "")
+                        extra = f" kind={kind} status={status}"
+                        if title:
+                            extra += f" title={title!r}"
+                    log.info(f"OpenClaw agent stream={stream}{extra}")
         elif event in ("tick", "health", "heartbeat"):
             pass
         else:
