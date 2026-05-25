@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 if TYPE_CHECKING:
     from .main import AppState
@@ -29,6 +30,9 @@ def build_mcp_server(state: "AppState") -> FastMCP:
             "show images/videos/cameras on the orb, open the photo frame "
             "or calendar, and speak text aloud. When you execute an action, "
             "always respond with a brief spoken confirmation."
+        ),
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False,
         ),
     )
 

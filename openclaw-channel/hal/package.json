@@ -1,0 +1,27 @@
+{
+  "name": "@openclaw/hal",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "OpenClaw channel plugin for HAL voice assistant kiosk",
+  "license": "MIT",
+  "openclaw": {
+    "extensions": ["./dist/index.js"],
+    "setupEntry": "./dist/setup-entry.js",
+    "channel": {
+      "id": "hal",
+      "label": "HAL Kiosk",
+      "blurb": "Connect OpenClaw to a HAL voice assistant kiosk."
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}

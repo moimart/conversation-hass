@@ -113,6 +113,10 @@ class MQTTBridge:
         self.on_config_display_auto_off_seconds: Callable[[int], Awaitable[None]] | None = None
         # Photo-frame idle auto-activation timeout, in minutes (0 = disabled).
         self.on_config_photo_frame_idle_minutes: Callable[[int], Awaitable[None]] | None = None
+        # OpenClaw configuration
+        self.on_config_openclaw_enabled: Callable | None = None
+        self.on_config_openclaw_gateway_url: Callable | None = None
+        self.on_config_openclaw_workspace: Callable | None = None
         # Lists populated by main.py at startup so the select entities
         # advertise the right options. Empty lists publish a "none found"
         # placeholder so the entity still appears in HA.
@@ -162,6 +166,11 @@ class MQTTBridge:
         self._cached_config_display_auto_off_seconds: int = 0
         # Photo-frame idle-minutes cache for republish-on-connect.
         self._cached_config_photo_frame_idle_minutes: int = 0
+        # OpenClaw config cache
+        self._cached_config_openclaw_enabled: bool = False
+        self._cached_config_openclaw_gateway_url: str = ""
+        self._cached_config_openclaw_workspace: str = ""
+        self._cached_conversation_engine: str = "ollama"
 
     @property
     def connected(self) -> bool:
@@ -207,6 +216,21 @@ class MQTTBridge:
                 "icon": "mdi:message-text",
                 "availability": avail,
                 "device": device,
+            },
+        ))
+
+        # Conversation engine diagnostic sensor
+        configs.append((
+            f"{DISCOVERY_PREFIX}/sensor/{self.device_id}/conversation_engine/config",
+            {
+                "name": "Conversation Engine",
+                "unique_id": f"{self.device_id}_conversation_engine",
+                "state_topic": f"{self.base}/conversation_engine",
+                "json_attributes_topic": f"{self.base}/conversation_engine/attrs",
+                "icon": "mdi:brain",
+                "availability": avail,
+                "device": device,
+                "entity_category": "diagnostic",
             },
         ))
 
@@ -677,6 +701,49 @@ class MQTTBridge:
             },
         ))
 
+        # OpenClaw config entities
+        configs.append((
+            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_openclaw_enabled/config",
+            {
+                "name": "OpenClaw",
+                "unique_id": f"{self.device_id}_config_openclaw_enabled",
+                "state_topic":   f"{self.base}/config/openclaw_enabled/state",
+                "command_topic": f"{self.base}/config/openclaw_enabled/set",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "icon": "mdi:brain",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_openclaw_gateway_url/config",
+            {
+                "name": "OpenClaw Gateway URL",
+                "unique_id": f"{self.device_id}_config_openclaw_gateway_url",
+                "state_topic":   f"{self.base}/config/openclaw_gateway_url/state",
+                "command_topic": f"{self.base}/config/openclaw_gateway_url/set",
+                "icon": "mdi:web",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_openclaw_workspace/config",
+            {
+                "name": "OpenClaw Workspace",
+                "unique_id": f"{self.device_id}_config_openclaw_workspace",
+                "state_topic":   f"{self.base}/config/openclaw_workspace/state",
+                "command_topic": f"{self.base}/config/openclaw_workspace/set",
+                "icon": "mdi:folder-account",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+
         # Push-to-Talk: three button entities under the device's
         # Configuration section. HA dashboards, automations, and
         # Zigbee/Z-Wave remotes routed through HA can press them.
@@ -836,6 +903,18 @@ class MQTTBridge:
                     await self.publish_config_photo_frame_idle_minutes(
                         self._cached_config_photo_frame_idle_minutes
                     )
+                    await self.publish_config_openclaw_enabled(
+                        self._cached_config_openclaw_enabled
+                    )
+                    await self.publish_config_openclaw_gateway_url(
+                        self._cached_config_openclaw_gateway_url
+                    )
+                    await self.publish_config_openclaw_workspace(
+                        self._cached_config_openclaw_workspace
+                    )
+                    await self.publish_conversation_engine(
+                        self._cached_conversation_engine
+                    )
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -869,6 +948,9 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/display/set")
                     await client.subscribe(f"{self.base}/config/display_auto_off_seconds/set")
                     await client.subscribe(f"{self.base}/config/photo_frame_idle_minutes/set")
+                    await client.subscribe(f"{self.base}/config/openclaw_enabled/set")
+                    await client.subscribe(f"{self.base}/config/openclaw_gateway_url/set")
+                    await client.subscribe(f"{self.base}/config/openclaw_workspace/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -1052,6 +1134,17 @@ class MQTTBridge:
                     minutes = max(0, min(720, minutes))
                     await self.on_config_photo_frame_idle_minutes(minutes)
 
+            elif topic == f"{self.base}/config/openclaw_enabled/set":
+                if self.on_config_openclaw_enabled:
+                    await self.on_config_openclaw_enabled(payload.strip())
+
+            elif topic == f"{self.base}/config/openclaw_gateway_url/set":
+                if self.on_config_openclaw_gateway_url:
+                    await self.on_config_openclaw_gateway_url(payload.strip())
+
+            elif topic == f"{self.base}/config/openclaw_workspace/set":
+                if self.on_config_openclaw_workspace:
+                    await self.on_config_openclaw_workspace(payload.strip())
 
             elif topic == f"{self.base}/ptt/start":
                 if self.on_ptt_start:
@@ -1297,5 +1390,47 @@ class MQTTBridge:
         await self._safe_publish(
             f"{self.base}/config/photo_frame_idle_minutes/state",
             str(n),
+        )
+
+    async def publish_config_openclaw_enabled(self, value: bool):
+        val = bool(value)
+        self._cached_config_openclaw_enabled = val
+        await self._safe_publish(
+            f"{self.base}/config/openclaw_enabled/state",
+            "ON" if val else "OFF",
+        )
+
+    async def publish_config_openclaw_gateway_url(self, value: str):
+        val = str(value or "")
+        self._cached_config_openclaw_gateway_url = val
+        await self._safe_publish(
+            f"{self.base}/config/openclaw_gateway_url/state",
+            val,
+        )
+
+    async def publish_config_openclaw_workspace(self, value: str):
+        val = str(value or "")
+        self._cached_config_openclaw_workspace = val
+        await self._safe_publish(
+            f"{self.base}/config/openclaw_workspace/state",
+            val,
+        )
+
+    async def publish_conversation_engine(
+        self, engine: str, *, duration_s: float = 0.0, model: str = ""
+    ):
+        self._cached_conversation_engine = engine
+        await self._safe_publish(
+            f"{self.base}/conversation_engine",
+            engine,
+        )
+        import json as _json
+        await self._safe_publish(
+            f"{self.base}/conversation_engine/attrs",
+            _json.dumps({
+                "engine": engine,
+                "model": model,
+                "duration_s": round(duration_s, 2),
+            }),
         )
 

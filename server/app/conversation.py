@@ -90,6 +90,10 @@ class ConversationManager:
         # final TTS for the model's text response (otherwise we'd speak twice).
         self._suppress_final_tts = False
 
+        # OpenClaw integration
+        self.openclaw_client = None  # OpenClawClient | None
+        self.on_openclaw_media: Callable | None = None
+
         # Callbacks
         self.on_response: Callable[[str, bytes | None], Awaitable[None]] | None = None
         self.on_wake_word: Callable[[], Awaitable[None]] | None = None
@@ -198,7 +202,17 @@ class ConversationManager:
         tts_s = 0.0
 
         try:
-            response_text = await self._run_llm_with_tools(full_text)
+            if self.openclaw_client is not None:
+                try:
+                    oc_response = await self._run_openclaw(full_text)
+                    response_text = oc_response.text or ""
+                    if self.on_openclaw_media and oc_response.media_urls:
+                        await self.on_openclaw_media(oc_response)
+                except Exception as e:
+                    log.error(f"OpenClaw failed ({e}), falling back to Ollama")
+                    response_text = await self._run_llm_with_tools(full_text)
+            else:
+                response_text = await self._run_llm_with_tools(full_text)
             t_after_llm = time.monotonic()
 
             # Store conversation exchange in long-term memory
@@ -266,6 +280,30 @@ class ConversationManager:
                 await self.on_response(error_msg, audio)
 
         await self._set_state("idle")
+
+    async def _run_openclaw(self, user_text: str):
+        from .openclaw_client import OpenClawResponse
+
+        self.history.append({"role": "user", "content": user_text})
+        if len(self.history) > self.max_history:
+            self.history = self.history[-self.max_history:]
+
+        t0 = time.monotonic()
+        response: OpenClawResponse = await self.openclaw_client.send_message(user_text)
+        elapsed = time.monotonic() - t0
+
+        if response.text:
+            self.history.append({"role": "assistant", "content": response.text})
+
+        self._llm_metrics_acc = {
+            "llm_total_s": elapsed,
+            "tools_total_s": 0.0,
+            "memory_recall_s": 0.0,
+            "rounds": 1,
+        }
+        self._last_ollama_metrics = {"model": "openclaw"}
+        log.info(f"OpenClaw responded in {elapsed:.2f}s: {len(response.text)} chars")
+        return response
 
     async def _run_llm_with_tools(self, user_text: str) -> str:
         """
