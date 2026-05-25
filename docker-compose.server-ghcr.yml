@@ -35,7 +35,11 @@ services:
       - SENDSPIN_PLAYER_ENTITY=${SENDSPIN_PLAYER_ENTITY:-}
       - SENDSPIN_PAUSE_DURING_TTS=${SENDSPIN_PAUSE_DURING_TTS:-false}
       - GO2RTC_URL=${GO2RTC_URL:-http://host.docker.internal:1984}
+      - OPENCLAW_ENABLED=${OPENCLAW_ENABLED:-false}
+      - OPENCLAW_GATEWAY_URL=${OPENCLAW_GATEWAY_URL:-}
+      - OPENCLAW_WORKSPACE=${OPENCLAW_WORKSPACE:-}
     volumes:
+      - ./server/app:/app/app:ro
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro
       - ./server/mcp_servers.json:/app/mcp_servers.json:ro
       - ./server/runtime:/app/runtime

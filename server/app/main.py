@@ -103,6 +103,11 @@ class AppState:
     photo_frame_idle_minutes: int = 0
     user_last_activity: float = 0.0
     photo_frame_idle_task: object | None = None
+    # OpenClaw integration
+    openclaw_client: object | None = None  # OpenClawClient
+    openclaw_enabled: bool = False
+    openclaw_gateway_url: str = ""
+    openclaw_workspace: str = ""
 
 
 def _generate_chime() -> bytes:
@@ -543,6 +548,45 @@ async def _stop_active_video(state: AppState) -> None:
         except Exception:
             pass
     await broadcast_to_ui(state, msg)
+
+
+async def _handle_openclaw_media(state: AppState, response) -> None:
+    """Dispatch media from an OpenClaw response to the kiosk orb."""
+    IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
+    VIDEO_EXTS = {".mp4", ".webm", ".m3u8"}
+
+    for url in (response.media_urls or []):
+        from urllib.parse import urlparse
+        import os as _os
+
+        ext = _os.path.splitext(urlparse(url).path)[1].lower()
+
+        if ext in IMAGE_EXTS:
+            try:
+                await _push_image_payload(state, url, default_duration=60)
+                log.info(f"OpenClaw image displayed: {url[:80]}")
+            except Exception as e:
+                log.warning(f"OpenClaw image dispatch failed: {e}")
+        elif ext in VIDEO_EXTS:
+            try:
+                await _dispatch_play_video(state, url, duration_s=300)
+                log.info(f"OpenClaw video started: {url[:80]}")
+            except Exception as e:
+                log.warning(f"OpenClaw video dispatch failed: {e}")
+        else:
+            try:
+                from .qr_code import generate_qr_png
+                import base64
+                qr_bytes = generate_qr_png(url)
+                if qr_bytes:
+                    b64 = base64.b64encode(qr_bytes).decode("ascii")
+                    await _dispatch_show_image(
+                        state, b64, "image/png", 30, entity_id="qr-code"
+                    )
+                    log.info(f"OpenClaw QR code displayed for: {url[:80]}")
+            except Exception as e:
+                log.warning(f"OpenClaw QR dispatch failed: {e}")
+        break  # orb shows one thing at a time
 
 
 async def _dispatch_play_video(
@@ -1873,8 +1917,19 @@ async def lifespan(app: FastAPI):
     # MCP server: expose HAL's tools to external MCP clients.
     from .mcp_server import build_mcp_server
     hal_mcp = build_mcp_server(state)
-    app.mount("/mcp", hal_mcp.streamable_http_app())
+    app.mount("/mcp", hal_mcp.sse_app())
     log.info("MCP server mounted at /mcp")
+
+    # OpenClaw: optional alternative conversation engine.
+    # Client creation is deferred to avoid interfering with MCP client
+    # startup. The MQTT callback or a background task will wire it up.
+    state.openclaw_enabled = bool(cfg.get("openclaw_enabled", False))
+    state.openclaw_gateway_url = str(cfg.get("openclaw_gateway_url", ""))
+    state.openclaw_workspace = str(cfg.get("openclaw_workspace", ""))
+    log.info(
+        f"OpenClaw config: enabled={state.openclaw_enabled}, "
+        f"url={state.openclaw_gateway_url or '(none)'}"
+    )
 
     # Daily dusk/dawn theme scheduler
     if state.auto_theme:
@@ -2290,6 +2345,10 @@ async def lifespan(app: FastAPI):
         )
         state.user_last_activity = time.time()
         bridge._cached_config_photo_frame_idle_minutes = state.photo_frame_idle_minutes
+        # OpenClaw
+        bridge._cached_config_openclaw_enabled = state.openclaw_enabled
+        bridge._cached_config_openclaw_gateway_url = state.openclaw_gateway_url
+        bridge._cached_config_openclaw_workspace = state.openclaw_workspace
         async def _mqtt_calendar_show(args: dict):
             view = (args.get("view") or "month").lower()
             calendar_name = (args.get("calendar_name") or "").strip()
@@ -2381,6 +2440,57 @@ async def lifespan(app: FastAPI):
             await _persist("photo_frame_idle_minutes", n)
             await bridge.publish_config_photo_frame_idle_minutes(n)
 
+        async def _cfg_openclaw_enabled(enabled):
+            val = str(enabled).strip().lower() in ("true", "1", "yes", "on")
+            state.openclaw_enabled = val
+            if val and state.openclaw_gateway_url:
+                if state.openclaw_client is None:
+                    from .openclaw_client import OpenClawClient
+                    hal_url = f"http://{os.environ.get('HAL_HOST', '0.0.0.0')}:{os.environ.get('PORT', '8765')}"
+                    state.openclaw_client = OpenClawClient(
+                        gateway_url=state.openclaw_gateway_url,
+                        hal_base_url=hal_url,
+                    )
+                if state.conversation:
+                    state.conversation.openclaw_client = state.openclaw_client
+                    state.conversation.on_openclaw_media = lambda r: _handle_openclaw_media(state, r)
+                log.info(f"OpenClaw enabled → {state.openclaw_gateway_url}")
+            else:
+                if state.conversation:
+                    state.conversation.openclaw_client = None
+                    state.conversation.on_openclaw_media = None
+                if state.openclaw_client and not val:
+                    log.info("OpenClaw disabled")
+            await _persist("openclaw_enabled", val)
+            await bridge.publish_config_openclaw_enabled(val)
+
+        async def _cfg_openclaw_gateway_url(url):
+            url = str(url).strip()
+            state.openclaw_gateway_url = url
+            if state.openclaw_enabled and url:
+                if state.openclaw_client:
+                    await state.openclaw_client.close()
+                from .openclaw_client import OpenClawClient
+                hal_url = f"http://{os.environ.get('HAL_HOST', '0.0.0.0')}:{os.environ.get('PORT', '8765')}"
+                state.openclaw_client = OpenClawClient(
+                    gateway_url=url, hal_base_url=hal_url,
+                )
+                if state.conversation:
+                    state.conversation.openclaw_client = state.openclaw_client
+                log.info(f"OpenClaw gateway URL updated → {url}")
+            await _persist("openclaw_gateway_url", url)
+            await bridge.publish_config_openclaw_gateway_url(url)
+
+        async def _cfg_openclaw_workspace(name):
+            name = str(name).strip()
+            state.openclaw_workspace = name
+            await _persist("openclaw_workspace", name)
+            await bridge.publish_config_openclaw_workspace(name)
+
+        bridge.on_config_openclaw_enabled = _cfg_openclaw_enabled
+        bridge.on_config_openclaw_gateway_url = _cfg_openclaw_gateway_url
+        bridge.on_config_openclaw_workspace = _cfg_openclaw_workspace
+
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
         bridge.on_theme_set = _mqtt_theme
@@ -2432,6 +2542,19 @@ async def lifespan(app: FastAPI):
     else:
         log.info("MQTT bridge disabled (set MQTT_BROKER_HOST to enable)")
 
+    # Deferred OpenClaw client creation (after MCP + MQTT are up)
+    if state.openclaw_enabled and state.openclaw_gateway_url:
+        from .openclaw_client import OpenClawClient
+        hal_url = f"http://{os.environ.get('HAL_HOST', '0.0.0.0')}:{os.environ.get('PORT', '8765')}"
+        state.openclaw_client = OpenClawClient(
+            gateway_url=state.openclaw_gateway_url,
+            hal_base_url=hal_url,
+        )
+        if state.conversation:
+            state.conversation.openclaw_client = state.openclaw_client
+            state.conversation.on_openclaw_media = lambda r: _handle_openclaw_media(state, r)
+        log.info(f"OpenClaw client created → {state.openclaw_gateway_url}")
+
     log.info("HAL voice server ready.")
 
     yield
@@ -2447,6 +2570,8 @@ async def lifespan(app: FastAPI):
         await state.mqtt_bridge.stop()
     if state.mcp_client:
         await state.mcp_client.disconnect_all()
+    if state.openclaw_client:
+        await state.openclaw_client.close()
 
 
 app = FastAPI(title="HAL Voice Server", lifespan=lifespan)
@@ -2562,6 +2687,13 @@ async def audio_endpoint(websocket: WebSocket):
     async def on_metrics(metrics: dict):
         if state.mqtt_bridge:
             await state.mqtt_bridge.publish_task_metrics(metrics)
+            model = metrics.get("model", "")
+            engine = "openclaw" if model == "openclaw" else "ollama"
+            await state.mqtt_bridge.publish_conversation_engine(
+                engine,
+                duration_s=metrics.get("llm_total_s", 0.0),
+                model=model,
+            )
 
     conversation.on_response = on_response
     conversation.on_wake_word = on_wake_word
@@ -2823,6 +2955,7 @@ async def health():
         "mcp_connected": state.mcp_client is not None and len(state.mcp_client.tool_names) > 0,
         "tts_available": state.tts_engine is not None,
         "memory_available": state.memory_client is not None and state.memory_client.available,
+        "openclaw_enabled": state.openclaw_enabled,
     }
 
 
@@ -2994,6 +3127,26 @@ async def post_command(req: CommandRequest):
     asyncio.create_task(conversation.on_silence())
 
     return {"status": "ok", "message": "Command received"}
+
+
+@app.post("/api/openclaw/response")
+async def post_openclaw_response(request: Request):
+    """Callback endpoint for OpenClaw channel plugin to deliver agent responses."""
+    state = _get_state(app)
+    if not state.openclaw_client:
+        return {"status": "error", "message": "OpenClaw client not configured"}
+
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "error", "message": "Invalid JSON"}
+
+    request_id = body.get("request_id", "")
+    if not request_id:
+        return {"status": "error", "message": "request_id required"}
+
+    state.openclaw_client.resolve_response(request_id, body)
+    return {"status": "ok"}
 
 
 class VolumeRequest(BaseModel):

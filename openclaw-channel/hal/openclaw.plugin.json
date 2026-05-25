@@ -1,0 +1,46 @@
+{
+  "id": "hal",
+  "kind": "channel",
+  "channels": ["hal"],
+  "name": "HAL Kiosk",
+  "description": "Channel plugin for HAL voice assistant kiosk — routes voice commands through an OpenClaw agent and delivers responses back to the kiosk for TTS and display.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "channelConfigs": {
+    "hal": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "halBaseUrl": {
+            "type": "string",
+            "description": "HAL server base URL, e.g. http://your-hal-host:8765"
+          },
+          "halApiKey": {
+            "type": "string",
+            "description": "Optional shared secret for webhook authentication"
+          },
+          "dmPolicy": {
+            "type": "string",
+            "enum": ["open", "allowlist"],
+            "default": "open",
+            "description": "DM security policy (open for LAN trust)"
+          },
+          "allowFrom": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Allowed sender IDs when dmPolicy is allowlist"
+          }
+        },
+        "required": ["halBaseUrl"]
+      },
+      "uiHints": {
+        "halBaseUrl": { "label": "HAL Server URL" },
+        "halApiKey": { "label": "API Key", "sensitive": true },
+        "dmPolicy": { "label": "DM Policy" }
+      }
+    }
+  }
+}

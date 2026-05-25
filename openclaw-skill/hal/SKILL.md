@@ -11,6 +11,21 @@ You can control a self-hosted HAL voice assistant via its REST API. HAL is a 200
 
 The base URL of the AI server is exposed as `$HAL_SERVER_URL` (set in OpenClaw config). All requests use JSON.
 
+## Important: how to call HAL
+
+Use `mcporter` with the `hal` MCP server for all HAL controls: volume,
+mute, display power, photo frame, calendar, cameras, speak, and theme.
+Use `mcporter` with the `berlinmcp` server for Home Assistant tasks
+(lights, climate, sensors). Do NOT route HA tasks through HAL.
+
+## Loop prevention
+
+When OpenClaw IS the conversation engine for HAL (via the `hal` channel
+plugin), do **NOT** call `/api/command` — that routes through the
+conversation pipeline, which in this mode IS OpenClaw, creating an
+infinite loop. Use `/api/speak` for verbatim TTS output, and use the
+direct REST/MQTT endpoints below for orb display, volume, mute, etc.
+
 ## When to use this skill
 
 - The user asks to "tell HAL", "ask HAL", "command HAL", or anything addressed to HAL
@@ -423,7 +438,7 @@ curl -sS -X POST "$HAL_SERVER_URL/api/command" \
 
 Use the `exec` tool to run the curl commands above. Always:
 
-1. Read `$HAL_SERVER_URL` from configuration (e.g. `http://10.20.30.185:8765`)
+1. Read `$HAL_SERVER_URL` from configuration
 2. Run the appropriate `curl` invocation
 3. Confirm the response shows `{"status":"ok"}` (or the expected payload for GETs)
 4. Reply to the user with what you did, e.g. "Sent to HAL: 'turn on the kitchen lights'"
