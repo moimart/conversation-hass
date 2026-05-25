@@ -73,7 +73,8 @@ Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_th
 | [`MQTT.md`](./MQTT.md)                    | Every MQTT topic the bridge subscribes to or publishes; complete HA Discovery entity table; automation snippets    |
 | [`THEMES.md`](./THEMES.md)                | Plug-in theme authoring (CSS variable reference, `effect.js` API, manifest schema, hot-reload behaviour)            |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md)    | Pipeline walkthrough, STT engine choice, PTT internals, camera/video modes, runtime config, project structure       |
-| `openclaw-skill/hal/SKILL.md`             | OpenClaw skill exposing HAL's REST API — drop-in for any OpenClaw agent                                            |
+| [`openclaw-channel/hal/`](./openclaw-channel/hal/README.md) | OpenClaw channel plugin — routes voice through an OpenClaw agent with full mcporter/MCP tool access, Ollama fallback |
+| `openclaw-skill/hal/SKILL.md`             | OpenClaw skill teaching the agent how to control HAL's kiosk via mcporter                                          |
 | `desktop/`                                | Rust/GTK4 Wayland overlay for typing commands + hold-to-talk PTT from your Linux desktop                            |
 
 ---
@@ -199,6 +200,16 @@ Tagged versions also published (`:0.10`, etc. — the previous stable is preserv
 | `MEMORY_URL`       | `http://shodh-memory:3030`           | Shodh Memory service URL                          |
 | `MEMORY_USER_ID`   | `hal-default`                        | User ID for memory isolation                      |
 | `MEMORY_API_KEY`   | —                                    | Shodh API key (if your instance requires auth)    |
+
+### OpenClaw (optional agentic backend)
+
+| Variable                | Default              | Description                                                          |
+|-------------------------|----------------------|----------------------------------------------------------------------|
+| `OPENCLAW_ENABLED`      | `false`              | Enable OpenClaw as conversation engine (falls back to Ollama on error) |
+| `OPENCLAW_GATEWAY_URL`  | (empty)              | Gateway URL, e.g. `http://gateway-host:18789`                        |
+| `OPENCLAW_WORKSPACE`    | (empty)              | Workspace name on the gateway                                        |
+
+See [`openclaw-channel/hal/README.md`](./openclaw-channel/hal/README.md) for full setup.
 
 ### Home Assistant (live streaming, calendar, image fetch)
 
