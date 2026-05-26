@@ -426,3 +426,51 @@ body.state-speaking .cal-status-dot {
     padding: 20px;
 }
 .cal-error { color: var(--text); opacity: 0.7; }
+
+/* === Landscape orientation overrides ===================================
+   In landscape the calendar card is wider than tall. Tighten vertical
+   spacing so month/week grids fit without overflow. */
+
+body.orientation-landscape .cal-header {
+    padding: 12px 22px 8px;
+}
+body.orientation-landscape .cal-title {
+    font-size: 22px;
+}
+body.orientation-landscape .cal-body {
+    padding: 12px 18px 14px;
+}
+
+/* Month grid: cells are wider in landscape — reduce vertical padding */
+body.orientation-landscape .cal-day-cell {
+    padding: 4px 6px 3px;
+}
+body.orientation-landscape .cal-day-num {
+    font-size: 11px;
+    margin-bottom: 2px;
+}
+body.orientation-landscape .cal-event-pill {
+    font-size: 9px;
+    padding: 1px 5px;
+}
+body.orientation-landscape .cal-weekday {
+    font-size: 9px;
+    padding: 2px 0;
+}
+body.orientation-landscape .cal-weekday-header {
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+}
+
+/* Week grid: days get plenty of width, tighten vertical */
+body.orientation-landscape .cal-week-day {
+    padding: 8px 10px 6px;
+}
+body.orientation-landscape .cal-week-day-num {
+    font-size: 18px;
+    margin-bottom: 4px;
+}
+body.orientation-landscape .cal-week-event {
+    font-size: 10px;
+    padding: 3px 6px;
+}

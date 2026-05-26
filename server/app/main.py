@@ -108,6 +108,9 @@ class AppState:
     openclaw_enabled: bool = False
     openclaw_gateway_url: str = ""
     openclaw_workspace: str = ""
+    # Display orientation
+    display_orientation: str = "portrait"
+    orb_side: str = "left"
 
 
 def _generate_chime() -> bytes:
@@ -1931,6 +1934,10 @@ async def lifespan(app: FastAPI):
         f"url={state.openclaw_gateway_url or '(none)'}"
     )
 
+    # Display orientation
+    state.display_orientation = str(cfg.get("display_orientation", "portrait"))
+    state.orb_side = str(cfg.get("orb_side", "left"))
+
     # Daily dusk/dawn theme scheduler
     if state.auto_theme:
         state.theme_scheduler_task = asyncio.create_task(_theme_scheduler(state))
@@ -2349,6 +2356,9 @@ async def lifespan(app: FastAPI):
         bridge._cached_config_openclaw_enabled = state.openclaw_enabled
         bridge._cached_config_openclaw_gateway_url = state.openclaw_gateway_url
         bridge._cached_config_openclaw_workspace = state.openclaw_workspace
+        # Display orientation
+        bridge._cached_config_display_orientation = state.display_orientation
+        bridge._cached_config_orb_side = state.orb_side
         async def _mqtt_calendar_show(args: dict):
             view = (args.get("view") or "month").lower()
             calendar_name = (args.get("calendar_name") or "").strip()
@@ -2491,6 +2501,29 @@ async def lifespan(app: FastAPI):
         bridge.on_config_openclaw_gateway_url = _cfg_openclaw_gateway_url
         bridge.on_config_openclaw_workspace = _cfg_openclaw_workspace
 
+        async def _cfg_display_orientation(value: str):
+            value = value.strip().lower()
+            if value not in ("portrait", "landscape"):
+                return
+            state.display_orientation = value
+            await _persist("display_orientation", value)
+            await bridge.publish_config_display_orientation(value)
+            msg = {"type": "set_orientation", "orientation": value, "orb_side": state.orb_side}
+            await _push_to_rpi(state, msg)
+
+        async def _cfg_orb_side(value: str):
+            value = value.strip().lower()
+            if value not in ("left", "right"):
+                return
+            state.orb_side = value
+            await _persist("orb_side", value)
+            await bridge.publish_config_orb_side(value)
+            msg = {"type": "set_orientation", "orientation": state.display_orientation, "orb_side": value}
+            await _push_to_rpi(state, msg)
+
+        bridge.on_config_display_orientation = _cfg_display_orientation
+        bridge.on_config_orb_side = _cfg_orb_side
+
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute
         bridge.on_theme_set = _mqtt_theme
@@ -2620,6 +2653,16 @@ async def audio_endpoint(websocket: WebSocket):
         log.info(f"Pushed initial mute state to RPi: {start_muted}")
     except Exception as e:
         log.warning(f"Could not push initial mute state to RPi: {e}")
+
+    try:
+        await websocket.send_json({
+            "type": "set_orientation",
+            "orientation": state.display_orientation,
+            "orb_side": state.orb_side,
+        })
+        log.info(f"Pushed initial orientation to RPi: {state.display_orientation}/{state.orb_side}")
+    except Exception as e:
+        log.warning(f"Could not push initial orientation to RPi: {e}")
 
     async def on_wake_word():
         """Callback: play chime on RPi and flash the UI."""

@@ -117,6 +117,9 @@ class MQTTBridge:
         self.on_config_openclaw_enabled: Callable | None = None
         self.on_config_openclaw_gateway_url: Callable | None = None
         self.on_config_openclaw_workspace: Callable | None = None
+        # Display orientation
+        self.on_config_display_orientation: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_orb_side: Callable[[str], Awaitable[None]] | None = None
         # Lists populated by main.py at startup so the select entities
         # advertise the right options. Empty lists publish a "none found"
         # placeholder so the entity still appears in HA.
@@ -170,6 +173,9 @@ class MQTTBridge:
         self._cached_config_openclaw_enabled: bool = False
         self._cached_config_openclaw_gateway_url: str = ""
         self._cached_config_openclaw_workspace: str = ""
+        # Display orientation cache
+        self._cached_config_display_orientation: str = "portrait"
+        self._cached_config_orb_side: str = "left"
         self._cached_conversation_engine: str = "ollama"
 
     @property
@@ -744,6 +750,37 @@ class MQTTBridge:
             },
         ))
 
+        # Display orientation select
+        configs.append((
+            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_display_orientation/config",
+            {
+                "name": "Display Orientation",
+                "unique_id": f"{self.device_id}_config_display_orientation",
+                "state_topic":   f"{self.base}/config/display_orientation/state",
+                "command_topic": f"{self.base}/config/display_orientation/set",
+                "options": ["portrait", "landscape"],
+                "icon": "mdi:phone-rotate-landscape",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+        # Orb side select (landscape only)
+        configs.append((
+            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_orb_side/config",
+            {
+                "name": "Orb Side",
+                "unique_id": f"{self.device_id}_config_orb_side",
+                "state_topic":   f"{self.base}/config/orb_side/state",
+                "command_topic": f"{self.base}/config/orb_side/set",
+                "options": ["left", "right"],
+                "icon": "mdi:swap-horizontal",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+
         # Push-to-Talk: three button entities under the device's
         # Configuration section. HA dashboards, automations, and
         # Zigbee/Z-Wave remotes routed through HA can press them.
@@ -912,6 +949,12 @@ class MQTTBridge:
                     await self.publish_config_openclaw_workspace(
                         self._cached_config_openclaw_workspace
                     )
+                    await self.publish_config_display_orientation(
+                        self._cached_config_display_orientation
+                    )
+                    await self.publish_config_orb_side(
+                        self._cached_config_orb_side
+                    )
                     await self.publish_conversation_engine(
                         self._cached_conversation_engine
                     )
@@ -951,6 +994,8 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/config/openclaw_enabled/set")
                     await client.subscribe(f"{self.base}/config/openclaw_gateway_url/set")
                     await client.subscribe(f"{self.base}/config/openclaw_workspace/set")
+                    await client.subscribe(f"{self.base}/config/display_orientation/set")
+                    await client.subscribe(f"{self.base}/config/orb_side/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -1145,6 +1190,16 @@ class MQTTBridge:
             elif topic == f"{self.base}/config/openclaw_workspace/set":
                 if self.on_config_openclaw_workspace:
                     await self.on_config_openclaw_workspace(payload.strip())
+
+            elif topic == f"{self.base}/config/display_orientation/set":
+                val = payload.strip().lower()
+                if val in ("portrait", "landscape") and self.on_config_display_orientation:
+                    await self.on_config_display_orientation(val)
+
+            elif topic == f"{self.base}/config/orb_side/set":
+                val = payload.strip().lower()
+                if val in ("left", "right") and self.on_config_orb_side:
+                    await self.on_config_orb_side(val)
 
             elif topic == f"{self.base}/ptt/start":
                 if self.on_ptt_start:
@@ -1414,6 +1469,20 @@ class MQTTBridge:
         await self._safe_publish(
             f"{self.base}/config/openclaw_workspace/state",
             val,
+        )
+
+    async def publish_config_display_orientation(self, value: str):
+        self._cached_config_display_orientation = value
+        await self._safe_publish(
+            f"{self.base}/config/display_orientation/state",
+            value,
+        )
+
+    async def publish_config_orb_side(self, value: str):
+        self._cached_config_orb_side = value
+        await self._safe_publish(
+            f"{self.base}/config/orb_side/state",
+            value,
         )
 
     async def publish_conversation_engine(

@@ -38,6 +38,8 @@ services:
       - OPENCLAW_ENABLED=${OPENCLAW_ENABLED:-false}
       - OPENCLAW_GATEWAY_URL=${OPENCLAW_GATEWAY_URL:-}
       - OPENCLAW_WORKSPACE=${OPENCLAW_WORKSPACE:-}
+      - DISPLAY_ORIENTATION=${DISPLAY_ORIENTATION:-portrait}
+      - ORB_SIDE=${ORB_SIDE:-left}
     volumes:
       - ./server/app:/app/app:ro
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro

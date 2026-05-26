@@ -53,6 +53,9 @@ class DisplayBackend:
         sanity-check / debug routes."""
         return None
 
+    def set_transform(self, transform: str) -> bool:
+        return False
+
 
 class WlrRandrBackend(DisplayBackend):
     """wlr-randr — wlroots Wayland compositor (labwc, sway, hyprland).
@@ -191,6 +194,17 @@ class WlrRandrBackend(DisplayBackend):
             daemon=True,
             name="wlr-randr-reconcile",
         ).start()
+
+    def set_transform(self, transform: str) -> bool:
+        cmd = ["wlr-randr", "--output", self.output, "--transform", transform]
+        log.info(f"wlr-randr set_transform — cmd={cmd!r}")
+        r = subprocess.run(cmd, check=False, timeout=6.0,
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            log.warning(f"wlr-randr set_transform rc={r.returncode} stderr={r.stderr!r}")
+            return False
+        self._transform = transform
+        return True
 
     # Reconciler window large enough to outlast a deep-standby HDMI
     # re-handshake (labwc has been seen resetting rotation up to ~30 s

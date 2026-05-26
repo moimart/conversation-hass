@@ -37,6 +37,8 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "openclaw_enabled":          ("OPENCLAW_ENABLED", False),
     "openclaw_gateway_url":      ("OPENCLAW_GATEWAY_URL", ""),
     "openclaw_workspace":        ("OPENCLAW_WORKSPACE", ""),
+    "display_orientation":       ("DISPLAY_ORIENTATION", "portrait"),
+    "orb_side":                  ("ORB_SIDE", "left"),
 }
 
 
