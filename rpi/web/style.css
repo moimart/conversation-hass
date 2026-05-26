@@ -134,7 +134,7 @@ body {
        child past the orb's bottom edge. Both this and the orb's top
        move together — change in lockstep. */
     justify-content: flex-start;
-    padding-top: calc(22vh + 216px);
+    padding-top: calc(38vh + 216px);
     box-sizing: border-box;
     position: relative;
 }
@@ -166,7 +166,7 @@ body {
        counters the bumped page zoom so the orb is +20% rather than
        +25% over the previous baseline. */
     position: absolute;
-    top: 22%;
+    top: 38%;
     left: 50%;
     transform: translate(-50%, -50%) scale(0.96);
     width: 406px;
@@ -1191,4 +1191,91 @@ body.photo-frame-active .clock-display .clock-date {
 .eye-container.camera-active .eye-state-video-layer,
 .eye-container.stream-active .eye-state-video-layer {
     display: none;
+}
+
+/* === Orientation wrapper ================================================
+   The physical display stays in native landscape. Portrait mode is
+   achieved by CSS-rotating this wrapper -90deg. Landscape is the
+   natural orientation (no transform). */
+
+
+/* === Landscape layout ===================================================
+   Two-column grid: orb on one side, text content on the other. */
+
+body.orientation-landscape #app {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
+    padding-top: 0;
+    height: 100%;
+    align-items: stretch;
+    gap: 0;
+}
+
+body.orientation-landscape .eye-container {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: scale(0.85);
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: center;
+    align-self: center;
+}
+
+/* Text column: stack status, transcript, response vertically */
+body.orientation-landscape .status-bar {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    margin-top: 20%;
+    margin-bottom: 0;
+}
+
+body.orientation-landscape .ptt-chip {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    margin-top: 26%;
+}
+
+body.orientation-landscape .transcript-container {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    width: min(500px, 42vw);
+    max-height: 2.5em;
+    overflow: hidden;
+    margin-top: 0;
+}
+
+body.orientation-landscape .transcript-scroll {
+    max-height: 2.2em;
+}
+
+body.orientation-landscape .response-container {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    width: min(500px, 42vw);
+    margin-bottom: 20%;
+    margin-top: 0;
+}
+
+/* Orb-right variant: swap columns */
+body.orientation-landscape.orb-right .eye-container {
+    grid-column: 2;
+}
+body.orientation-landscape.orb-right .status-bar,
+body.orientation-landscape.orb-right .ptt-chip,
+body.orientation-landscape.orb-right .transcript-container,
+body.orientation-landscape.orb-right .response-container {
+    grid-column: 1;
+}
+
+/* Ambient grid needs to fill the wrapper in both orientations */
+body.orientation-landscape .ambient-grid,
+body.orientation-portrait .ambient-grid {
+    position: absolute;
+    inset: 0;
 }

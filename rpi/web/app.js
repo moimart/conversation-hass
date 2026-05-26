@@ -27,6 +27,8 @@
     // it fetches /api/themes on startup, lazy-loads each theme's CSS on
     // first activation, and lazy-imports its optional effect.js module.
     const THEME_KEY = "hal-theme";
+    const ORIENTATION_KEY = "hal-orientation";
+    const ORB_SIDE_KEY = "hal-orb-side";
     let themes = [];                 // [{name, display_name, has_effect, kind, state_videos?, ...}]
     let loadedCss = new Set();       // names whose stylesheet <link> we've already injected
     let loadedEffects = new Map();   // name -> { start, stop } controller from effect.js
@@ -65,6 +67,21 @@
         for (const ctrl of loadedEffects.values()) {
             try { ctrl.stop && ctrl.stop(); } catch (e) { /* ignore */ }
         }
+    }
+
+    function applyOrientation(orientation, orbSide) {
+        orientation = (orientation || "portrait").toLowerCase();
+        orbSide = (orbSide || "left").toLowerCase();
+        document.body.classList.remove(
+            "orientation-portrait", "orientation-landscape",
+            "orb-left", "orb-right"
+        );
+        document.body.classList.add(`orientation-${orientation}`);
+        if (orientation === "landscape") {
+            document.body.classList.add(`orb-${orbSide}`);
+        }
+        localStorage.setItem(ORIENTATION_KEY, orientation);
+        localStorage.setItem(ORB_SIDE_KEY, orbSide);
     }
 
     async function applyTheme(name) {
@@ -156,6 +173,12 @@
         const saved = localStorage.getItem(THEME_KEY) || "dark";
         applyTheme(saved);
     });
+
+    // Restore orientation from localStorage (server pushes authoritative value on connect).
+    applyOrientation(
+        localStorage.getItem(ORIENTATION_KEY) || "portrait",
+        localStorage.getItem(ORB_SIDE_KEY) || "left"
+    );
 
     // --- WebSocket ---
     function connect() {
@@ -359,6 +382,9 @@
                     localStorage.setItem(THEME_KEY, msg.name);
                     applyTheme(msg.name);
                 }
+                break;
+            case "set_orientation":
+                applyOrientation(msg.orientation, msg.orb_side);
                 break;
             case "themes_changed":
                 loadThemes().then(() => {
