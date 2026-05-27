@@ -1302,9 +1302,12 @@ body.orientation-landscape.orb-right .response-container {
     grid-column: 1;
 }
 
-/* Ambient grid needs to fill the wrapper in both orientations */
+/* Elements that shouldn't participate in the landscape grid */
 body.orientation-landscape .ambient-grid,
 body.orientation-portrait .ambient-grid {
     position: absolute;
     inset: 0;
+}
+body.orientation-landscape .ambient-grid {
+    display: none;
 }
