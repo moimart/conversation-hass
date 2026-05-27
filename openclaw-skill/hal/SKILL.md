@@ -11,15 +11,19 @@ You can control a self-hosted HAL voice assistant via its REST API. HAL is a 200
 
 The base URL of the AI server is exposed as `$HAL_SERVER_URL` (set in OpenClaw config). All requests use JSON.
 
-## How to control Home Assistant and HAL hardware
+## MANDATORY: How to control Home Assistant and HAL hardware
 
-There is NO tool called "mcporter". Do NOT try to call mcporter as a tool.
-Instead, use the `exec` tool to run the `mcporter` CLI binary. This is the
-ONLY way to interact with Home Assistant and HAL hardware from this channel.
+When the user asks you to control lights, climate, sensors, or any
+Home Assistant device, you MUST use the `exec` tool to run `mcporter`.
+Do NOT answer without calling exec first. Do NOT make up a response
+about having done something — actually call exec.
 
-**Pattern — always use exec:**
+If you see a tool called "mcporter" in your tool list, IGNORE IT —
+it will fail in this channel. Use `exec` instead.
+
+**Always use this exact pattern with exec:**
 ```
-exec: mcporter call <server>.<tool> key=value key2=value2
+mcporter call <server>.<tool> key=value key2=value2
 ```
 
 ### Available MCP servers
