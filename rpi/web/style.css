@@ -1241,7 +1241,7 @@ body.orientation-portrait.show-calendar .calendar-stage {
 body.orientation-landscape #app {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr;
+    grid-template-rows: 1fr auto auto auto auto 1fr;
     padding-top: 0;
     height: calc(100vh * 691px / 100vmin);
     gap: 0;
@@ -1254,35 +1254,29 @@ body.orientation-landscape .eye-container {
     left: auto;
     transform: scale(0.85);
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / -1;
     justify-self: center;
     align-self: center;
 }
 
-body.orientation-landscape .status-bar,
-body.orientation-landscape .ptt-chip,
-body.orientation-landscape .transcript-container,
-body.orientation-landscape .response-container {
-    grid-column: 2;
-    grid-row: 1;
-}
-
 body.orientation-landscape .status-bar {
-    align-self: center;
-    margin-top: calc(-0.15 * var(--wrapper-h, 600px));
-    margin-bottom: 0;
+    grid-column: 2;
+    grid-row: 2;
+    margin-bottom: 12px;
 }
 
 body.orientation-landscape .ptt-chip {
-    align-self: center;
-    margin-top: calc(-0.08 * var(--wrapper-h, 600px));
+    grid-column: 2;
+    grid-row: 3;
+    margin-bottom: 12px;
 }
 
 body.orientation-landscape .transcript-container {
+    grid-column: 2;
+    grid-row: 4;
     width: min(500px, 42vw);
     max-height: 2.5em;
     overflow: hidden;
-    align-self: center;
     margin-top: 0;
 }
 
@@ -1291,9 +1285,10 @@ body.orientation-landscape .transcript-scroll {
 }
 
 body.orientation-landscape .response-container {
+    grid-column: 2;
+    grid-row: 5;
     width: min(500px, 42vw);
-    align-self: center;
-    margin-top: calc(0.12 * var(--wrapper-h, 600px));
+    margin-top: 12px;
 }
 
 /* Orb-right variant: swap columns */
