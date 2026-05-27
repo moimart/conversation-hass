@@ -110,6 +110,10 @@
 
         localStorage.setItem(ORIENTATION_KEY, orientation);
         localStorage.setItem(ORB_SIDE_KEY, orbSide);
+
+        // Effects listen for window resize to re-size their canvases.
+        // Wrapper dimension changes don't trigger that, so fire it manually.
+        window.dispatchEvent(new Event("resize"));
     }
 
     async function applyTheme(name) {
