@@ -96,12 +96,16 @@
             wrapper.style.left = ((vw / zoom - w) / 2) + "px";
             wrapper.style.top = ((vh / zoom - h) / 2) + "px";
             wrapper.style.transform = "rotate(90deg)";
+            document.documentElement.style.setProperty("--wrapper-h", h + "px");
         } else {
-            wrapper.style.width = (vw / zoom) + "px";
-            wrapper.style.height = (vh / zoom) + "px";
+            const w = vw / zoom;
+            const h = vh / zoom;
+            wrapper.style.width = w + "px";
+            wrapper.style.height = h + "px";
             wrapper.style.left = "0";
             wrapper.style.top = "0";
             wrapper.style.transform = "none";
+            document.documentElement.style.setProperty("--wrapper-h", h + "px");
         }
 
         localStorage.setItem(ORIENTATION_KEY, orientation);
