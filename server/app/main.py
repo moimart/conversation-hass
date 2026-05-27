@@ -2583,6 +2583,9 @@ async def lifespan(app: FastAPI):
             gateway_url=state.openclaw_gateway_url,
             hal_base_url=hal_url,
         )
+        gw_pass = os.environ.get("OPENCLAW_GATEWAY_PASS", "")
+        if gw_pass:
+            state.openclaw_client.set_gateway_password(gw_pass)
         if state.conversation:
             state.conversation.openclaw_client = state.openclaw_client
             state.conversation.on_openclaw_media = lambda r: _handle_openclaw_media(state, r)

@@ -26,7 +26,11 @@ class OpenClawClient:
         self.gateway_url = gateway_url.rstrip("/")
         self.hal_base_url = hal_base_url.rstrip("/")
         self._pending: dict[str, asyncio.Future[OpenClawResponse]] = {}
+        self._gateway_pass = ""
         self._http = httpx.AsyncClient(timeout=15.0)
+
+    def set_gateway_password(self, password: str) -> None:
+        self._gateway_pass = password
 
     async def send_message(self, text: str) -> OpenClawResponse:
         request_id = str(uuid.uuid4())
@@ -40,8 +44,11 @@ class OpenClawClient:
             "request_id": request_id,
             "sender_id": "kiosk-user",
         }
+        headers = {}
+        if self._gateway_pass:
+            headers["Authorization"] = f"Bearer {self._gateway_pass}"
         try:
-            resp = await self._http.post(webhook_url, json=payload)
+            resp = await self._http.post(webhook_url, json=payload, headers=headers)
             if resp.status_code != 200:
                 self._pending.pop(request_id, None)
                 raise RuntimeError(
