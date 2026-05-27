@@ -134,7 +134,7 @@ body {
        child past the orb's bottom edge. Both this and the orb's top
        move together — change in lockstep. */
     justify-content: flex-start;
-    padding-top: calc(32vh + 216px);
+    padding-top: calc(32% + 216px);
     box-sizing: border-box;
     position: relative;
 }
