@@ -11,13 +11,15 @@ You can control a self-hosted HAL voice assistant via its REST API. HAL is a 200
 
 The base URL of the AI server is exposed as `$HAL_SERVER_URL` (set in OpenClaw config). All requests use JSON.
 
-## How to use mcporter (MCP tool bridge)
+## How to control Home Assistant and HAL hardware
 
-`mcporter` is a CLI tool available via `exec`. Use it to call MCP
-server tools. Syntax:
+There is NO tool called "mcporter". Do NOT try to call mcporter as a tool.
+Instead, use the `exec` tool to run the `mcporter` CLI binary. This is the
+ONLY way to interact with Home Assistant and HAL hardware from this channel.
 
-```sh
-mcporter call <server>.<tool> key=value key2=value2
+**Pattern — always use exec:**
+```
+exec: mcporter call <server>.<tool> key=value key2=value2
 ```
 
 ### Available MCP servers
@@ -50,9 +52,10 @@ mcporter call hal.speak_verbatim text="Hello Master"
 
 ### Important
 
-- Do NOT route HA tasks through HAL's `/api/command` — use mcporter
-  with `berlinmcp` directly.
-- Always use `exec` to run `mcporter` commands.
+- Do NOT route HA tasks through HAL's `/api/command`.
+- There is NO tool called "mcporter" — always use `exec` to run the
+  `mcporter` CLI binary. If you get "tool mcporter not found," you
+  forgot to use exec.
 
 ## Loop prevention
 
