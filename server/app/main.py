@@ -3229,7 +3229,7 @@ async def post_snapshot(request: Request):
         try:
             from PIL import Image
             img = Image.open(io.BytesIO(body))
-            img = img.rotate(-90, expand=True)
+            img = img.rotate(90, expand=True)
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=80)
             body = buf.getvalue()
