@@ -11,15 +11,48 @@ You can control a self-hosted HAL voice assistant via its REST API. HAL is a 200
 
 The base URL of the AI server is exposed as `$HAL_SERVER_URL` (set in OpenClaw config). All requests use JSON.
 
-## Important: how to call HAL
+## How to use mcporter (MCP tool bridge)
 
-Use `mcporter` with the `hal` MCP server for HAL kiosk controls listed
-below (volume, mute, display, photo frame, calendar, cameras, speak, theme).
+`mcporter` is a CLI tool available via `exec`. Use it to call MCP
+server tools. Syntax:
 
-For everything else (Home Assistant lights, climate, sensors, service calls,
-automations, scripts, etc.) use `mcporter` with `berlinmcp` — it has full
-HA access including `ha_call_service`, `ha_get_state`, `ha_search_entities`,
-and all other HA tools. Do NOT route HA tasks through HAL's `/api/command`.
+```sh
+mcporter call <server>.<tool> key=value key2=value2
+```
+
+### Available MCP servers
+
+- **`berlinmcp`** — Full Home Assistant access: `ha_call_service`,
+  `ha_get_state`, `ha_search_entities`, `ha_get_history`, and all
+  other HA tools. Use this for lights, climate, sensors, automations,
+  scripts, service calls, etc.
+- **`hal`** — HAL kiosk controls: volume, mute, display power, photo
+  frame, calendar, cameras, speak, and theme.
+
+### Examples
+
+```sh
+# Turn on a light
+mcporter call berlinmcp.ha_call_service domain=light service=turn_on entity_id=light.office
+
+# Get entity state
+mcporter call berlinmcp.ha_get_state entity_id=sun.sun
+
+# Search for entities
+mcporter call berlinmcp.ha_search_entities query=light domain=light
+
+# Show photo frame on HAL kiosk
+mcporter call hal.show_photo_frame
+
+# Speak text on HAL kiosk
+mcporter call hal.speak_verbatim text="Hello Master"
+```
+
+### Important
+
+- Do NOT route HA tasks through HAL's `/api/command` — use mcporter
+  with `berlinmcp` directly.
+- Always use `exec` to run `mcporter` commands.
 
 ## Loop prevention
 
