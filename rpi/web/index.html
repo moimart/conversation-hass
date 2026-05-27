@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
 </head>
 <body>
+    <div id="orientation-wrapper">
     <!-- Matrix digital-rain background canvas — visible only on theme-matrix -->
     <canvas id="matrix-rain"></canvas>
 
@@ -140,6 +141,8 @@
     <!-- Photo frame — full-screen ambient image with white clock overlay.
          Empty at rest; photo_frame.js populates on first show_photo_frame. -->
     <div class="photo-frame-stage" id="photo-frame-root" aria-hidden="true"></div>
+
+    </div><!-- /orientation-wrapper -->
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5/dist/hls.min.js" defer></script>
     <script src="app.js"></script>

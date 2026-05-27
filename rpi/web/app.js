@@ -70,8 +70,15 @@
     }
 
     function applyOrientation(orientation, orbSide) {
-        orientation = (orientation || "portrait").toLowerCase();
+        orientation = (orientation || "landscape").toLowerCase();
         orbSide = (orbSide || "left").toLowerCase();
+        const wrapper = document.getElementById("orientation-wrapper");
+        if (!wrapper) return;
+
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+
         document.body.classList.remove(
             "orientation-portrait", "orientation-landscape",
             "orb-left", "orb-right"
@@ -80,6 +87,23 @@
         if (orientation === "landscape") {
             document.body.classList.add(`orb-${orbSide}`);
         }
+
+        if (orientation === "portrait") {
+            const w = vh / zoom;
+            const h = vw / zoom;
+            wrapper.style.width = w + "px";
+            wrapper.style.height = h + "px";
+            wrapper.style.left = ((vw / zoom - w) / 2) + "px";
+            wrapper.style.top = ((vh / zoom - h) / 2) + "px";
+            wrapper.style.transform = "rotate(90deg)";
+        } else {
+            wrapper.style.width = (vw / zoom) + "px";
+            wrapper.style.height = (vh / zoom) + "px";
+            wrapper.style.left = "0";
+            wrapper.style.top = "0";
+            wrapper.style.transform = "none";
+        }
+
         localStorage.setItem(ORIENTATION_KEY, orientation);
         localStorage.setItem(ORB_SIDE_KEY, orbSide);
     }
@@ -176,9 +200,17 @@
 
     // Restore orientation from localStorage (server pushes authoritative value on connect).
     applyOrientation(
-        localStorage.getItem(ORIENTATION_KEY) || "portrait",
+        localStorage.getItem(ORIENTATION_KEY) || "landscape",
         localStorage.getItem(ORB_SIDE_KEY) || "left"
     );
+
+    // Reapply wrapper dimensions on resize (e.g., if Chromium resizes).
+    window.addEventListener("resize", () => {
+        applyOrientation(
+            localStorage.getItem(ORIENTATION_KEY) || "landscape",
+            localStorage.getItem(ORB_SIDE_KEY) || "left"
+        );
+    });
 
     // --- WebSocket ---
     function connect() {
