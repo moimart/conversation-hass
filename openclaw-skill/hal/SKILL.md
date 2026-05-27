@@ -13,10 +13,13 @@ The base URL of the AI server is exposed as `$HAL_SERVER_URL` (set in OpenClaw c
 
 ## Important: how to call HAL
 
-Use `mcporter` with the `hal` MCP server for all HAL controls: volume,
-mute, display power, photo frame, calendar, cameras, speak, and theme.
-Use `mcporter` with the `berlinmcp` server for Home Assistant tasks
-(lights, climate, sensors). Do NOT route HA tasks through HAL.
+Use `mcporter` with the `hal` MCP server for HAL kiosk controls listed
+below (volume, mute, display, photo frame, calendar, cameras, speak, theme).
+
+For everything else (Home Assistant lights, climate, sensors, service calls,
+automations, scripts, etc.) use `mcporter` with `berlinmcp` — it has full
+HA access including `ha_call_service`, `ha_get_state`, `ha_search_entities`,
+and all other HA tools. Do NOT route HA tasks through HAL's `/api/command`.
 
 ## Loop prevention
 
