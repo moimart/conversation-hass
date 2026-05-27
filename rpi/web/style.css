@@ -134,7 +134,7 @@ body {
        child past the orb's bottom edge. Both this and the orb's top
        move together — change in lockstep. */
     justify-content: flex-start;
-    padding-top: calc(38vh + 216px);
+    padding-top: calc(32vh + 216px);
     box-sizing: border-box;
     position: relative;
 }
@@ -166,7 +166,7 @@ body {
        counters the bumped page zoom so the orb is +20% rather than
        +25% over the previous baseline. */
     position: absolute;
-    top: 38%;
+    top: 32%;
     left: 50%;
     transform: translate(-50%, -50%) scale(0.96);
     width: 406px;
@@ -1207,9 +1207,10 @@ body.orientation-landscape #app {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: 1fr;
     padding-top: 0;
-    height: 100%;
+    height: calc(100vh * 691px / 100vmin);
     align-items: stretch;
     gap: 0;
+    overflow: hidden;
 }
 
 body.orientation-landscape .eye-container {
@@ -1223,20 +1224,19 @@ body.orientation-landscape .eye-container {
     align-self: center;
 }
 
-/* Text column: stack status, transcript, response vertically */
 body.orientation-landscape .status-bar {
     grid-column: 2;
     grid-row: 1;
-    align-self: start;
-    margin-top: 20%;
+    align-self: center;
+    margin-top: -15%;
     margin-bottom: 0;
 }
 
 body.orientation-landscape .ptt-chip {
     grid-column: 2;
     grid-row: 1;
-    align-self: start;
-    margin-top: 26%;
+    align-self: center;
+    margin-top: -8%;
 }
 
 body.orientation-landscape .transcript-container {
@@ -1256,10 +1256,9 @@ body.orientation-landscape .transcript-scroll {
 body.orientation-landscape .response-container {
     grid-column: 2;
     grid-row: 1;
-    align-self: end;
+    align-self: center;
     width: min(500px, 42vw);
-    margin-bottom: 20%;
-    margin-top: 0;
+    margin-top: 15%;
 }
 
 /* Orb-right variant: swap columns */
