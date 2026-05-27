@@ -495,10 +495,6 @@ class AudioManager:
             await self.broadcast_to_ui(msg)
 
         elif msg_type == "set_orientation":
-            orientation = (msg.get("orientation") or "portrait").lower()
-            if self._display:
-                transform = "270" if orientation == "portrait" else "normal"
-                self._display.set_transform(transform)
             await self.broadcast_to_ui(msg)
 
     def handle_binary_data(self, data: bytes):
