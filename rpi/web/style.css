@@ -1241,10 +1241,10 @@ body.orientation-portrait.show-calendar .calendar-stage {
 body.orientation-landscape #app {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr;
+    grid-template-rows: auto auto 1fr auto;
     padding-top: 0;
     height: calc(100vh * 691px / 100vmin);
-    align-items: stretch;
+    align-items: start;
     gap: 0;
     overflow: hidden;
 }
@@ -1255,7 +1255,7 @@ body.orientation-landscape .eye-container {
     left: auto;
     transform: scale(0.85);
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / -1;
     justify-self: center;
     align-self: center;
 }
@@ -1263,25 +1263,23 @@ body.orientation-landscape .eye-container {
 body.orientation-landscape .status-bar {
     grid-column: 2;
     grid-row: 1;
-    align-self: center;
-    margin-top: -15%;
-    margin-bottom: 0;
+    margin-top: 18%;
+    margin-bottom: 8px;
 }
 
 body.orientation-landscape .ptt-chip {
     grid-column: 2;
-    grid-row: 1;
-    align-self: center;
-    margin-top: -8%;
+    grid-row: 2;
+    margin-bottom: 8px;
 }
 
 body.orientation-landscape .transcript-container {
     grid-column: 2;
-    grid-row: 1;
-    align-self: center;
+    grid-row: 3;
     width: min(500px, 42vw);
     max-height: 2.5em;
     overflow: hidden;
+    align-self: start;
     margin-top: 0;
 }
 
@@ -1291,10 +1289,11 @@ body.orientation-landscape .transcript-scroll {
 
 body.orientation-landscape .response-container {
     grid-column: 2;
-    grid-row: 1;
-    align-self: center;
+    grid-row: 4;
     width: min(500px, 42vw);
-    margin-top: 15%;
+    align-self: start;
+    margin-top: 8px;
+    margin-bottom: 18%;
 }
 
 /* Orb-right variant: swap columns */
