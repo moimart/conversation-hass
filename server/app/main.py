@@ -3225,6 +3225,17 @@ async def post_snapshot(request: Request):
     if not body:
         return {"status": "error", "message": "Empty body"}
 
+    if state.display_orientation == "portrait":
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(body))
+            img = img.rotate(-90, expand=True)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=80)
+            body = buf.getvalue()
+        except Exception as e:
+            log.warning(f"Snapshot rotation failed: {e}")
+
     # Cache for GET /api/snapshot.jpg
     state.last_snapshot = body
 
