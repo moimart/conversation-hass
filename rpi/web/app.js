@@ -54,7 +54,7 @@
             const mod = await import(`/themes/${encodeURIComponent(name)}/effect.js`);
             const setup = mod.default;
             if (typeof setup !== "function") return null;
-            const ctrl = setup({ root: document.body });
+            const ctrl = setup({ root: document.getElementById("orientation-wrapper") || document.body });
             loadedEffects.set(name, ctrl);
             return ctrl;
         } catch (e) {

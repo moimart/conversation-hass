@@ -23,19 +23,22 @@ export default function setup({ root }) {
     let onResize = null;
     const fontSize = 18;
 
+    function areaW() { return (canvas.parentElement && canvas.parentElement.clientWidth) || window.innerWidth; }
+    function areaH() { return (canvas.parentElement && canvas.parentElement.clientHeight) || window.innerHeight; }
+
     function resize() {
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
+        canvas.width = areaW() * dpr;
+        canvas.height = areaH() * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        const cols = Math.floor(window.innerWidth / fontSize);
+        const cols = Math.floor(areaW() / fontSize);
         drops = new Array(cols).fill(0).map(() => Math.random() * -50);
     }
 
     function tick() {
         if (raf === null) return;
         ctx.fillStyle = "rgba(0, 8, 6, 0.08)";
-        ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+        ctx.fillRect(0, 0, areaW(), areaH());
         ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
         ctx.textBaseline = "top";
         for (let i = 0; i < drops.length; i++) {
@@ -45,7 +48,7 @@ export default function setup({ root }) {
             ctx.fillText(ch, i * fontSize, y);
             ctx.fillStyle = "#00ff41";
             ctx.fillText(ch, i * fontSize, y - fontSize);
-            if (y > window.innerHeight && Math.random() > 0.975) {
+            if (y > areaH() && Math.random() > 0.975) {
                 drops[i] = 0;
             }
             drops[i] += 1;

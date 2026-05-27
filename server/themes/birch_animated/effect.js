@@ -17,10 +17,10 @@ export default function setup({ root }) {
     const canvas = root.ownerDocument.createElement("canvas");
     canvas.id = "birch-animated-fx";
     Object.assign(canvas.style, {
-        position: "fixed",
+        position: "absolute",
         inset: "0",
-        width: "100vw",
-        height: "100vh",
+        width: "100%",
+        height: "100%",
         zIndex: "0",
         pointerEvents: "none",
         opacity: "0",
@@ -93,10 +93,13 @@ export default function setup({ root }) {
     const FRAME_INTERVAL_MS = 1000 / 30;
     let nextTick = 0;
 
+    function areaW() { return root.clientWidth || window.innerWidth; }
+    function areaH() { return root.clientHeight || window.innerHeight; }
+
     function resize() {
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
+        canvas.width = areaW() * dpr;
+        canvas.height = areaH() * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -107,8 +110,8 @@ export default function setup({ root }) {
         // gives a useful size range without spawning a second sprite.
         const scale = rand(0.55, 1.0);
         return {
-            x: rand(-30, window.innerWidth + 30),
-            y: seedAnywhere ? rand(0, window.innerHeight) : rand(-120, -20),
+            x: rand(-30, areaW() + 30),
+            y: seedAnywhere ? rand(0, areaH()) : rand(-120, -20),
             scale,
             rot: rand(0, Math.PI * 2),
             rotSpeed: rand(-0.30, 0.30),
@@ -124,7 +127,7 @@ export default function setup({ root }) {
     function ensureCount() {
         // Tighter than before (max 16) — sprites are easier on the RPi
         // but lower count is still free perf.
-        const target = Math.min(16, Math.max(8, Math.floor(window.innerWidth * window.innerHeight / 110000)));
+        const target = Math.min(16, Math.max(8, Math.floor(areaW() * areaH() / 110000)));
         while (leaves.length < target) leaves.push(spawnLeaf(false));
     }
 
@@ -150,7 +153,7 @@ export default function setup({ root }) {
         nextTick = now + FRAME_INTERVAL_MS;
         const dt = (now - (lastFrame || now)) / 1000;
         lastFrame = now;
-        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        ctx.clearRect(0, 0, areaW(), areaH());
         ensureCount();
         for (const l of leaves) {
             l.y += l.vy * dt;
@@ -158,7 +161,7 @@ export default function setup({ root }) {
             l.rot += l.rotSpeed * dt;
             drawLeaf(l);
         }
-        leaves = leaves.filter(l => l.y - SPRITE_SIZE * l.scale * 0.6 < window.innerHeight + 30);
+        leaves = leaves.filter(l => l.y - SPRITE_SIZE * l.scale * 0.6 < areaH() + 30);
         raf = requestAnimationFrame(tick);
     }
 

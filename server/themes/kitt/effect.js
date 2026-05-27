@@ -12,11 +12,11 @@ export default function setup({ root }) {
     // above either, so it never overlaps.
     const HEIGHT_PX = 28;
     Object.assign(canvas.style, {
-        position: "fixed",
+        position: "absolute",
         left: "50%",
         bottom: "110px",
         transform: "translateX(-50%)",
-        width: "min(540px, 60vw)",
+        width: "min(540px, 60%)",
         height: HEIGHT_PX + "px",
         zIndex: "5",
         pointerEvents: "none",

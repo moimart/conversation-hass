@@ -11,10 +11,10 @@ export default function setup({ root }) {
     const canvas = root.ownerDocument.createElement("canvas");
     canvas.id = "cyberpunk-fx";
     Object.assign(canvas.style, {
-        position: "fixed",
+        position: "absolute",
         inset: "0",
-        width: "100vw",
-        height: "100vh",
+        width: "100%",
+        height: "100%",
         zIndex: "0",
         pointerEvents: "none",
         opacity: "0",
@@ -30,10 +30,13 @@ export default function setup({ root }) {
     let lastGlitch = 0;
     let lastFrame = 0;
 
+    function areaW() { return root.clientWidth || window.innerWidth; }
+    function areaH() { return root.clientHeight || window.innerHeight; }
+
     function resize() {
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
+        canvas.width = areaW() * dpr;
+        canvas.height = areaH() * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -42,7 +45,7 @@ export default function setup({ root }) {
     function spawnGlitch(now) {
         // Pick a random Y near the middle band (where the orb is) so
         // the bar feels like it's cutting through HAL's eye.
-        const y = rand(window.innerHeight * 0.15, window.innerHeight * 0.85);
+        const y = rand(areaH() * 0.15, areaH() * 0.85);
         const h = rand(3, 22);
         const until = now + rand(80, 260);
         // Mostly yellow, sometimes cyan or magenta for chromatic shift.
@@ -58,26 +61,26 @@ export default function setup({ root }) {
 
         // Clear (we redraw everything every frame; cheap because the
         // canvas mostly contains thin lines and a few bars).
-        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        ctx.clearRect(0, 0, areaW(), areaH());
 
         // 1) The slow horizontal sweep — a thin yellow line drifting
         //    downward, with a long soft tail above it.
-        sweepY = (sweepY + dt * 0.06) % (window.innerHeight + 120);
+        sweepY = (sweepY + dt * 0.06) % (areaH() + 120);
         const gradient = ctx.createLinearGradient(0, sweepY - 80, 0, sweepY + 4);
         gradient.addColorStop(0, "rgba(252, 238, 10, 0)");
         gradient.addColorStop(0.85, "rgba(252, 238, 10, 0.08)");
         gradient.addColorStop(1, "rgba(252, 238, 10, 0.55)");
         ctx.fillStyle = gradient;
-        ctx.fillRect(0, sweepY - 80, window.innerWidth, 84);
+        ctx.fillRect(0, sweepY - 80, areaW(), 84);
 
         // 2) Idle static — a sparse scatter of single-pixel specks,
         //    redrawn every frame so they twinkle.
         ctx.fillStyle = "rgba(0, 240, 255, 0.18)";
-        const speckCount = Math.min(120, Math.floor(window.innerWidth / 12));
+        const speckCount = Math.min(120, Math.floor(areaW() / 12));
         for (let i = 0; i < speckCount; i++) {
             ctx.fillRect(
-                Math.random() * window.innerWidth | 0,
-                Math.random() * window.innerHeight | 0,
+                Math.random() * areaW() | 0,
+                Math.random() * areaH() | 0,
                 1, 1,
             );
         }
@@ -93,10 +96,10 @@ export default function setup({ root }) {
         glitches = glitches.filter(g => g.until > now);
         for (const g of glitches) {
             ctx.fillStyle = g.hue + "cc";  // alpha ~0.8
-            ctx.fillRect(g.shift, g.y, window.innerWidth, g.h);
+            ctx.fillRect(g.shift, g.y, areaW(), g.h);
             // A faint cyan ghost just below for chromatic-aberration vibe
             ctx.fillStyle = "rgba(0, 240, 255, 0.35)";
-            ctx.fillRect(-g.shift, g.y + 1, window.innerWidth, g.h);
+            ctx.fillRect(-g.shift, g.y + 1, areaW(), g.h);
         }
 
         raf = requestAnimationFrame(draw);

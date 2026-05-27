@@ -1315,3 +1315,14 @@ body.orientation-portrait .ambient-grid {
 body.orientation-landscape .ambient-grid {
     display: none;
 }
+
+/* Hide theme effects behind the photo frame overlay */
+body.photo-frame-active #sunset-fx,
+body.photo-frame-active #sunset-animated-fx,
+body.photo-frame-active #cyberpunk-fx,
+body.photo-frame-active #birch-animated-fx,
+body.photo-frame-active #kitt-fx,
+body.photo-frame-active #matyou-fx,
+body.photo-frame-active #matrix-rain {
+    opacity: 0 !important;
+}

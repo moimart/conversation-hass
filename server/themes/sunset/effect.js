@@ -7,10 +7,10 @@ export default function setup({ root }) {
     const canvas = root.ownerDocument.createElement("canvas");
     canvas.id = "sunset-fx";
     Object.assign(canvas.style, {
-        position: "fixed",
+        position: "absolute",
         inset: "0",
-        width: "100vw",
-        height: "100vh",
+        width: "100%",
+        height: "100%",
         zIndex: "0",
         pointerEvents: "none",
         opacity: "0",
@@ -32,10 +32,13 @@ export default function setup({ root }) {
     let onResize = null;
     let lastFrame = 0;
 
+    function areaW() { return root.clientWidth || window.innerWidth; }
+    function areaH() { return root.clientHeight || window.innerHeight; }
+
     function resize() {
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
+        canvas.width = areaW() * dpr;
+        canvas.height = areaH() * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -43,8 +46,8 @@ export default function setup({ root }) {
 
     function spawnParticle(startBelow) {
         return {
-            x: rand(0, window.innerWidth),
-            y: startBelow ? window.innerHeight + rand(10, 200) : rand(0, window.innerHeight),
+            x: rand(0, areaW()),
+            y: startBelow ? areaH() + rand(10, 200) : rand(0, areaH()),
             r: rand(28, 76),                          // bokeh radius (big & blurry)
             vy: rand(-8, -22),                        // upward drift, px/sec
             swayAmp: rand(8, 30),                     // horizontal sway amplitude
@@ -56,10 +59,7 @@ export default function setup({ root }) {
     }
 
     function ensureCount(now) {
-        // Target count scales mildly with viewport area so a 4K kiosk
-        // doesn't end up with too few specks, and a phone doesn't get
-        // overwhelmed.
-        const target = Math.min(28, Math.max(12, Math.floor(window.innerWidth * window.innerHeight / 70000)));
+        const target = Math.min(28, Math.max(12, Math.floor(areaW() * areaH() / 70000)));
         while (particles.length < target) particles.push(spawnParticle(true));
     }
 
@@ -80,7 +80,7 @@ export default function setup({ root }) {
         if (raf === null) return;
         const dt = (now - (lastFrame || now)) / 1000;
         lastFrame = now;
-        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        ctx.clearRect(0, 0, areaW(), areaH());
         ensureCount(now);
         for (const p of particles) {
             // Drift upward with a gentle horizontal sway.

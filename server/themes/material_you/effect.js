@@ -15,15 +15,13 @@ export default function setup({ root }) {
     const container = doc.createElement("div");
     container.id = "matyou-fx";
     Object.assign(container.style, {
-        position: "fixed",
+        position: "absolute",
         inset: "0",
         zIndex: "0",
         pointerEvents: "none",
         opacity: "0",
         transition: "opacity 1.2s ease",
         overflow: "hidden",
-        // Tell the browser this subtree is independent — prevents
-        // layout/paint from rippling into the rest of the page.
         contain: "layout paint",
     });
     root.appendChild(container);
