@@ -1262,18 +1262,21 @@ body.orientation-landscape .eye-container {
 body.orientation-landscape .status-bar {
     grid-column: 2;
     grid-row: 2;
+    justify-self: center;
     margin-bottom: 12px;
 }
 
 body.orientation-landscape .ptt-chip {
     grid-column: 2;
     grid-row: 3;
+    justify-self: center;
     margin-bottom: 12px;
 }
 
 body.orientation-landscape .transcript-container {
     grid-column: 2;
     grid-row: 4;
+    justify-self: center;
     width: min(500px, 42vw);
     max-height: 2.5em;
     overflow: hidden;
@@ -1287,6 +1290,7 @@ body.orientation-landscape .transcript-scroll {
 body.orientation-landscape .response-container {
     grid-column: 2;
     grid-row: 5;
+    justify-self: center;
     width: min(500px, 42vw);
     margin-top: 12px;
 }
