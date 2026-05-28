@@ -592,6 +592,75 @@ async def _handle_openclaw_media(state: AppState, response) -> None:
         break  # orb shows one thing at a time
 
 
+async def _speak_proactively(
+    state: AppState, text: str, media_urls: list[str] | None = None
+) -> bool:
+    """Speak agent-initiated text through the kiosk without a user turn.
+
+    Backs the OpenClaw channel's outbound path so the agent can push
+    reminders/notifications and have HAL say them out loud. Mirrors the
+    on_response delivery (text to UI + MQTT, TTS audio to the RPi) and
+    relies on tts_start/tts_end to drive the orb's speaking animation.
+    """
+    text = (text or "").strip()
+    media_urls = media_urls or []
+
+    # Wake the display and clear the photo frame so the message is visible.
+    _record_user_activity(state)
+    _dismiss_photo_frame_async(state, reason="openclaw_say")
+
+    if media_urls:
+        class _MediaOnly:
+            pass
+        m = _MediaOnly()
+        m.media_urls = media_urls
+        try:
+            await _handle_openclaw_media(state, m)
+        except Exception as e:
+            log.warning(f"proactive media dispatch failed: {e}")
+
+    if not text:
+        return True  # media-only push
+
+    ws = state.audio_websocket
+
+    audio_bytes = None
+    if state.tts_engine:
+        try:
+            audio_bytes = await state.tts_engine.synthesize(text)
+        except Exception as e:
+            log.warning(f"proactive TTS synthesis failed: {e}")
+
+    msg = {"type": "response", "text": text}
+    if ws:
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            pass
+    await broadcast_to_ui(state, msg)
+    if state.mqtt_bridge:
+        try:
+            await state.mqtt_bridge.publish_last_response(text)
+        except Exception:
+            pass
+
+    if ws and audio_bytes:
+        try:
+            await ws.send_json({"type": "tts_start", "size": len(audio_bytes)})
+            if state.pipeline:
+                state.pipeline.set_ai_speaking(True)
+            chunk_size = 8192
+            for i in range(0, len(audio_bytes), chunk_size):
+                await ws.send_bytes(audio_bytes[i : i + chunk_size])
+            await ws.send_json({"type": "tts_end"})
+        except Exception as e:
+            if state.pipeline:
+                state.pipeline.set_ai_speaking(False)
+            log.warning(f"proactive audio send failed: {e}")
+
+    return True
+
+
 async def _dispatch_play_video(
     state: AppState,
     url: str,
@@ -3192,6 +3261,31 @@ async def post_openclaw_response(request: Request):
         return {"status": "error", "message": "request_id required"}
 
     state.openclaw_client.resolve_response(request_id, body)
+    return {"status": "ok"}
+
+
+@app.post("/api/openclaw/say")
+async def post_openclaw_say(request: Request):
+    """Proactive agent-initiated speech — no request_id, no pending turn.
+
+    The OpenClaw channel's outbound path POSTs here when the agent wants
+    to speak to the user unprompted (reminders, notifications). HAL
+    synthesizes the text and plays it through the kiosk immediately.
+    """
+    state = _get_state(app)
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "error", "message": "Invalid JSON"}
+
+    text = str(body.get("text", "") or "").strip()
+    media_urls = body.get("media_urls") or []
+    if not isinstance(media_urls, list):
+        media_urls = []
+    if not text and not media_urls:
+        return {"status": "error", "message": "text or media_urls required"}
+
+    await _speak_proactively(state, text, media_urls)
     return {"status": "ok"}
 
 
