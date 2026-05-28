@@ -1,5 +1,6 @@
 import { createChatChannelPlugin } from "openclaw/plugin-sdk/channel-core";
 import { getChatChannelMeta } from "openclaw/plugin-sdk/channel-plugin-common";
+import { inlineMediaList } from "./media.js";
 import type { HalResolvedAccount } from "./types.js";
 
 const CHANNEL_ID = "hal" as const;
@@ -32,13 +33,15 @@ async function sendToHal(
     console.error("[hal] sendToHal: halBaseUrl not configured");
     return { messageId };
   }
-  if (!text.trim() && mediaUrls.length === 0) return { messageId };
+  // Inline gateway-local files as data: URLs (HAL can't read the gateway fs).
+  const inlinedMedia = await inlineMediaList(mediaUrls);
+  if (!text.trim() && inlinedMedia.length === 0) return { messageId };
 
   try {
     const resp = await fetch(`${account.halBaseUrl}/api/openclaw/say`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, media_urls: mediaUrls }),
+      body: JSON.stringify({ text, media_urls: inlinedMedia }),
     });
     if (!resp.ok) {
       console.error(`[hal] proactive say failed: ${resp.status}`);

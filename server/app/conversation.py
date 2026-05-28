@@ -207,7 +207,12 @@ class ConversationManager:
                     oc_response = await self._run_openclaw(full_text)
                     response_text = oc_response.text or ""
                     if self.on_openclaw_media and oc_response.media_urls:
-                        await self.on_openclaw_media(oc_response)
+                        audio_media_played = await self.on_openclaw_media(oc_response)
+                        if audio_media_played:
+                            # An attached audio file is the spoken output —
+                            # don't also speak the reply text (Option A).
+                            self._suppress_final_tts = True
+                            log.info("Audio media played — suppressing text TTS")
                 except Exception as e:
                     log.error(f"OpenClaw failed ({e}), falling back to Ollama")
                     response_text = await self._run_llm_with_tools(full_text)

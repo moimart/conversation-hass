@@ -2,6 +2,7 @@ import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core";
 import { createPluginRuntimeStore } from "openclaw/plugin-sdk/runtime-store";
 import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/inbound-envelope";
 import { halPlugin } from "./channel.js";
+import { inlineMediaList } from "./media.js";
 import type { HalInboundMessage, HalOutboundMessage } from "./types.js";
 
 type PluginRuntime = any;
@@ -81,12 +82,17 @@ async function handleHalInbound(cfg: any, message: HalInboundMessage) {
     delivery: {
       deliver: async (payload: any) => {
         const text: string = payload?.text ?? "";
-        if (!text.trim() || !halBaseUrl) return;
 
-        const mediaUrls: string[] = [];
-        if (Array.isArray(payload.mediaUrls)) mediaUrls.push(...payload.mediaUrls);
+        const rawMedia: string[] = [];
+        if (Array.isArray(payload.mediaUrls)) rawMedia.push(...payload.mediaUrls);
         if (typeof payload.mediaUrl === "string" && payload.mediaUrl)
-          mediaUrls.push(payload.mediaUrl);
+          rawMedia.push(payload.mediaUrl);
+        // Inline gateway-local files as data: URLs so the Dockerized HAL
+        // server can use them (it can't read the gateway's filesystem).
+        const mediaUrls = await inlineMediaList(rawMedia);
+
+        if (!halBaseUrl) return;
+        if (!text.trim() && mediaUrls.length === 0) return;
 
         const outbound: HalOutboundMessage = {
           request_id: message.request_id,

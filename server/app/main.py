@@ -553,43 +553,63 @@ async def _stop_active_video(state: AppState) -> None:
     await broadcast_to_ui(state, msg)
 
 
-async def _handle_openclaw_media(state: AppState, response) -> None:
-    """Dispatch media from an OpenClaw response to the kiosk orb."""
-    IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
-    VIDEO_EXTS = {".mp4", ".webm", ".m3u8"}
+async def _handle_openclaw_media(state: AppState, response) -> bool:
+    """Dispatch media from an OpenClaw response.
+
+    Images/video go to the orb; audio plays through the speaker. Media type
+    is determined by content-type (with an extension/data-URL fallback) so
+    extensionless URLs and inlined data: URLs route correctly. Returns True
+    if any audio was played, so the caller can suppress its own text TTS.
+    """
+    import base64
+
+    audio_played = False
+    shown_visual = False
 
     for url in (response.media_urls or []):
-        from urllib.parse import urlparse
-        import os as _os
+        try:
+            mime = _guess_mime_from_url(url)
+            if not mime and url.startswith(("http://", "https://")):
+                mime = await _probe_mime(url)
 
-        ext = _os.path.splitext(urlparse(url).path)[1].lower()
+            # Video streams by reference (URL or data: URI) — no download.
+            if mime.startswith("video/"):
+                if not shown_visual:
+                    if await _dispatch_play_video(state, url, duration_s=300):
+                        shown_visual = True
+                        log.info(f"OpenClaw video started ({mime})")
+                continue
 
-        if ext in IMAGE_EXTS:
-            try:
-                await _push_image_payload(state, url, default_duration=60)
-                log.info(f"OpenClaw image displayed: {url[:80]}")
-            except Exception as e:
-                log.warning(f"OpenClaw image dispatch failed: {e}")
-        elif ext in VIDEO_EXTS:
-            try:
-                await _dispatch_play_video(state, url, duration_s=300)
-                log.info(f"OpenClaw video started: {url[:80]}")
-            except Exception as e:
-                log.warning(f"OpenClaw video dispatch failed: {e}")
-        else:
-            try:
+            # Everything else needs the bytes.
+            resolved = await _resolve_media(url)
+            if not resolved:
+                continue
+            data, resolved_mime = resolved
+            mime = (resolved_mime or mime).lower()
+
+            if mime.startswith("image/") and not shown_visual:
+                b64 = base64.b64encode(data).decode("ascii")
+                if await _dispatch_show_image(state, b64, mime, 60):
+                    shown_visual = True
+                    log.info(f"OpenClaw image displayed ({len(data)}B {mime})")
+            elif mime.startswith("audio/"):
+                if await _dispatch_play_audio(state, data, mime):
+                    audio_played = True
+            elif url.startswith(("http://", "https://")) and not shown_visual:
+                # Unknown type with a real link — fall back to a QR code.
                 from .qr_code import generate_qr_png
-                import base64
                 qr_bytes = generate_qr_png(url)
                 if qr_bytes:
                     b64 = base64.b64encode(qr_bytes).decode("ascii")
                     await _dispatch_show_image(
                         state, b64, "image/png", 30, entity_id="qr-code"
                     )
+                    shown_visual = True
                     log.info(f"OpenClaw QR code displayed for: {url[:80]}")
-            except Exception as e:
-                log.warning(f"OpenClaw QR dispatch failed: {e}")
-        break  # orb shows one thing at a time
+        except Exception as e:
+            log.warning(f"OpenClaw media dispatch failed for {url[:80]}: {e}")
+
+    return audio_played
 
 
 async def _speak_proactively(
@@ -609,18 +629,36 @@ async def _speak_proactively(
     _record_user_activity(state)
     _dismiss_photo_frame_async(state, reason="openclaw_say")
 
+    audio_media_played = False
     if media_urls:
         class _MediaOnly:
             pass
         m = _MediaOnly()
         m.media_urls = media_urls
         try:
-            await _handle_openclaw_media(state, m)
+            audio_media_played = await _handle_openclaw_media(state, m)
         except Exception as e:
             log.warning(f"proactive media dispatch failed: {e}")
 
     if not text:
         return True  # media-only push
+
+    # Option A: an attached audio file is the spoken output — show the text
+    # but don't also synthesize TTS for it (avoids overlapping audio).
+    if audio_media_played:
+        msg = {"type": "response", "text": text}
+        if state.audio_websocket:
+            try:
+                await state.audio_websocket.send_json(msg)
+            except Exception:
+                pass
+        await broadcast_to_ui(state, msg)
+        if state.mqtt_bridge:
+            try:
+                await state.mqtt_bridge.publish_last_response(text)
+            except Exception:
+                pass
+        return True
 
     ws = state.audio_websocket
 
@@ -828,6 +866,8 @@ async def _forward_kiosk_candidate(state: AppState, session_id: str, payload: di
 
 _IMAGE_MAX_BYTES = 8 * 1024 * 1024  # 8 MB
 _IMAGE_FETCH_TIMEOUT = 10.0
+_MEDIA_MAX_BYTES = 20 * 1024 * 1024  # 20 MB cap for fetched audio/generic media
+_MEDIA_FETCH_TIMEOUT = 20.0
 
 
 async def _fetch_ollama_tags(host: str) -> list[str]:
@@ -938,6 +978,147 @@ def _detect_image_mime(data: bytes) -> str | None:
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
     return None
+
+
+def _guess_mime_from_url(url: str) -> str:
+    """Best-effort MIME from a data: URL header or a path extension. "" if unknown."""
+    if url.startswith("data:"):
+        try:
+            return url[5:].split(",", 1)[0].split(";")[0].strip().lower()
+        except Exception:
+            return ""
+    import mimetypes
+    from urllib.parse import urlparse
+    guessed, _ = mimetypes.guess_type(urlparse(url).path)
+    return (guessed or "").lower()
+
+
+async def _probe_mime(url: str) -> str:
+    """HEAD-probe an HTTP URL for its content-type. Returns "" on failure."""
+    import httpx
+    headers: dict[str, str] = {}
+    ha_url = os.environ.get("HA_URL", "").rstrip("/")
+    ha_token = os.environ.get("HA_TOKEN", "")
+    if ha_url and ha_token and url.startswith(ha_url):
+        headers["Authorization"] = f"Bearer {ha_token}"
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=_IMAGE_FETCH_TIMEOUT) as c:
+            r = await c.head(url, headers=headers)
+            return (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+    except Exception:
+        return ""
+
+
+async def _resolve_media(url: str) -> tuple[bytes, str] | None:
+    """Resolve a media reference to (bytes, mime).
+
+    Handles data: URIs (decoded inline) and http(s) URLs (fetched, capped at
+    _MEDIA_MAX_BYTES). Local file paths are intentionally unsupported — the
+    channel plugin inlines those as data: URLs before they reach the server.
+    """
+    if url.startswith("data:"):
+        try:
+            header, b64 = url.split(",", 1)
+            mime = header[5:].split(";")[0].strip().lower() or "application/octet-stream"
+            import base64
+            return base64.b64decode(b64), mime
+        except Exception as e:
+            log.warning(f"bad data URL: {e}")
+            return None
+
+    if url.startswith("http://") or url.startswith("https://"):
+        import httpx
+        headers: dict[str, str] = {}
+        ha_url = os.environ.get("HA_URL", "").rstrip("/")
+        ha_token = os.environ.get("HA_TOKEN", "")
+        if ha_url and ha_token and url.startswith(ha_url):
+            headers["Authorization"] = f"Bearer {ha_token}"
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True, timeout=_MEDIA_FETCH_TIMEOUT, max_redirects=3
+            ) as client:
+                r = await client.get(url, headers=headers)
+                r.raise_for_status()
+                mime = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+                data = r.content
+                if len(data) > _MEDIA_MAX_BYTES:
+                    log.warning(f"media at {url[:80]} is {len(data)}B, cap {_MEDIA_MAX_BYTES}")
+                    return None
+                if not mime:
+                    mime = _guess_mime_from_url(url) or "application/octet-stream"
+                return data, mime
+        except Exception as e:
+            log.warning(f"media fetch failed for {url[:80]}: {e}")
+            return None
+
+    log.warning(f"unsupported media reference (not http/data): {url[:80]}")
+    return None
+
+
+async def _transcode_to_wav(data: bytes) -> bytes | None:
+    """Transcode arbitrary audio bytes to 16-bit PCM WAV via ffmpeg.
+
+    Uses a temp file for output so the WAV header sizes are finalized
+    correctly (pipe output leaves placeholder sizes that wave.open mis-reads).
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        inp = os.path.join(d, "in")
+        outp = os.path.join(d, "out.wav")
+        with open(inp, "wb") as f:
+            f.write(data)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-i", inp, "-acodec", "pcm_s16le", outp,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            _, err = await proc.communicate()
+            if proc.returncode != 0:
+                log.warning(f"ffmpeg transcode failed: {err.decode('utf-8', 'replace')[:200]}")
+                return None
+            with open(outp, "rb") as f:
+                return f.read()
+        except FileNotFoundError:
+            log.warning("ffmpeg not found — cannot transcode audio")
+            return None
+        except Exception as e:
+            log.warning(f"audio transcode error: {e}")
+            return None
+
+
+async def _dispatch_play_audio(state: AppState, data: bytes, mime: str) -> bool:
+    """Play an arbitrary audio payload through the kiosk speaker.
+
+    Transcodes to WAV and streams it over the existing tts_start/tts_end
+    protocol (the same path TTS uses). Returns True if audio was sent.
+    """
+    wav = await _transcode_to_wav(data)
+    if not wav:
+        return False
+
+    ws = state.audio_websocket
+    if not ws:
+        log.warning("audio play requested but no RPi connected")
+        return False
+
+    _record_user_activity(state)
+    _dismiss_photo_frame_async(state, reason="openclaw_audio")
+    try:
+        await ws.send_json({"type": "tts_start", "size": len(wav)})
+        if state.pipeline:
+            state.pipeline.set_ai_speaking(True)
+        chunk_size = 8192
+        for i in range(0, len(wav), chunk_size):
+            await ws.send_bytes(wav[i : i + chunk_size])
+        await ws.send_json({"type": "tts_end"})
+        log.info(f"OpenClaw audio played ({len(data)}B {mime} -> {len(wav)}B WAV)")
+        return True
+    except Exception as e:
+        if state.pipeline:
+            state.pipeline.set_ai_speaking(False)
+        log.warning(f"audio send failed: {e}")
+        return False
 
 
 async def _dispatch_show_image(
