@@ -82,6 +82,8 @@ class MQTTBridge:
         self.on_config_fallback_ollama_model: Callable[[str], Awaitable[None]] | None = None
         self.on_config_num_ctx: Callable[[int], Awaitable[None]] | None = None
         self.on_config_auto_theme: Callable[[bool], Awaitable[None]] | None = None
+        self.on_config_router_enabled: Callable[[bool], Awaitable[None]] | None = None
+        self.on_config_router_model: Callable[[str], Awaitable[None]] | None = None
         # Calendar overlay callbacks. on_calendar_show receives a dict like
         # {"view": "month"|"week"|"day", "calendar_name"?: str, "duration_s"?: int}.
         self.on_calendar_show: Callable[[dict], Awaitable[None]] | None = None
@@ -157,6 +159,8 @@ class MQTTBridge:
         # HA Number entity exposes exactly what the current model supports.
         self.num_ctx_max: int = 131072
         self._cached_config_auto_theme: bool = True
+        self._cached_config_router_enabled: bool = False
+        self._cached_config_router_model: str = ""
         # Calendar config caches
         self._cached_config_calendar_default_source: str = ""
         self._cached_config_calendar_dismiss_seconds: int = 30
@@ -544,6 +548,38 @@ class MQTTBridge:
                 "payload_on": "ON",
                 "payload_off": "OFF",
                 "icon": "mdi:theme-light-dark",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+        # Router model — a small LLM that decides Ollama vs OpenClaw per command.
+        # On/off switch + model picker (with a "(none)" sentinel → empty wire).
+        configs.append((
+            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_router_enabled/config",
+            {
+                "name": "Router Model Enabled",
+                "unique_id": f"{self.device_id}_config_router_enabled",
+                "state_topic":   f"{self.base}/config/router_enabled/state",
+                "command_topic": f"{self.base}/config/router_enabled/set",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "icon": "mdi:call-split",
+                "availability": avail,
+                "device": device,
+                "entity_category": "config",
+            },
+        ))
+        _NONE_ROUTER = "(none — disabled)"
+        configs.append((
+            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_router_model/config",
+            {
+                "name": "Router Model",
+                "unique_id": f"{self.device_id}_config_router_model",
+                "state_topic":   f"{self.base}/config/router_model/state",
+                "command_topic": f"{self.base}/config/router_model/set",
+                "options": [_NONE_ROUTER] + (list(self.model_options) if self.model_options else []),
+                "icon": "mdi:directions-fork",
                 "availability": avail,
                 "device": device,
                 "entity_category": "config",
@@ -955,6 +991,12 @@ class MQTTBridge:
                     await self.publish_config_orb_side(
                         self._cached_config_orb_side
                     )
+                    await self.publish_config_router_enabled(
+                        self._cached_config_router_enabled
+                    )
+                    await self.publish_config_router_model(
+                        self._cached_config_router_model
+                    )
                     await self.publish_conversation_engine(
                         self._cached_conversation_engine
                     )
@@ -996,6 +1038,8 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/config/openclaw_workspace/set")
                     await client.subscribe(f"{self.base}/config/display_orientation/set")
                     await client.subscribe(f"{self.base}/config/orb_side/set")
+                    await client.subscribe(f"{self.base}/config/router_enabled/set")
+                    await client.subscribe(f"{self.base}/config/router_model/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -1201,6 +1245,18 @@ class MQTTBridge:
                 if val in ("left", "right") and self.on_config_orb_side:
                     await self.on_config_orb_side(val)
 
+            elif topic == f"{self.base}/config/router_enabled/set":
+                if self.on_config_router_enabled:
+                    await self.on_config_router_enabled(payload.strip().upper() == "ON")
+
+            elif topic == f"{self.base}/config/router_model/set":
+                if self.on_config_router_model:
+                    raw = payload.strip()
+                    # Map the "(none — disabled)" sentinel back to empty string.
+                    if raw.startswith("(none"):
+                        raw = ""
+                    await self.on_config_router_model(raw)
+
             elif topic == f"{self.base}/ptt/start":
                 if self.on_ptt_start:
                     await self.on_ptt_start()
@@ -1378,6 +1434,22 @@ class MQTTBridge:
         await self._safe_publish(
             f"{self.base}/config/auto_theme/state",
             "ON" if value else "OFF",
+        )
+
+    async def publish_config_router_enabled(self, value: bool):
+        self._cached_config_router_enabled = bool(value)
+        await self._safe_publish(
+            f"{self.base}/config/router_enabled/state",
+            "ON" if value else "OFF",
+        )
+
+    async def publish_config_router_model(self, value: str):
+        # Empty wire value renders as the "(none — disabled)" sentinel in HA.
+        value = (value or "").strip()
+        self._cached_config_router_model = value
+        await self._safe_publish(
+            f"{self.base}/config/router_model/state",
+            value if value else "(none — disabled)",
         )
 
     async def publish_config_calendar_default_source(self, value: str):

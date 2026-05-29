@@ -39,6 +39,8 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "openclaw_workspace":        ("OPENCLAW_WORKSPACE", ""),
     "display_orientation":       ("DISPLAY_ORIENTATION", "portrait"),
     "orb_side":                  ("ORB_SIDE", "left"),
+    "router_enabled":            ("ROUTER_ENABLED", False),
+    "router_model":              ("ROUTER_MODEL", ""),
 }
 
 

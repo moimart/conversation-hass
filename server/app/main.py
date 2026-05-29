@@ -111,6 +111,9 @@ class AppState:
     # Display orientation
     display_orientation: str = "portrait"
     orb_side: str = "left"
+    # Router model (Ollama-vs-OpenClaw fast-path decision)
+    router_enabled: bool = False
+    router_model: str = ""
 
 
 def _generate_chime() -> bytes:
@@ -2148,6 +2151,8 @@ async def lifespan(app: FastAPI):
         num_ctx=int(cfg.get("num_ctx", os.environ.get("OLLAMA_NUM_CTX", "32768")) or 32768),
         num_predict=int(os.environ.get("OLLAMA_NUM_PREDICT", "512")),
         fallback_ollama_model=str(cfg.get("fallback_ollama_model", "") or ""),
+        router_enabled=bool(cfg.get("router_enabled", False)),
+        router_model=str(cfg.get("router_model", "") or ""),
     )
 
     # Apply tts_voice from runtime config (overrides whatever the engine
@@ -2187,6 +2192,14 @@ async def lifespan(app: FastAPI):
     # Display orientation
     state.display_orientation = str(cfg.get("display_orientation", "portrait"))
     state.orb_side = str(cfg.get("orb_side", "left"))
+
+    # Router model
+    state.router_enabled = bool(cfg.get("router_enabled", False))
+    state.router_model = str(cfg.get("router_model", "") or "")
+    log.info(
+        f"Router config: enabled={state.router_enabled}, "
+        f"model={state.router_model or '(none)'}"
+    )
 
     # Daily dusk/dawn theme scheduler
     if state.auto_theme:
@@ -2609,6 +2622,9 @@ async def lifespan(app: FastAPI):
         # Display orientation
         bridge._cached_config_display_orientation = state.display_orientation
         bridge._cached_config_orb_side = state.orb_side
+        # Router model
+        bridge._cached_config_router_enabled = state.router_enabled
+        bridge._cached_config_router_model = state.router_model
         async def _mqtt_calendar_show(args: dict):
             view = (args.get("view") or "month").lower()
             calendar_name = (args.get("calendar_name") or "").strip()
@@ -2773,6 +2789,31 @@ async def lifespan(app: FastAPI):
 
         bridge.on_config_display_orientation = _cfg_display_orientation
         bridge.on_config_orb_side = _cfg_orb_side
+
+        async def _cfg_router_enabled(enabled: bool):
+            state.router_enabled = bool(enabled)
+            if state.conversation is not None:
+                state.conversation.router_enabled = state.router_enabled
+            await _persist("router_enabled", state.router_enabled)
+            await bridge.publish_config_router_enabled(state.router_enabled)
+
+        async def _cfg_router_model(name: str):
+            # Empty string = no router model. Anything non-empty must be in
+            # the discovered model list (when we have one).
+            name = (name or "").strip()
+            if name and state.model_options and name not in state.model_options:
+                log.warning(
+                    f"config router_model rejected: {name!r} not in {state.model_options}"
+                )
+                return
+            state.router_model = name
+            if state.conversation is not None:
+                state.conversation.router_model = name
+            await _persist("router_model", name)
+            await bridge.publish_config_router_model(name)
+
+        bridge.on_config_router_enabled = _cfg_router_enabled
+        bridge.on_config_router_model = _cfg_router_model
 
         bridge.on_volume_set = _mqtt_volume
         bridge.on_mute_set = _mqtt_mute

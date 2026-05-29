@@ -41,6 +41,8 @@ services:
       - OPENCLAW_GATEWAY_PASS=${OPENCLAW_GATEWAY_PASS:-}
       - DISPLAY_ORIENTATION=${DISPLAY_ORIENTATION:-portrait}
       - ORB_SIDE=${ORB_SIDE:-left}
+      - ROUTER_ENABLED=${ROUTER_ENABLED:-false}
+      - ROUTER_MODEL=${ROUTER_MODEL:-}
     volumes:
       - ./server/app:/app/app:ro
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro

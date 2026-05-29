@@ -29,6 +29,15 @@ use the appropriate tool. When the request is conversational, just respond natur
 If you're unsure which entity the user means, ask for clarification."""
 
 
+ROUTER_SYSTEM_PROMPT = """You are a routing classifier for a smart-home voice \
+assistant. Classify the user's command:
+- Reply SIMPLE if it is ONLY turning a light or switch on/off, or reading a \
+single sensor value (e.g. "turn off the lamp", "what's the bedroom temperature").
+- Reply COMPLEX for anything else: questions, general knowledge, scenes, \
+automations, media, multi-step requests, or anything ambiguous.
+Reply with exactly one word: SIMPLE or COMPLEX."""
+
+
 
 class ConversationManager:
     """Manages the conversation state machine and LLM interactions via MCP."""
@@ -45,6 +54,8 @@ class ConversationManager:
         num_ctx: int = 32768,
         num_predict: int = 512,
         fallback_ollama_model: str = "",
+        router_enabled: bool = False,
+        router_model: str = "",
     ):
         self.wake_word = wake_word.lower().strip() if wake_word else ""
         self.ollama_host = ollama_host.rstrip("/")
@@ -60,6 +71,13 @@ class ConversationManager:
         self.memory = memory_client
         self.num_ctx = num_ctx
         self.num_predict = num_predict
+
+        # Router model: a tiny, fast LLM that decides — per command — whether
+        # to use the local Ollama path or the OpenClaw agent. Only consulted
+        # when OpenClaw is live (see on_silence). Both are mutated at runtime
+        # by the config handlers, like ollama_model.
+        self.router_enabled = bool(router_enabled)
+        self.router_model = (router_model or "").strip()
 
         # State: idle, listening, processing, speaking
         self.state = "idle"
@@ -201,8 +219,21 @@ class ConversationManager:
         memory_remember_s = 0.0
         tts_s = 0.0
 
+        route_s = 0.0
         try:
-            if self.openclaw_client is not None:
+            # Decide engine. OpenClaw is only "live" when its client is set —
+            # the OpenClaw Enabled toggle nulls it when off, so this check also
+            # covers configured-but-disabled. The router only runs when there's
+            # genuinely a choice to make (OpenClaw live) and it's turned on.
+            use_openclaw = self.openclaw_client is not None
+            if use_openclaw and self.router_enabled and self.router_model:
+                t_route = time.monotonic()
+                decision = await self._route_decision(full_text)
+                route_s = time.monotonic() - t_route
+                use_openclaw = (decision != "ollama")
+                log.info(f"[router] {self.router_model} → {decision} in {route_s:.2f}s")
+
+            if use_openclaw:
                 try:
                     oc_response = await self._run_openclaw(full_text)
                     response_text = oc_response.text or ""
@@ -261,6 +292,7 @@ class ConversationManager:
             if self.on_metrics:
                 metrics = {
                     "task_total_s": round(task_total_s, 2),
+                    "route_s": round(route_s, 2),
                     "llm_total_s": round(self._llm_metrics_acc.get("llm_total_s", 0.0), 2),
                     "tools_total_s": round(self._llm_metrics_acc.get("tools_total_s", 0.0), 2),
                     "memory_recall_s": round(self._llm_metrics_acc.get("memory_recall_s", 0.0), 2),
@@ -432,6 +464,36 @@ class ConversationManager:
         fallback = "I've completed the action."
         self.history.append({"role": "assistant", "content": fallback})
         return fallback
+
+    async def _route_decision(self, user_text: str) -> str:
+        """Ask the small router model which engine should handle this command.
+
+        Returns "ollama" for simple commands (light/switch on-off, single
+        sensor read) or "openclaw" for everything else. Self-contained,
+        tool-free, tiny context. Any error or unexpected output → "openclaw"
+        so we never silently lose the agent's capability.
+        """
+        payload = {
+            "model": self.router_model,
+            "messages": [
+                {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
+            "stream": False,
+            "keep_alive": -1,
+            "options": {"temperature": 0, "num_predict": 16, "num_ctx": 2048},
+        }
+        try:
+            resp = await self._http.post(
+                f"{self.ollama_host}/api/chat",
+                json=payload,
+            )
+            resp.raise_for_status()
+            out = (resp.json().get("message", {}).get("content") or "").strip().lower()
+        except Exception as e:
+            log.warning(f"[router] decision failed ({e}) → openclaw")
+            return "openclaw"
+        return "ollama" if ("ollama" in out or "simple" in out) else "openclaw"
 
     async def _chat_completion(
         self,
