@@ -1,7 +1,6 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 websockets==14.1
-faster-whisper==1.1.0
 silero-vad>=5.1
 numpy==1.26.4
 httpx==0.28.1
@@ -10,6 +9,8 @@ resemblyzer==0.1.3
 librosa==0.10.2
 soundfile==0.12.1
 mcp>=1.0.0
-nemo_toolkit[asr]>=2.0.0
 aiomqtt==2.3.0
 qrcode[pil]==8.0
+# STT (faster-whisper, nemo_toolkit[asr]) moved to stt-service/. The main
+# server uses STT_ENGINE=remote (RemoteTranscriber) and only keeps the local
+# audio front-end: silero-vad (VAD) + resemblyzer (speaker/echo) + librosa.

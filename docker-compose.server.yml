@@ -23,8 +23,8 @@ services:
       - WYOMING_TTS_PORT=${WYOMING_TTS_PORT:-10200}
       - WYOMING_TTS_VOICE=${WYOMING_TTS_VOICE:-}
       - SAMPLE_RATE=${SAMPLE_RATE:-48000}
-      - STT_ENGINE=${STT_ENGINE:-whisper}
-      - STT_MODEL=${STT_MODEL:-}
+      - STT_ENGINE=remote
+      - STT_REMOTE_URL=${STT_REMOTE_URL:-http://stt-service:8770}
       - MEMORY_URL=${MEMORY_URL:-http://shodh-memory:3030}
       - MEMORY_USER_ID=${MEMORY_USER_ID:-hal-default}
       - MEMORY_API_KEY=${MEMORY_API_KEY:-sk-shodh-dev-default}
@@ -65,6 +65,30 @@ services:
     depends_on:
       - shodh-memory
       - go2rtc
+      - stt-service
+
+  stt-service:
+    build:
+      context: .
+      dockerfile: stt-service/Dockerfile
+    container_name: hal-stt-service
+    restart: unless-stopped
+    ports:
+      - "8770:8770"
+    environment:
+      - STT_ENGINE=${STT_ENGINE:-whisper}
+      - STT_MODEL=${STT_MODEL:-}
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+      - ./server/models:/app/models
+      - /etc/localtime:/etc/localtime:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   go2rtc:
     image: alexxit/go2rtc:latest

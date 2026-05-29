@@ -30,8 +30,8 @@ ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 
-# Python dependencies — pre-install build deps needed by NeMo for metadata generation
-RUN pip3 install --no-cache-dir numpy==1.26.4 setuptools wheel Cython typing_extensions
+# Pin numpy before the rest so resemblyzer/librosa resolve against it.
+RUN pip3 install --no-cache-dir numpy==1.26.4
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 

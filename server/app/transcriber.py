@@ -7,10 +7,12 @@ executor and track consecutive failures to trigger a full model reload.
 
 import asyncio
 import logging
+import os
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 
+import httpx
 import numpy as np
 
 log = logging.getLogger("hal.transcriber")
@@ -232,16 +234,99 @@ class NemotronTranscriber(BaseTranscriber):
         return str(results[0]).strip()
 
 
+class RemoteTranscriber(BaseTranscriber):
+    """STT via a remote transcribe(audio)->text HTTP microservice.
+
+    The local audio pipeline keeps VAD, buffering, and the partial/final
+    cadence; this only ships the float32 buffer to the STT container and
+    returns the text. It overrides the async network path instead of the
+    thread-pool _transcribe_sync path.
+
+    Discipline: this must NEVER raise into the pipeline. On any timeout or
+    connection failure it returns "" so transcription degrades to "no
+    transcript" rather than wedging process_chunk.
+    """
+
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url.rstrip("/")
+        self._client: "httpx.AsyncClient | None" = None
+
+    async def initialize(self):
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(15.0, connect=2.0),
+                limits=httpx.Limits(max_keepalive_connections=4, keepalive_expiry=60.0),
+            )
+        log.info(f"RemoteTranscriber → {self.url}")
+
+    def _transcribe_sync(self, audio: np.ndarray) -> str:
+        # Unused: RemoteTranscriber overrides transcribe() with the network path.
+        raise NotImplementedError("RemoteTranscriber uses the async network path")
+
+    def _reload_model(self):
+        # The remote service owns its own model lifecycle/reloads.
+        pass
+
+    async def warm_up(self) -> None:
+        # Wait for the remote model to be ready instead of a local dummy
+        # inference. Non-fatal: log and continue if unreachable so the AI
+        # server still starts (transcription returns "" until STT is up).
+        if self._client is None:
+            await self.initialize()
+        for _ in range(30):  # ~30s grace for remote model load + warm-up
+            try:
+                r = await self._client.get(f"{self.url}/health")
+                if r.status_code == 200:
+                    log.info("RemoteTranscriber: STT service healthy")
+                    return
+            except Exception:
+                pass
+            await asyncio.sleep(1.0)
+        log.warning("RemoteTranscriber: STT service not healthy after 30s (continuing)")
+
+    async def transcribe(self, audio: np.ndarray) -> str:
+        if len(audio) < 1600:  # < 0.1s at 16kHz — parity with the base class
+            return ""
+        if self._client is None:
+            await self.initialize()
+        body = audio.astype(np.float32).tobytes()
+        headers = {
+            "X-Sample-Rate": "16000",
+            "Content-Type": "application/octet-stream",
+        }
+        for attempt in range(2):  # one retry, on connect/read errors only
+            try:
+                r = await self._client.post(
+                    f"{self.url}/transcribe", content=body, headers=headers
+                )
+                r.raise_for_status()
+                return (r.json().get("text") or "").strip()
+            except (httpx.ConnectError, httpx.ReadError) as e:
+                if attempt == 0:
+                    continue
+                log.warning(f"RemoteTranscriber connect/read failed: {e}")
+                return ""
+            except Exception as e:
+                log.warning(f"RemoteTranscriber error: {e}")
+                return ""
+        return ""
+
+
 def create_transcriber(engine: str, model: str = "") -> BaseTranscriber:
     """
     Factory: create a transcriber by engine name.
 
-    engine: "whisper" or "nemotron"
+    engine: "whisper", "nemotron", or "remote"
     model:  model name/size (optional, uses sensible defaults)
     """
     engine = engine.lower().strip()
 
-    if engine == "nemotron":
+    if engine == "remote":
+        url = os.environ.get("STT_REMOTE_URL", "http://stt-service:8770")
+        log.info(f"Using remote STT engine → {url}")
+        return RemoteTranscriber(url=url)
+    elif engine == "nemotron":
         model_name = model or "nvidia/parakeet-tdt-0.6b-v2"
         log.info(f"Using Nemotron ASR engine: {model_name}")
         return NemotronTranscriber(model_name=model_name)
