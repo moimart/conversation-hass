@@ -66,9 +66,7 @@ services:
       - stt-service
 
   stt-service:
-    build:
-      context: .
-      dockerfile: stt-service/Dockerfile
+    image: ghcr.io/moimart/conversation-hass/hal-stt-service:latest
     container_name: hal-stt-service
     restart: unless-stopped
     ports:
