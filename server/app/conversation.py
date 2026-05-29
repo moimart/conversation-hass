@@ -481,6 +481,10 @@ class ConversationManager:
             ],
             "stream": False,
             "keep_alive": -1,
+            # Disable the model's chain-of-thought: thinking-capable models
+            # (e.g. gemma4:e2b) otherwise burn the tiny num_predict budget on
+            # reasoning tokens and return empty content. We just want the label.
+            "think": False,
             "options": {"temperature": 0, "num_predict": 16, "num_ctx": 2048},
         }
         try:
