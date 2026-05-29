@@ -114,7 +114,7 @@ docker compose -f docker-compose.server-ghcr.yml up -d
 docker compose -f docker-compose.server.yml up --build -d
 ```
 
-Brings up `hal-ai-server` (port **8765**), `hal-shodh-memory` (port **3030**), and a `go2rtc` sidecar (host networking, port **1984**).
+Brings up `hal-ai-server` (port **8765**), `hal-stt-service` (port **8770** — decoupled speech-to-text), `hal-shodh-memory` (port **3030**), and a `go2rtc` sidecar (host networking, port **1984**).
 
 ### 3. Start the Raspberry Pi
 
@@ -153,11 +153,13 @@ cd desktop && ./install.sh
 
 | Image                                                                  | Platform     | Purpose                                                            |
 |------------------------------------------------------------------------|--------------|--------------------------------------------------------------------|
-| `ghcr.io/moimart/conversation-hass/hal-ai-server:latest`               | `linux/amd64`| FastAPI server, STT, MCP routing, MQTT bridge                      |
+| `ghcr.io/moimart/conversation-hass/hal-ai-server:latest`               | `linux/amd64`| FastAPI server, VAD + transcription cadence, MCP routing, MQTT bridge |
 | `ghcr.io/moimart/conversation-hass/hal-rpi:latest`                     | `linux/arm64`| Pi audio_streamer + kiosk web UI                                   |
 | `ghcr.io/moimart/conversation-hass/hal-sendspin:latest`                | `linux/arm64`| Sendspin daemon for Music Assistant                                |
 
 Tagged versions also published (`:0.10`, etc. — the previous stable is preserved with each release for easy revert).
+
+> **`stt-service`** (decoupled speech-to-text) builds from source — it's defined in both server compose files with `build:` (context = repo root, `stt-service/Dockerfile`) and brought up automatically by `docker compose … up`. No pre-built image is published yet.
 
 ---
 
@@ -180,8 +182,9 @@ Tagged versions also published (`:0.10`, etc. — the previous stable is preserv
 | Variable             | Default                              | Description                                                |
 |----------------------|--------------------------------------|------------------------------------------------------------|
 | `WAKE_WORD`          | `hey hal`                            | Activation phrase. Empty = always-on                       |
-| `STT_ENGINE`         | `whisper`                            | `whisper` or `nemotron`                                    |
-| `STT_MODEL`          | (auto per engine)                    | Whisper: `large-v3-turbo`; Nemotron: `nvidia/parakeet-tdt-0.6b-v2` |
+| `STT_ENGINE`         | `whisper`                            | STT engine the **`stt-service`** loads: `whisper` or `nemotron`. (The AI server itself is pinned to `remote` in compose and calls the stt-service.) |
+| `STT_MODEL`          | (auto per engine)                    | Model for the stt-service engine — Whisper: `large-v3-turbo`; Nemotron: `nvidia/parakeet-tdt-0.6b-v2` |
+| `STT_REMOTE_URL`     | `http://stt-service:8770`            | Where the AI server reaches the decoupled STT service      |
 | `OLLAMA_HOST`        | `http://localhost:11434`             | Ollama API                                                 |
 | `OLLAMA_MODEL`       | `llama3.2`                           | LLM name (must support tool calling)                       |
 | `OLLAMA_NUM_CTX`     | `32768`                              | LLM context window in tokens                               |

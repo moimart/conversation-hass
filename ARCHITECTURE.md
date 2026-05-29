@@ -83,13 +83,21 @@ and [`MQTT.md`](./MQTT.md). For theme authoring see
 ```
 
 The Raspberry Pi handles all I/O — microphone capture, speaker
-playback, the kiosk UI. The AI server does everything else: speech
-recognition, language understanding, tool calls, speech synthesis,
-memory, MQTT.
+playback, the kiosk UI. The AI server orchestrates everything else:
+voice-activity detection, the transcription cadence, speaker filtering,
+language understanding, tool calls, speech synthesis, memory, MQTT.
 
-The only persistent connection between them is a single WebSocket
-(`/ws/audio`) carrying raw PCM upstream and TTS audio + JSON control
-messages downstream.
+Speech-to-text itself runs in a **separate `stt-service` container**
+(its own model + GPU load, reachable over HTTP) so it can be slimmed out
+of the AI-server image or placed on a different GPU/host. The AI server
+keeps the latency-sensitive front-end local (VAD, buffering, the
+partial/final cadence, speaker filter) and calls the remote service only
+to turn an audio buffer into text. See
+[Speech-to-Text engines](#speech-to-text-engines).
+
+The only persistent connection between the Pi and the AI server is a
+single WebSocket (`/ws/audio`) carrying raw PCM upstream and TTS audio +
+JSON control messages downstream.
 
 ---
 
@@ -184,8 +192,25 @@ messages downstream.
 
 ## Speech-to-Text engines
 
-Two STT engines are available, selectable at runtime via the
-`STT_ENGINE` environment variable:
+STT runs in its own **`stt-service`** container (port **8770**). The AI
+server talks to it through a `RemoteTranscriber` (engine `remote`) that
+POSTs a raw float32 16kHz PCM buffer to `/transcribe` and gets back
+`{"text": ...}`. The split keeps the heavy ASR model (faster-whisper /
+NeMo, CUDA, model weights) out of the AI-server image and lets STT run on
+a separate GPU or host.
+
+**What stays in the AI server (local, latency-sensitive):** Silero VAD,
+audio buffering, the partial/final transcription cadence, and the
+resemblyzer speaker/echo filter. Because the cadence stays local, live
+~0.5 s partials are preserved without any streaming protocol — the
+pipeline simply calls `transcribe()` repeatedly (partials on a 0.5 s
+tick, the final on 1.5 s of silence), and each call is one small HTTP
+round-trip. If the `stt-service` is unreachable, `RemoteTranscriber`
+returns an empty string rather than raising, so the pipeline degrades to
+"no transcript" instead of wedging.
+
+**What runs in `stt-service`:** the same two engines as before, selected
+via `STT_ENGINE` / `STT_MODEL` **on the stt-service**:
 
 | Engine               | Models                                                                | Speed       | Best for                                  |
 |----------------------|-----------------------------------------------------------------------|-------------|-------------------------------------------|
@@ -193,18 +218,21 @@ Two STT engines are available, selectable at runtime via the
 | `nemotron`           | `nvidia/parakeet-tdt-0.6b-v2`, `nvidia/parakeet-ctc-1.1b`             | ~21x faster | Real-time streaming, low latency          |
 
 ```ini
-# .env — switch to Nemotron
-STT_ENGINE=nemotron
-STT_MODEL=nvidia/parakeet-tdt-0.6b-v2
+# .env — the stt-service engine/model (the AI server is pinned to STT_ENGINE=remote)
+STT_ENGINE=whisper
+STT_MODEL=large-v3-turbo
+# Optional: where the AI server reaches the STT service
+STT_REMOTE_URL=http://stt-service:8770
 ```
 
-Both engines are included in the Docker image and share the same
-interface. Models are cached in a Docker volume across restarts.
-
-The pipeline also runs a **warm-up pass** at startup (one dummy
-inference on 1 s of silence through STT + VAD + speaker filter) so
-the first real user request doesn't pay the 1-2 s cold-start tax for
-CUDA kernel JIT and cuDNN autotuning.
+`stt-service` reuses `server/app/transcriber.py` (the same
+`WhisperTranscriber` / `NemotronTranscriber` classes, COPYd in at build
+time — single source of truth). It loads and **warms** the model at
+startup (one dummy inference on 1 s of silence) and keeps it resident, so
+the first real request doesn't pay the cold-start tax for CUDA kernel JIT
+and cuDNN autotuning. Models are cached in a Docker volume across
+restarts. The AI server waits for the service's `/health` at startup but
+treats it as non-fatal.
 
 ---
 
@@ -387,16 +415,21 @@ conversation-hass/
 │
 ├── API.md, MQTT.md, THEMES.md, ARCHITECTURE.md, README.md
 │
+├── stt-service/                       # Decoupled STT microservice (separate container)
+│   ├── Dockerfile                     # NVIDIA CUDA + faster-whisper + NeMo (build context = repo root)
+│   ├── requirements.txt               # faster-whisper, nemo_toolkit, fastapi
+│   └── app.py                         # FastAPI /transcribe + /health; reuses server/app/transcriber.py
+│
 ├── server/
-│   ├── Dockerfile                     # NVIDIA CUDA + NeMo + Whisper
-│   ├── requirements.txt               # faster-whisper, nemo_toolkit, silero-vad, mcp, aiomqtt
+│   ├── Dockerfile                     # NVIDIA CUDA (VAD + resemblyzer); ASR deps moved to stt-service
+│   ├── requirements.txt               # silero-vad, resemblyzer, librosa, mcp, aiomqtt, httpx
 │   ├── system_prompt.txt              # LLM personality (mounted read-only)
 │   ├── mcp_servers.json               # MCP server list (multi-server support)
 │   ├── themes/                        # Plug-in theme folders (manifest+theme.css+optional effect.js)
 │   └── app/
 │       ├── main.py                    # FastAPI server, WebSocket + REST endpoints
-│       ├── audio_pipeline.py          # VAD + STT engine selection + speaker filter
-│       ├── transcriber.py             # WhisperTranscriber + NemotronTranscriber
+│       ├── audio_pipeline.py          # VAD + transcription cadence + speaker filter (STT engine is remote)
+│       ├── transcriber.py             # Whisper / Nemotron / RemoteTranscriber + create_transcriber factory
 │       ├── speaker_filter.py          # Voice embedding comparison (resemblyzer)
 │       ├── conversation.py            # Wake word, MCP tool-calling, follow-up window
 │       ├── ptt.py                     # Push-to-Talk session lifecycle
