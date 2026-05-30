@@ -140,6 +140,16 @@ async def test_end_without_start_is_noop():
 @pytest.mark.asyncio
 async def test_end_runs_on_silence_after_normal_release():
     state = _state()
+    # end_ptt only schedules on_silence when force_finalize produced an
+    # actual non-AI transcript — without this, the bug fix at ptt.py
+    # ("PTT closed with no transcript — resetting to idle") correctly
+    # skips on_silence to avoid wedging the kiosk on "listening".
+    state.pipeline.force_finalize = AsyncMock(return_value={
+        "text": "turn on the lights",
+        "is_partial": False,
+        "speaker": "human",
+        "silence_after": True,
+    })
     await ptt.start_ptt(state)
     # Held for longer than the debounce window
     await asyncio.sleep(ptt.DEBOUNCE_S + 0.02)
@@ -149,6 +159,57 @@ async def test_end_runs_on_silence_after_normal_release():
     await asyncio.sleep(0)
     state.conversation.on_silence.assert_awaited()
     assert state.ptt is None
+
+
+@pytest.mark.asyncio
+async def test_end_with_no_transcript_resets_to_idle_without_on_silence():
+    """The empty-PTT fix path: force_finalize returns nothing, so on_silence
+    is intentionally NOT scheduled — otherwise the conversation would be
+    left with _wake_detected=True and the kiosk stuck on state-listening."""
+    state = _state()
+    # _state() default already sets force_finalize → AsyncMock(return_value=None)
+    state.conversation._wake_detected = False  # baseline
+    await ptt.start_ptt(state)
+    await asyncio.sleep(ptt.DEBOUNCE_S + 0.02)
+    await ptt.end_ptt(state)
+    await asyncio.sleep(0)
+    state.conversation.on_silence.assert_not_awaited()
+    # State must have been actively reset, not just left dangling.
+    assert state.conversation._wake_detected is False
+    assert state.conversation._command_buffer == []
+    state.conversation._set_state.assert_awaited_with("idle")
+
+
+@pytest.mark.asyncio
+async def test_end_with_empty_text_resets_to_idle():
+    """Whitespace-only transcript counts as no transcript."""
+    state = _state()
+    state.pipeline.force_finalize = AsyncMock(return_value={
+        "text": "   ",  # whitespace strips to empty
+        "speaker": "human",
+    })
+    await ptt.start_ptt(state)
+    await asyncio.sleep(ptt.DEBOUNCE_S + 0.02)
+    await ptt.end_ptt(state)
+    await asyncio.sleep(0)
+    state.conversation.on_silence.assert_not_awaited()
+    state.conversation._set_state.assert_awaited_with("idle")
+
+
+@pytest.mark.asyncio
+async def test_end_with_ai_speaker_transcript_resets_to_idle():
+    """An AI-echo transcript must NOT trigger on_silence either."""
+    state = _state()
+    state.pipeline.force_finalize = AsyncMock(return_value={
+        "text": "leftover ai echo",
+        "speaker": "ai",
+    })
+    await ptt.start_ptt(state)
+    await asyncio.sleep(ptt.DEBOUNCE_S + 0.02)
+    await ptt.end_ptt(state)
+    await asyncio.sleep(0)
+    state.conversation.on_silence.assert_not_awaited()
+    state.conversation._set_state.assert_awaited_with("idle")
 
 
 @pytest.mark.asyncio
@@ -218,11 +279,44 @@ async def test_end_skips_ai_speaker_transcription():
 
 @pytest.mark.asyncio
 async def test_safety_timeout_fires_and_closes_session(monkeypatch):
-    """Trigger the safety timeout immediately by patching the constant."""
-    monkeypatch.setattr(ptt, "SAFETY_TIMEOUT_S", 0.05)
+    """Trigger the safety timeout immediately by patching the constant.
+
+    When the timeout fires while there IS a transcript in the buffer (the
+    user was speaking but never released the button), end_ptt(cancel=False)
+    runs the full release path and schedules on_silence.
+
+    SAFETY_TIMEOUT_S must be > DEBOUNCE_S or end_ptt will treat the call
+    as a button bounce and short-circuit to a cancel (drops the audio,
+    skips on_silence). In production this is fine — SAFETY_TIMEOUT_S=20s
+    is vastly above DEBOUNCE_S=0.10s — but tests have to monkeypatch
+    both consistently.
+    """
+    monkeypatch.setattr(ptt, "SAFETY_TIMEOUT_S", 0.15)
+    monkeypatch.setattr(ptt, "DEBOUNCE_S", 0.05)
     state = _state()
+    state.pipeline.force_finalize = AsyncMock(return_value={
+        "text": "what's the weather",
+        "speaker": "human",
+    })
     await ptt.start_ptt(state)
-    # Wait long enough for the timeout task to fire
-    await asyncio.sleep(0.12)
+    # Wait for safety_timeout's 0.15s sleep + end_ptt awaits + the
+    # asyncio.create_task'd on_silence to actually run on the loop.
+    await asyncio.sleep(0.3)
+    await asyncio.sleep(0)  # extra yield in case the scheduled task is still pending
     assert state.ptt is None
     state.conversation.on_silence.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safety_timeout_with_no_transcript_resets_to_idle(monkeypatch):
+    """Safety timeout with an empty buffer (user held PTT without speaking)
+    must close the session and reset state to idle, NOT call on_silence."""
+    monkeypatch.setattr(ptt, "SAFETY_TIMEOUT_S", 0.15)
+    monkeypatch.setattr(ptt, "DEBOUNCE_S", 0.05)
+    state = _state()
+    # _state() default returns None from force_finalize — empty buffer.
+    await ptt.start_ptt(state)
+    await asyncio.sleep(0.3)
+    assert state.ptt is None
+    state.conversation.on_silence.assert_not_awaited()
+    state.conversation._set_state.assert_awaited_with("idle")

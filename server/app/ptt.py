@@ -158,10 +158,18 @@ async def end_ptt(state: "AppState", cancel: bool = False) -> dict:
         log.debug("PTT end ignored: no active session")
         return {"status": "not_active", "session": False}
 
-    # Cancel the safety timeout — if WE are running because IT fired, the
-    # task is already done and cancel() is a no-op.
+    # Cancel the safety timeout — but skip the cancel if WE are that
+    # task. cancel() on the currently-running task schedules a
+    # CancelledError at the next await, which would interrupt end_ptt
+    # before it can schedule on_silence and silently drop the user's
+    # utterance.
     if session.timeout_task is not None:
-        session.timeout_task.cancel()
+        try:
+            current = asyncio.current_task()
+        except RuntimeError:
+            current = None
+        if session.timeout_task is not current:
+            session.timeout_task.cancel()
         session.timeout_task = None
 
     held_s = time.monotonic() - session.started_at
