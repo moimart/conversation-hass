@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
+from server.app.local_tools_register import build_local_tools
 from server.app.main import (
     AppState,
-    _build_local_tools,
     _generate_chime,
     _get_state,
     _ma_call,
@@ -511,7 +511,7 @@ class TestShowCamera:
         return state
 
     async def _show_camera(self, state, args):
-        tools = _build_local_tools(state)
+        tools = build_local_tools(state)
         return await tools.call_tool("show_camera", args)
 
     @pytest.mark.asyncio
@@ -624,11 +624,11 @@ class TestStreamCamera:
         return state
 
     async def _stream(self, state, args):
-        tools = _build_local_tools(state)
+        tools = build_local_tools(state)
         return await tools.call_tool("stream_camera", args)
 
     async def _stop(self, state):
-        tools = _build_local_tools(state)
+        tools = build_local_tools(state)
         return await tools.call_tool("stop_streaming", {})
 
     @pytest.mark.asyncio
@@ -727,7 +727,7 @@ class TestStreamCamera:
         state.mcp_client.tool_names = ["ha_get_camera_image"]
         item = MagicMock(); item.data = "Z"; item.mimeType = "image/jpeg"
         state.mcp_client.call_tool_content = AsyncMock(return_value=[item])
-        tools = _build_local_tools(state)
+        tools = build_local_tools(state)
         await tools.call_tool("show_camera", {"entity_id": "camera.snap"})
         assert state.active_stream is None
 
@@ -786,23 +786,25 @@ class TestPushImage:
 
     @pytest.mark.asyncio
     async def test_push_payload_url_calls_fetcher(self):
-        from server.app import main as srv
+        # _push_image_payload + _fetch_image_url were extracted to server.app.media
+        # in the main.py refactor; patch the actual call site over there.
+        from server.app import media as srv_media
         state = AppState()
         state.audio_websocket = AsyncMock()
         fetcher = AsyncMock(return_value=(b"\xff\xd8\xff\xe0", "image/jpeg"))
-        with patch.object(srv, "_fetch_image_url", fetcher):
-            result = await srv._push_image_payload(state, "https://example.com/x.jpg", default_duration=60)
+        with patch.object(srv_media, "_fetch_image_url", fetcher):
+            result = await srv_media._push_image_payload(state, "https://example.com/x.jpg", default_duration=60)
             fetcher.assert_awaited_once_with("https://example.com/x.jpg")
         assert "pushed" in result
 
     @pytest.mark.asyncio
     async def test_push_payload_json_url_with_duration(self):
-        from server.app import main as srv
+        from server.app import media as srv_media
         state = AppState()
         state.audio_websocket = AsyncMock()
         body = json.dumps({"url": "https://example.com/x.jpg", "duration_s": 90})
-        with patch.object(srv, "_fetch_image_url", AsyncMock(return_value=(b"\xff\xd8\xff", "image/jpeg"))):
-            await srv._push_image_payload(state, body, default_duration=60)
+        with patch.object(srv_media, "_fetch_image_url", AsyncMock(return_value=(b"\xff\xd8\xff", "image/jpeg"))):
+            await srv_media._push_image_payload(state, body, default_duration=60)
         msg = state.audio_websocket.send_json.await_args.args[0]
         assert msg["duration_s"] == 90
 
@@ -830,12 +832,12 @@ class TestPushImage:
 
     @pytest.mark.asyncio
     async def test_push_payload_clamps_duration(self):
-        from server.app import main as srv
+        from server.app import media as srv_media
         state = AppState()
         state.audio_websocket = AsyncMock()
         body = json.dumps({"url": "https://x", "duration_s": 99999})
-        with patch.object(srv, "_fetch_image_url", AsyncMock(return_value=(b"\xff\xd8\xff", "image/jpeg"))):
-            await srv._push_image_payload(state, body, default_duration=60)
+        with patch.object(srv_media, "_fetch_image_url", AsyncMock(return_value=(b"\xff\xd8\xff", "image/jpeg"))):
+            await srv_media._push_image_payload(state, body, default_duration=60)
         msg = state.audio_websocket.send_json.await_args.args[0]
         assert msg["duration_s"] == 600
 
@@ -843,18 +845,18 @@ class TestPushImage:
     async def test_show_image_tool_rejects_non_http(self):
         state = AppState()
         state.audio_websocket = AsyncMock()
-        tools = _build_local_tools(state)
+        tools = build_local_tools(state)
         result = await tools.call_tool("show_image", {"url": "ftp://x"})
         assert "http" in result
         state.audio_websocket.send_json.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_show_image_tool_dispatches_through_fetcher(self, monkeypatch):
-        from server.app import main as srv
+        from server.app import media as srv_media
         state = AppState()
         state.audio_websocket = AsyncMock()
-        monkeypatch.setattr(srv, "_fetch_image_url", AsyncMock(return_value=(b"\xff\xd8\xff", "image/jpeg")))
-        tools = _build_local_tools(state)
+        monkeypatch.setattr(srv_media, "_fetch_image_url", AsyncMock(return_value=(b"\xff\xd8\xff", "image/jpeg")))
+        tools = build_local_tools(state)
         result = await tools.call_tool("show_image", {"url": "http://x.test/foo.jpg", "duration_s": 45})
         assert "pushed" in result
         msg = state.audio_websocket.send_json.await_args.args[0]
@@ -878,7 +880,7 @@ class TestStreamRtsp:
         return state
 
     async def _stream(self, state, args):
-        tools = _build_local_tools(state)
+        tools = build_local_tools(state)
         return await tools.call_tool("stream_rtsp", args)
 
     @pytest.mark.asyncio
@@ -1022,7 +1024,7 @@ class TestPlayVideo:
         return state
 
     async def _play(self, state, args):
-        tools = _build_local_tools(state)
+        tools = build_local_tools(state)
         return await tools.call_tool("play_video", args)
 
     @pytest.mark.asyncio
@@ -1089,7 +1091,7 @@ class TestPlayVideo:
         state.mcp_client.tool_names = ["ha_get_camera_image"]
         item = MagicMock(); item.data = "Z"; item.mimeType = "image/jpeg"
         state.mcp_client.call_tool_content = AsyncMock(return_value=[item])
-        tools = _build_local_tools(state)
+        tools = build_local_tools(state)
         await tools.call_tool("show_camera", {"entity_id": "camera.x"})
         # Two messages should have been sent: stream_stop (no-op WS push from
         # _stop_active_stream) and video_stop (from _stop_active_video), then
@@ -1107,7 +1109,7 @@ class TestStopStreaming:
     async def test_stop_streaming_no_active_still_clears_video(self):
         state = AppState()
         state.audio_websocket = AsyncMock()
-        tools = _build_local_tools(state)
+        tools = build_local_tools(state)
         result = await tools.call_tool("stop_streaming", {})
         assert "Stopped any active video" in result
         # Should have sent at least a video_stop.

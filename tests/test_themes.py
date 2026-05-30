@@ -146,6 +146,7 @@ def test_registry_to_public():
         kind="dark",
         has_effect=True,
         dir_path="/x",
+        state_videos=(),
         fingerprint="xx",
     )
     pub = t.to_public()
