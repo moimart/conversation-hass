@@ -79,7 +79,7 @@ def build_mcp_server(state: "AppState") -> FastMCP:
 
     @mcp.tool(name="show_image", description="Show an image (by URL) on the kiosk orb.")
     async def show_image(url: str, duration_s: int = 60) -> str:
-        from .main import _push_image_payload
+        from .media import _push_image_payload
         try:
             return await _push_image_payload(state, url, default_duration=duration_s)
         except Exception as e:
@@ -124,7 +124,7 @@ def build_mcp_server(state: "AppState") -> FastMCP:
     @mcp.tool(name="show_qr_code", description="Display a QR code on the kiosk orb for a URL or text.")
     async def show_qr_code(data: str, duration_s: int = 30) -> str:
         from .qr_code import generate_qr_png
-        from .main import _dispatch_show_image
+        from .media import _dispatch_show_image
         qr_bytes = generate_qr_png(data)
         if not qr_bytes:
             return "QR generation failed"
