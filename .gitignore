@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 .venv/
 .claude/
+CLAUDE.md
 .pytest_cache/
 .coverage
 .coverage.*
