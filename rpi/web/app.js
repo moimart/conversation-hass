@@ -485,20 +485,30 @@
                     }
                 }
                 break;
-            case "mute_sync":
-                // Hardware mute button pressed — sync UI
-                muted = !!msg.muted;
+            case "mute_sync": {
+                // Mute state sync. Only treat it as a dismiss trigger when
+                // the value ACTUALLY changes — the server re-asserts mute on
+                // every (e.g. 30-min) reconnect, and a redundant re-sync must
+                // not tear down an active photo/video frame.
+                const newMuted = !!msg.muted;
+                const muteChanged = newMuted !== muted;
+                muted = newMuted;
                 muteBtn.classList.toggle("muted", muted);
                 muteIconOn.style.display = muted ? "none" : "";
                 muteIconOff.style.display = muted ? "" : "none";
-                maybeDismissPhotoFrame("mute");
+                if (muteChanged) maybeDismissPhotoFrame("mute");
                 break;
-            case "volume_sync":
-                // Hardware volume button pressed — sync UI
-                volume = Math.max(0, Math.min(1, msg.level));
+            }
+            case "volume_sync": {
+                // Same as mute_sync: only a real change dismisses the frame,
+                // not a reconnect re-sync of the current level.
+                const newVolume = Math.max(0, Math.min(1, msg.level));
+                const volChanged = newVolume !== volume;
+                volume = newVolume;
                 volFill.style.width = (volume * 100) + "%";
-                maybeDismissPhotoFrame("volume");
+                if (volChanged) maybeDismissPhotoFrame("volume");
                 break;
+            }
             case "pong":
                 break;
             case "set_theme":
