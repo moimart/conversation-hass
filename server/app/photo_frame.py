@@ -223,18 +223,19 @@ async def _start_video_frame(state: "AppState", video_hash: str) -> Optional[dic
     """
     existing: Optional[PhotoFrameVideoSession] = getattr(
         state, "photo_frame_video_session", None)
-    if existing is not None and existing.video_hash == video_hash:
-        # Already looping this exact video — nothing to do.
-        return {"status": "already_active", "session": True, "mode": "video"}
+    already = existing is not None and existing.video_hash == video_hash
 
     # A photo session must never coexist with a video session.
     if state.photo_frame_session is not None:
         await stop_photo_frame(state, reason="video_switch")
 
-    # Tell the RPi to make sure it has the file (it pulls over HTTP and
-    # only re-downloads when its local hash differs), then tell the kiosk
-    # to play it. The sync message must reach the RPi or it can't serve
-    # /media/loop.mp4 — if the audio WS is gone, bail to the photo path.
+    # Always (re)push, even when a session for the same hash is already
+    # open: an explicit Show must re-assert the display, and the kiosk may
+    # have reconnected and lost its state since the session opened. The
+    # sync is cheap (the RPi skips the download on a hash match) and the
+    # kiosk just re-plays the loop it already has. The sync message must
+    # reach the RPi or it can't serve /media/loop.mp4 — if the audio WS is
+    # gone, bail to the photo path.
     synced = await _push_to_rpi(state, {
         "type": "photo_frame_video_sync",
         "hash": video_hash,
@@ -250,8 +251,10 @@ async def _start_video_frame(state: "AppState", video_hash: str) -> Optional[dic
 
     state.photo_frame_video_session = PhotoFrameVideoSession(
         video_hash=video_hash, src=VIDEO_SRC)
-    log.info(f"Photo frame video opened: hash={video_hash[:12]}")
-    return {"status": "ok", "session": True, "mode": "video"}
+    log.info(f"Photo frame video {'re-shown' if already else 'opened'}: "
+             f"hash={video_hash[:12]}")
+    return {"status": "already_active" if already else "ok",
+            "session": True, "mode": "video"}
 
 
 async def handle_video_load_error(state: "AppState") -> dict:

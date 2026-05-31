@@ -280,15 +280,19 @@ async def test_video_mode_off_with_cache_shows_photos(fake_fetch):
 
 
 @pytest.mark.asyncio
-async def test_video_same_hash_is_idempotent(fake_fetch):
+async def test_video_same_hash_reasserts_display(fake_fetch):
+    """A second Show for the same loop reports already_active but STILL
+    re-pushes sync+show — an explicit Show must re-assert the display (the
+    kiosk may have reconnected and lost its state)."""
     state = _state(configured_entity="image.weather_radar",
                    video_mode=True, video_hash="abc123")
     await photo_frame.start_photo_frame(state)
     state.audio_websocket.send_json.reset_mock()
     result = await photo_frame.start_photo_frame(state)
     assert result == {"status": "already_active", "session": True, "mode": "video"}
-    # No re-push for the same loop.
-    assert state.audio_websocket.send_json.await_count == 0
+    types = _push_types(state)
+    assert "photo_frame_video_sync" in types
+    assert "show_photo_frame_video" in types
 
 
 @pytest.mark.asyncio
