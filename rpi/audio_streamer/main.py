@@ -964,8 +964,23 @@ class AudioManager:
         response = await handler(request)
         if isinstance(response, web.WebSocketResponse):
             return response
+        # Decide off BOTH the request path and the content-type. Static
+        # files are served by aiohttp's FileResponse, which doesn't set
+        # Content-Type until send time (AFTER this middleware runs) — so a
+        # content-type-only check silently skips every static .js/.css and
+        # the kiosk keeps serving stale modules from cache. Keying off the
+        # path extension (always known here) closes that gap. This matters
+        # for dynamically-imported modules: app.js refreshes on navigation
+        # but import("./foo.js") comes from cache unless told otherwise.
+        path = request.path.lower()
         ct = response.headers.get("Content-Type", "")
-        if any(t in ct for t in ("html", "css", "javascript", "json", "font")):
+        is_asset = (
+            path == "/"
+            or path.endswith((".html", ".js", ".mjs", ".css", ".json",
+                              ".woff", ".woff2", ".ttf", ".otf"))
+            or any(t in ct for t in ("html", "css", "javascript", "json", "font"))
+        )
+        if is_asset:
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
