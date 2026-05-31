@@ -19,6 +19,12 @@ from .display_backend import detect_backend as _detect_display_backend
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 log = logging.getLogger("hal.rpi")
 
+# Writable dir for the looping photo-frame video, served at /media/ (the
+# /app/web tree is mounted read-only, so the loop can't live there). The
+# kiosk plays {LOOP_MEDIA_DIR}/loop.mp4 from its own web server.
+LOOP_MEDIA_DIR = os.environ.get("LOOP_MEDIA_DIR", "/app/media")
+LOOP_VIDEO_FILE = "loop.mp4"
+
 
 def _resample_audio(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
     """
@@ -491,8 +497,18 @@ class AudioManager:
             "show_calendar", "hide_calendar",
             "ptt_active",
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
+            "show_photo_frame_video",
         ):
             await self.broadcast_to_ui(msg)
+
+        elif msg_type == "photo_frame_video_sync":
+            # Not forwarded to the kiosk — the RPi acts on it: pull the
+            # looping video from the AI server (only if our local copy's
+            # hash differs) and store it locally for the kiosk to play.
+            asyncio.create_task(self._sync_loop_video(
+                str(msg.get("hash") or ""),
+                str(msg.get("url") or "/api/photo_frame/video"),
+            ))
 
         elif msg_type == "set_orientation":
             await self.broadcast_to_ui(msg)
@@ -696,6 +712,14 @@ class AudioManager:
                                 await self._server_ws.send(json.dumps(data))
                             except Exception as e:
                                 log.debug(f"photo_frame_dismissed upstream forward failed: {e}")
+                    elif msg_type == "photo_frame_video_error":
+                        # Kiosk couldn't load/autoplay the looping video.
+                        # Forward upstream so the server falls back to photos.
+                        if self._server_ws:
+                            try:
+                                await self._server_ws.send(json.dumps(data))
+                            except Exception as e:
+                                log.debug(f"photo_frame_video_error upstream forward failed: {e}")
         finally:
             self.ui_clients.discard(ws)
             log.info(f"Web UI client disconnected (total: {len(self.ui_clients)})")
@@ -817,6 +841,62 @@ class AudioManager:
             log.debug(f"snapshot upload failed: {e}")
             return web.Response(status=502)
 
+    async def _sync_loop_video(self, want_hash: str, path: str) -> None:
+        """Ensure the local looping video matches `want_hash`, pulling it
+        from the AI server over HTTP if it differs. Streams to a temp file
+        and renames atomically so the kiosk never reads a partial loop."""
+        import hashlib
+        dest = os.path.join(LOOP_MEDIA_DIR, LOOP_VIDEO_FILE)
+        # Skip the download if our local file already matches.
+        if want_hash and os.path.isfile(dest):
+            try:
+                h = hashlib.sha256()
+                with open(dest, "rb") as f:
+                    for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                        h.update(chunk)
+                if h.hexdigest() == want_hash:
+                    log.info("loop video already up to date (hash match)")
+                    return
+            except Exception as e:
+                log.debug(f"loop video local hash check failed: {e}")
+
+        url = f"http://{self.ai_server_host}:8765{path}"
+        try:
+            os.makedirs(LOOP_MEDIA_DIR, exist_ok=True)
+        except OSError as e:
+            log.warning(f"loop video: cannot create {LOOP_MEDIA_DIR}: {e}")
+            return
+        tmp = dest + ".tmp"
+        sha = hashlib.sha256()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url, timeout=aiohttp.ClientTimeout(total=120)
+                ) as up:
+                    if up.status != 200:
+                        log.warning(f"loop video pull got HTTP {up.status} from {url}")
+                        return
+                    with open(tmp, "wb") as f:
+                        async for chunk in up.content.iter_chunked(256 * 1024):
+                            sha.update(chunk)
+                            f.write(chunk)
+            digest = sha.hexdigest()
+            if want_hash and digest != want_hash:
+                log.warning(
+                    f"loop video hash mismatch (got {digest[:12]}, "
+                    f"want {want_hash[:12]}) — discarding"
+                )
+                os.unlink(tmp)
+                return
+            os.replace(tmp, dest)
+            log.info(f"loop video synced: sha={digest[:12]}")
+        except Exception as e:
+            log.warning(f"loop video sync failed: {e}")
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
     async def _proxy_to_ai_server(self, request: web.Request) -> web.Response:
         """Forward a GET request to the AI server transparently.
 
@@ -904,6 +984,14 @@ class AudioManager:
         # Theme plug-in passthrough: list + per-theme assets forward to the AI server.
         app.router.add_get("/api/themes", self._proxy_to_ai_server)
         app.router.add_get(r"/themes/{name}/{filename}", self._proxy_to_ai_server)
+        # Looping photo-frame video lives in a writable dir (the /app/web
+        # tree is mounted read-only). Register BEFORE the "/" catch-all
+        # static — aiohttp matches routes in registration order.
+        try:
+            os.makedirs(LOOP_MEDIA_DIR, exist_ok=True)
+        except OSError as e:
+            log.warning(f"loop media dir {LOOP_MEDIA_DIR} not creatable: {e}")
+        app.router.add_static("/media/", LOOP_MEDIA_DIR)
         app.router.add_static("/", "/app/web")
 
         runner = web.AppRunner(app)

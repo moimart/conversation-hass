@@ -36,6 +36,9 @@ services:
       - /run/user/1000:/run/user/1000:ro
       - ~/.config/pulse/cookie:/root/.config/pulse/cookie:ro
       - ./rpi/web:/app/web:ro
+      # Writable dir for the looping photo-frame video (served at /media/;
+      # the web tree above is read-only so the loop can't live there).
+      - ./rpi/media:/app/media
       # X11 socket for the xset DPMS backend (no-op on Wayland-only hosts).
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
 

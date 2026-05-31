@@ -133,3 +133,91 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
 
     return { show, update, dismiss, isShown };
 }
+
+
+/* Looping-video photo frame. Plays a single fullscreen <video> on repeat,
+   muted (so Chromium autoplays without a user gesture). Reuses the same
+   stage (#photo-frame-root), the body.photo-frame-active fade, the white
+   clock overlay, and the pointerdown-to-dismiss behaviour as the image
+   controller. A separate controller (not the two-<img> crossfade one)
+   keeps the play/pause lifecycle clean. */
+export function mountPhotoFrameVideo(root, { onDismiss, onError } = {}) {
+    if (!root) throw new Error("mountPhotoFrameVideo: root is required");
+
+    root.innerHTML = "";
+    const video = root.ownerDocument.createElement("video");
+    video.className = "pf-video";
+    // Set the muted PROPERTY (not just the attribute) — Chromium only
+    // grants gesture-free autoplay when the muted property is true.
+    video.muted = true;
+    video.loop = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.preload = "auto";
+    root.appendChild(video);
+
+    let shown = false;
+    let pendingDismissPromise = null;
+
+    video.addEventListener("error", () => {
+        if (typeof onError === "function") {
+            try { onError("load_error"); } catch (_) { /* ignore */ }
+        }
+    });
+
+    async function show(payload) {
+        const src = payload && payload.src;
+        if (!src) return;
+        // Only reassign src when it actually changes, so a re-show of the
+        // same loop doesn't restart playback with a black flash.
+        if (video.getAttribute("src") !== src) {
+            video.src = src;
+        }
+        try {
+            await video.play();
+        } catch (e) {
+            // Autoplay blocked (or src failed) — fall back to photos.
+            if (typeof onError === "function") {
+                try { onError("autoplay_blocked"); } catch (_) { /* ignore */ }
+            }
+            return;
+        }
+        if (!shown) {
+            shown = true;
+            document.body.classList.add("photo-frame-active");
+        }
+    }
+
+    function dismiss(reason = "explicit") {
+        if (!shown) return Promise.resolve(reason);
+        if (pendingDismissPromise) return pendingDismissPromise;
+
+        pendingDismissPromise = new Promise((resolve) => {
+            if (reason !== "explicit" && typeof onDismiss === "function") {
+                try { onDismiss(reason); } catch (_) { /* ignore */ }
+            }
+            document.body.classList.remove("photo-frame-active");
+            // Match the 400ms CSS fade-out before tearing the video down.
+            setTimeout(() => {
+                shown = false;
+                try { video.pause(); } catch (_) { /* ignore */ }
+                video.removeAttribute("src");
+                try { video.load(); } catch (_) { /* ignore */ }
+                pendingDismissPromise = null;
+                resolve(reason);
+            }, 450);
+        });
+        return pendingDismissPromise;
+    }
+
+    root.addEventListener("pointerdown", () => {
+        if (shown) dismiss("touch");
+    });
+
+    function isShown() {
+        return shown;
+    }
+
+    return { show, dismiss, isShown };
+}

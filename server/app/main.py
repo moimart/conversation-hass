@@ -102,6 +102,16 @@ class AppState:
     # Open via photo_frame.start_photo_frame, closed via stop_photo_frame
     # or by the kiosk's photo_frame_dismissed message.
     photo_frame_session: object | None = None
+    # Active looping-video photo-frame session
+    # (server/app/photo_frame.PhotoFrameVideoSession). Mutually exclusive
+    # with photo_frame_session — only one frame mode is ever live.
+    photo_frame_video_session: object | None = None
+    # Live video-mode config + the sha256 of the currently cached loop
+    # video. photo_frame_video_hash is "" when no video is cached; it gates
+    # whether start_photo_frame picks the video path (see _video_available).
+    photo_frame_video_url: str = ""
+    photo_frame_video_mode: bool = False
+    photo_frame_video_hash: str = ""
     # Display power (DPMS). state is "on" or "off"; auto_off_seconds
     # of 0 means "no idle blanking" (manual control only).
     display_state: str = "on"
@@ -394,7 +404,8 @@ async def _photo_frame_idle_loop(state: AppState) -> None:
             minutes = int(state.photo_frame_idle_minutes or 0)
             if minutes <= 0:
                 continue
-            if state.photo_frame_session is not None:
+            if (state.photo_frame_session is not None
+                    or state.photo_frame_video_session is not None):
                 continue
             idle_s = time.time() - (state.user_last_activity or 0.0)
             if idle_s >= minutes * 60:
@@ -415,6 +426,123 @@ async def _photo_frame_idle_loop(state: AppState) -> None:
         raise
     except Exception as e:
         log.error(f"Photo-frame idle loop crashed: {e}")
+
+
+# --- Photo-frame looping video: download + cache on the server -------------
+# The user sets a source URL in HA; the server downloads it once, caches it
+# under the writable /app/runtime mount, and serves it at
+# /api/photo_frame/video. The RPi pulls that file over HTTP and plays it
+# locally on the kiosk. A .sha256 sidecar lets a restart recover the hash
+# without re-hashing the (large) file.
+PHOTO_FRAME_VIDEO_MAX_BYTES = int(
+    os.environ.get("PHOTO_FRAME_VIDEO_MAX_BYTES", str(150 * 1024 * 1024))
+)
+_VIDEO_FETCH_TIMEOUT = 60.0
+
+
+def _photo_frame_video_cache_path() -> str:
+    return os.environ.get(
+        "PHOTO_FRAME_VIDEO_CACHE", "/app/runtime/photo_frame_video.mp4"
+    )
+
+
+def _photo_frame_video_sidecar_path() -> str:
+    return _photo_frame_video_cache_path() + ".sha256"
+
+
+def _load_photo_frame_video_hash(state: AppState) -> str:
+    """Recover the cached video's hash from the sidecar at startup. Returns
+    "" (and leaves state.photo_frame_video_hash empty) if no usable cache."""
+    cache = _photo_frame_video_cache_path()
+    sidecar = _photo_frame_video_sidecar_path()
+    if not (os.path.isfile(cache) and os.path.isfile(sidecar)):
+        state.photo_frame_video_hash = ""
+        return ""
+    try:
+        with open(sidecar) as f:
+            h = f.read().strip()
+    except Exception:
+        h = ""
+    state.photo_frame_video_hash = h
+    return h
+
+
+def _clear_photo_frame_video_cache(state: AppState) -> None:
+    """Drop the cached video + sidecar and forget its hash (best-effort)."""
+    state.photo_frame_video_hash = ""
+    for p in (_photo_frame_video_cache_path(), _photo_frame_video_sidecar_path()):
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+
+
+async def _download_photo_frame_video(state: AppState, url: str) -> bool:
+    """Stream-download a video URL to the cache (atomic) and set the hash.
+
+    Validates a video/* content-type, enforces PHOTO_FRAME_VIDEO_MAX_BYTES
+    incrementally while streaming, and writes to a temp file then os.replace
+    so a partial/aborted download never leaves a truncated loop.mp4. On any
+    failure the previous cache is left intact and False is returned.
+    """
+    import hashlib
+    import tempfile
+    import httpx
+
+    url = (url or "").strip()
+    if not url:
+        return False
+    headers: dict[str, str] = {}
+    ha_url = os.environ.get("HA_URL", "").rstrip("/")
+    ha_token = os.environ.get("HA_TOKEN", "")
+    if ha_url and ha_token and url.startswith(ha_url):
+        headers["Authorization"] = f"Bearer {ha_token}"
+
+    cache = _photo_frame_video_cache_path()
+    d = os.path.dirname(cache) or "."
+    os.makedirs(d, exist_ok=True)
+    tmp = None
+    sha = hashlib.sha256()
+    total = 0
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True, timeout=_VIDEO_FETCH_TIMEOUT, max_redirects=3
+        ) as client:
+            async with client.stream("GET", url, headers=headers) as r:
+                r.raise_for_status()
+                mime = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+                if not mime.startswith("video/"):
+                    log.warning(f"photo_frame video: refusing non-video content-type {mime!r} from {url}")
+                    return False
+                fd, tmp = tempfile.mkstemp(prefix=".photo_frame_video.", dir=d)
+                with os.fdopen(fd, "wb") as f:
+                    async for chunk in r.aiter_bytes(256 * 1024):
+                        total += len(chunk)
+                        if total > PHOTO_FRAME_VIDEO_MAX_BYTES:
+                            log.warning(
+                                f"photo_frame video at {url} exceeds cap "
+                                f"{PHOTO_FRAME_VIDEO_MAX_BYTES} bytes — aborting"
+                            )
+                            raise ValueError("video too large")
+                        sha.update(chunk)
+                        f.write(chunk)
+        digest = sha.hexdigest()
+        os.replace(tmp, cache)
+        tmp = None
+        with open(_photo_frame_video_sidecar_path(), "w") as f:
+            f.write(digest + "\n")
+        state.photo_frame_video_hash = digest
+        log.info(f"photo_frame video cached: {total} bytes, sha={digest[:12]}")
+        return True
+    except Exception as e:
+        log.warning(f"photo_frame video download failed for {url}: {e}")
+        return False
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 async def _ma_call(state: AppState, service: str, extra: dict | None = None) -> None:
@@ -1080,6 +1208,21 @@ async def lifespan(app: FastAPI):
         f"model={state.router_model or '(none)'}"
     )
 
+    # Photo-frame looping video. Recover the cached file's hash from its
+    # sidecar; if a URL is configured but the cache is missing (e.g. the
+    # runtime volume was wiped), re-download it in the background so the
+    # video is ready without blocking startup.
+    state.photo_frame_video_url = str(cfg.get("photo_frame_video_url", "") or "")
+    state.photo_frame_video_mode = bool(cfg.get("photo_frame_video_mode", False))
+    _load_photo_frame_video_hash(state)
+    if state.photo_frame_video_url and not state.photo_frame_video_hash:
+        asyncio.create_task(_download_photo_frame_video(state, state.photo_frame_video_url))
+    log.info(
+        f"Photo-frame video config: mode={state.photo_frame_video_mode}, "
+        f"url={'(set)' if state.photo_frame_video_url else '(none)'}, "
+        f"cached={'yes' if state.photo_frame_video_hash else 'no'}"
+    )
+
     # Daily dusk/dawn theme scheduler
     if state.auto_theme:
         state.theme_scheduler_task = asyncio.create_task(_theme_scheduler(state))
@@ -1478,6 +1621,12 @@ async def lifespan(app: FastAPI):
         bridge._cached_config_photo_frame_entity = str(
             state.runtime_config.get("photo_frame_entity", "") or ""
         )
+        bridge._cached_config_photo_frame_video_url = str(
+            state.runtime_config.get("photo_frame_video_url", "") or ""
+        )
+        bridge._cached_config_photo_frame_video_mode = bool(
+            state.runtime_config.get("photo_frame_video_mode", False)
+        )
         # Display power: pull the timeout from config; the imperative
         # state defaults to "on" (the RPi's first display_state relay
         # after connect will correct it if reality differs).
@@ -1537,6 +1686,48 @@ async def lifespan(app: FastAPI):
             value = (value or "").strip()
             await _persist("photo_frame_entity", value)
             await bridge.publish_config_photo_frame_entity(value)
+
+        async def _cfg_photo_frame_video_url(value: str):
+            value = (value or "").strip()
+            unchanged = value == state.photo_frame_video_url
+            state.photo_frame_video_url = value
+            await _persist("photo_frame_video_url", value)
+            await bridge.publish_config_photo_frame_video_url(value)
+            if unchanged:
+                return
+            if not value:
+                # URL cleared → drop the cache and fall any live loop back
+                # to photos.
+                _clear_photo_frame_video_cache(state)
+                if state.photo_frame_video_session is not None:
+                    from .photo_frame import stop_photo_frame, start_photo_frame
+                    await stop_photo_frame(state, reason="video_url_cleared")
+                    await start_photo_frame(state, "")
+                return
+
+            # Download off the MQTT callback path so a large fetch doesn't
+            # stall the broker loop; refresh a live loop once it's ready.
+            async def _fetch_then_refresh():
+                ok = await _download_photo_frame_video(state, value)
+                if ok and state.photo_frame_video_session is not None:
+                    from .photo_frame import start_photo_frame, stop_photo_frame
+                    await stop_photo_frame(state, reason="video_url_changed")
+                    await start_photo_frame(state, "")
+            asyncio.create_task(_fetch_then_refresh())
+
+        async def _cfg_photo_frame_video_mode(enabled):
+            val = str(enabled).strip().lower() in ("true", "1", "yes", "on") \
+                if not isinstance(enabled, bool) else enabled
+            state.photo_frame_video_mode = bool(val)
+            await _persist("photo_frame_video_mode", bool(val))
+            await bridge.publish_config_photo_frame_video_mode(bool(val))
+            # Apply live: if a frame is currently shown, restart it so it
+            # re-picks video vs photo under the new switch.
+            if (state.photo_frame_session is not None
+                    or state.photo_frame_video_session is not None):
+                from .photo_frame import stop_photo_frame, start_photo_frame
+                await stop_photo_frame(state, reason="video_mode_toggle")
+                await start_photo_frame(state, "")
 
         async def _cfg_calendar_default_source(value: str):
             value = (value or "").strip()
@@ -1716,6 +1907,8 @@ async def lifespan(app: FastAPI):
         bridge.on_photo_frame_show = _mqtt_photo_frame_show
         bridge.on_photo_frame_hide = _mqtt_photo_frame_hide
         bridge.on_config_photo_frame_entity = _cfg_photo_frame_entity
+        bridge.on_config_photo_frame_video_url = _cfg_photo_frame_video_url
+        bridge.on_config_photo_frame_video_mode = _cfg_photo_frame_video_mode
         bridge.on_config_calendar_default_source = _cfg_calendar_default_source
         bridge.on_config_calendar_dismiss_seconds = _cfg_calendar_dismiss_seconds
         bridge.on_config_start_muted = _cfg_start_muted
@@ -2043,6 +2236,12 @@ async def audio_endpoint(websocket: WebSocket):
                     # doesn't immediately re-arm the frame on the next tick.
                     _record_user_activity(state)
 
+                elif msg_type == "photo_frame_video_error":
+                    # The kiosk couldn't load/autoplay the looping video.
+                    # Fall back to cycling photos for this activation.
+                    from .photo_frame import handle_video_load_error
+                    await handle_video_load_error(state)
+
                 elif msg_type == "display_state":
                     # Confirmation from the RPi container after a
                     # display_set call (or a periodic probe). Keep our
@@ -2260,6 +2459,17 @@ async def post_photo_frame_end():
     return await stop_photo_frame(state, reason="explicit")
 
 
+@app.get("/api/photo_frame/video")
+async def get_photo_frame_video():
+    """Serve the cached looping video. The RPi pulls this and stores it
+    locally for the kiosk to play. 404 when no video is cached."""
+    from fastapi.responses import FileResponse, Response
+    cache = _photo_frame_video_cache_path()
+    if not os.path.isfile(cache):
+        return Response(status_code=404)
+    return FileResponse(cache, media_type="video/mp4")
+
+
 class PhotoFrameIdleRequest(BaseModel):
     # Minutes of inactivity before the photo frame auto-activates.
     # 0 disables the feature. Anything else clamped to 0..720.
@@ -2272,7 +2482,8 @@ async def get_photo_frame_idle():
     state = _get_state(app)
     return {
         "minutes": int(state.photo_frame_idle_minutes or 0),
-        "active": state.photo_frame_session is not None,
+        "active": (state.photo_frame_session is not None
+                   or state.photo_frame_video_session is not None),
     }
 
 

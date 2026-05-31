@@ -12,11 +12,13 @@ from server.app import photo_frame
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _state(*, configured_entity: str = "", has_ws: bool = True, has_ha: bool = True):
+def _state(*, configured_entity: str = "", has_ws: bool = True, has_ha: bool = True,
+           video_mode: bool = False, video_hash: str = ""):
     """Build a minimal AppState-ish object the photo_frame module accepts."""
     rt = SimpleNamespace()
     rt.get = lambda key, default=None: {
         "photo_frame_entity": configured_entity,
+        "photo_frame_video_mode": video_mode,
     }.get(key, default)
 
     ws = AsyncMock() if has_ws else None
@@ -28,6 +30,8 @@ def _state(*, configured_entity: str = "", has_ws: bool = True, has_ha: bool = T
     state.audio_websocket = ws
     state.ui_clients = set()
     state.photo_frame_session = None
+    state.photo_frame_video_session = None
+    state.photo_frame_video_hash = video_hash
 
     # Fake HA WS client
     if has_ha:
@@ -226,6 +230,110 @@ async def test_update_ignores_unknown_entity(fake_fetch):
 
 
 # ---------------------------------------------------------------------------
+# Looping-video branch
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_video_mode_on_with_cache_loops_video(fake_fetch):
+    """Mode ON + a cached video → push sync then show_photo_frame_video,
+    create a video session, and do NOT fetch HA or subscribe."""
+    fetch_calls = []
+    async def spy_fetch(entity_id):
+        fetch_calls.append(entity_id)
+        return (b"\xff\xd8\xff\xe0fakejpeg", "image/jpeg")
+    fake_fetch._fetch_ha_image_entity = spy_fetch
+
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=True, video_hash="abc123")
+    result = await photo_frame.start_photo_frame(state)
+    assert result == {"status": "ok", "session": True, "mode": "video"}
+    assert state.photo_frame_video_session is not None
+    assert state.photo_frame_video_session.video_hash == "abc123"
+    assert state.photo_frame_session is None
+    types = _push_types(state)
+    assert "photo_frame_video_sync" in types
+    assert "show_photo_frame_video" in types
+    # No HA work for the video path.
+    assert fetch_calls == []
+    assert state.ha_ws.subscribe.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_video_mode_on_without_cache_falls_back_to_photos(fake_fetch):
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=True, video_hash="")  # no cache
+    result = await photo_frame.start_photo_frame(state)
+    assert result == {"status": "ok", "session": True}
+    assert state.photo_frame_video_session is None
+    assert state.photo_frame_session is not None
+    assert "show_photo_frame" in _push_types(state)
+
+
+@pytest.mark.asyncio
+async def test_video_mode_off_with_cache_shows_photos(fake_fetch):
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=False, video_hash="abc123")
+    result = await photo_frame.start_photo_frame(state)
+    assert result == {"status": "ok", "session": True}
+    assert state.photo_frame_video_session is None
+    assert "show_photo_frame" in _push_types(state)
+
+
+@pytest.mark.asyncio
+async def test_video_same_hash_is_idempotent(fake_fetch):
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=True, video_hash="abc123")
+    await photo_frame.start_photo_frame(state)
+    state.audio_websocket.send_json.reset_mock()
+    result = await photo_frame.start_photo_frame(state)
+    assert result == {"status": "already_active", "session": True, "mode": "video"}
+    # No re-push for the same loop.
+    assert state.audio_websocket.send_json.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_video_falls_back_when_no_ws(fake_fetch):
+    """No audio WS → can't sync the file → fall through to the photo path."""
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=True, video_hash="abc123", has_ws=False)
+    result = await photo_frame.start_photo_frame(state)
+    assert result["status"] == "ok"
+    assert state.photo_frame_video_session is None
+    assert state.photo_frame_session is not None
+
+
+@pytest.mark.asyncio
+async def test_stop_clears_video_session_without_ha(fake_fetch):
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=True, video_hash="abc123")
+    await photo_frame.start_photo_frame(state)
+    state.audio_websocket.send_json.reset_mock()
+    state.ha_ws.unsubscribe.reset_mock()
+
+    result = await photo_frame.stop_photo_frame(state, reason="explicit")
+    assert result == {"status": "ok", "session": False}
+    assert state.photo_frame_video_session is None
+    assert "hide_photo_frame" in _push_types(state)
+    # A video session has no HA subscription.
+    assert state.ha_ws.unsubscribe.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_handle_video_load_error_falls_back_to_photos(fake_fetch):
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=True, video_hash="abc123")
+    await photo_frame.start_photo_frame(state)
+    state.audio_websocket.send_json.reset_mock()
+
+    result = await photo_frame.handle_video_load_error(state)
+    # Fell back to the photo path despite video mode still being on.
+    assert result["status"] == "ok"
+    assert state.photo_frame_video_session is None
+    assert state.photo_frame_session is not None
+    assert "show_photo_frame" in _push_types(state)
+
+
+# ---------------------------------------------------------------------------
 # MQTT bridge: photo-frame discovery payload
 # ---------------------------------------------------------------------------
 
@@ -237,7 +345,13 @@ def test_discovery_contains_photo_frame_entities():
     assert any("photo_frame_show/config" in t for t in topics)
     assert any("photo_frame_hide/config" in t for t in topics)
     assert any("config_photo_frame_entity/config" in t for t in topics)
+    # Looping-video config entities: a text URL field + an on/off switch.
+    assert any("config_photo_frame_video_url/config" in t for t in topics)
+    assert any("config_photo_frame_video_mode/config" in t for t in topics)
     # Text entity has no `max` field (the HA 255-cap rule we learned the hard way).
     for topic, body in payloads:
         if "config_photo_frame_entity/config" in topic:
             assert "max" not in body
+        if "config_photo_frame_video_mode/config" in topic:
+            assert "switch/" in topic
+            assert body.get("payload_on") == "ON"

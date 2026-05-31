@@ -1128,6 +1128,16 @@ body:not(.photo-frame-active) .photo-frame-stage {
     0%   { transform: scale(1)    translate(0, 0); }
     100% { transform: scale(1.12) translate(-1.5%, -1.5%); }
 }
+/* Looping video frame — single fullscreen layer, no crossfade buffer.
+   The stage's own opacity transition handles the fade in/out. */
+.photo-frame-stage .pf-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 1;
+}
 
 /* Clock + date — re-use the body-level .clock-display element (already
    ticking, already in Berlin Type, already at top:28px left:32px,

@@ -329,12 +329,60 @@
         return pfLoading;
     }
 
+    // --- Looping-video photo frame (parallel controller, same stage) ---
+    let pfVideoController = null;
+    let pfVideoLoading = null;
+
+    async function getPhotoFrameVideo() {
+        if (pfVideoController) return pfVideoController;
+        if (!pfVideoLoading) {
+            pfVideoLoading = import("./photo_frame.js").then((mod) => {
+                const root = document.getElementById("photo-frame-root");
+                pfVideoController = mod.mountPhotoFrameVideo(root, {
+                    // Same dismissal protocol as the image frame.
+                    onDismiss: (reason) => {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            try {
+                                ws.send(JSON.stringify({
+                                    type: "photo_frame_dismissed",
+                                    reason: reason,
+                                }));
+                            } catch (_) { /* ignore */ }
+                        }
+                    },
+                    // Video couldn't load / autoplay — ask the server to
+                    // fall back to cycling photos.
+                    onError: (reason) => {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            try {
+                                ws.send(JSON.stringify({
+                                    type: "photo_frame_video_error",
+                                    reason: reason,
+                                }));
+                            } catch (_) { /* ignore */ }
+                        }
+                    },
+                });
+                return pfVideoController;
+            }).catch((e) => {
+                console.error("[photo-frame] video module load failed:", e);
+                pfVideoLoading = null;
+                throw e;
+            });
+        }
+        return pfVideoLoading;
+    }
+
     // Single helper called from every kiosk-initiated dismissal trigger
     // (state change, volume, mute, PTT activation, takeover overlays,
-    // pointer/touch). No-op when not shown.
+    // pointer/touch). No-op when not shown. Covers BOTH the image and the
+    // looping-video frame.
     function maybeDismissPhotoFrame(reason) {
         if (pfController && pfController.isShown()) {
             pfController.dismiss(reason).catch(() => {});
+        }
+        if (pfVideoController && pfVideoController.isShown()) {
+            pfVideoController.dismiss(reason).catch(() => {});
         }
     }
 
@@ -356,6 +404,13 @@
                 await pfController.dismiss("preempt");
             } catch (e) {
                 console.warn("[photo-frame] preempt dismiss failed, continuing:", e);
+            }
+        }
+        if (pfVideoController && pfVideoController.isShown()) {
+            try {
+                await pfVideoController.dismiss("preempt");
+            } catch (e) {
+                console.warn("[photo-frame] video preempt dismiss failed, continuing:", e);
             }
         }
         return runFn();
@@ -484,12 +539,18 @@
                 getPhotoFrame().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] show failed:", e));
                 break;
+            case "show_photo_frame_video":
+                pfProtectedTurn = true;
+                getPhotoFrameVideo().then((pf) => pf.show(msg))
+                    .catch((e) => console.error("[photo-frame] video show failed:", e));
+                break;
             case "photo_frame_update":
                 if (pfController) pfController.update(msg);
                 break;
             case "hide_photo_frame":
                 pfProtectedTurn = false;
                 if (pfController) pfController.dismiss("explicit").catch(() => {});
+                if (pfVideoController) pfVideoController.dismiss("explicit").catch(() => {});
                 break;
             default:
                 console.log("Unknown message:", msg);

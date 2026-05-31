@@ -49,6 +49,37 @@ class PhotoFrameSession:
     started_at: float = field(default_factory=time.monotonic)
 
 
+@dataclass
+class PhotoFrameVideoSession:
+    """A looping-video photo-frame session. Unlike the photo session this
+    has no HA entity / subscription — the kiosk plays a single local file
+    (`src`) on repeat. `video_hash` is the sha256 of the cached video so we
+    can skip redundant re-shows when nothing changed."""
+    video_hash: str
+    src: str
+    started_at: float = field(default_factory=time.monotonic)
+
+
+# Kiosk-local URL of the looping video. The RPi serves the file it pulled
+# from the server at this path (see rpi/audio_streamer add_static("/media/")).
+VIDEO_SRC = "/media/loop.mp4"
+
+
+def _video_available(state: "AppState") -> Optional[str]:
+    """Return the cached video's sha256 if video mode is ON and a video has
+    been downloaded (hash known), else None. `photo_frame_video_hash` is set
+    by the server only after a successful download and cleared when the cache
+    is dropped, so a non-empty hash implies the cache file exists."""
+    try:
+        mode = bool(state.runtime_config.get("photo_frame_video_mode", False))
+    except Exception:
+        mode = False
+    if not mode:
+        return None
+    h = (getattr(state, "photo_frame_video_hash", "") or "").strip()
+    return h or None
+
+
 async def _push_to_rpi(state: "AppState", msg: dict) -> bool:
     """Local mirror of main._push_to_rpi to dodge a circular import."""
     ws = state.audio_websocket
@@ -82,11 +113,16 @@ async def _fetch_and_b64(entity_id: str) -> Optional[tuple[str, str, str]]:
 async def start_photo_frame(
     state: "AppState",
     entity_id: str = "",
+    force_photo: bool = False,
 ) -> dict:
     """Open a photo frame session.
 
     `entity_id` overrides `runtime_config["photo_frame_entity"]` when
     non-empty. If both are empty, returns `not_configured`.
+
+    When video mode is ON and a video is cached, this loops the video
+    instead of cycling photos. `force_photo=True` bypasses the video
+    branch (used by the load-error fallback to drop back to photos).
     """
     # Showing the photo frame counts as kiosk activity → wake the
     # display first if it's currently blanked.
@@ -95,6 +131,18 @@ async def start_photo_frame(
         _record_kiosk_activity(state)
     except Exception:
         pass
+
+    # Video branch: if the user enabled video mode and we have a cached
+    # video, loop it (no HA fetch / subscription).
+    if not force_photo:
+        video_hash = _video_available(state)
+        if video_hash is not None:
+            result = await _start_video_frame(state, video_hash)
+            if result is not None:
+                return result
+            # _start_video_frame returned None → couldn't reach the kiosk;
+            # fall through to the photo path below.
+
     # Resolve entity: explicit arg wins, otherwise the live runtime config.
     entity = (entity_id or "").strip()
     if not entity:
@@ -167,6 +215,53 @@ async def start_photo_frame(
     return {"status": "ok", "session": True}
 
 
+async def _start_video_frame(state: "AppState", video_hash: str) -> Optional[dict]:
+    """Open (or refresh) a looping-video session.
+
+    Returns a status dict on success, or None if the kiosk is unreachable
+    (so the caller can fall back to the photo path).
+    """
+    existing: Optional[PhotoFrameVideoSession] = getattr(
+        state, "photo_frame_video_session", None)
+    if existing is not None and existing.video_hash == video_hash:
+        # Already looping this exact video — nothing to do.
+        return {"status": "already_active", "session": True, "mode": "video"}
+
+    # A photo session must never coexist with a video session.
+    if state.photo_frame_session is not None:
+        await stop_photo_frame(state, reason="video_switch")
+
+    # Tell the RPi to make sure it has the file (it pulls over HTTP and
+    # only re-downloads when its local hash differs), then tell the kiosk
+    # to play it. The sync message must reach the RPi or it can't serve
+    # /media/loop.mp4 — if the audio WS is gone, bail to the photo path.
+    synced = await _push_to_rpi(state, {
+        "type": "photo_frame_video_sync",
+        "hash": video_hash,
+        "url": "/api/photo_frame/video",
+    })
+    if not synced:
+        return None
+
+    show = {"type": "show_photo_frame_video", "src": VIDEO_SRC, "hash": video_hash}
+    await _push_to_rpi(state, show)
+    from .main import broadcast_to_ui
+    await broadcast_to_ui(state, show)
+
+    state.photo_frame_video_session = PhotoFrameVideoSession(
+        video_hash=video_hash, src=VIDEO_SRC)
+    log.info(f"Photo frame video opened: hash={video_hash[:12]}")
+    return {"status": "ok", "session": True, "mode": "video"}
+
+
+async def handle_video_load_error(state: "AppState") -> dict:
+    """The kiosk couldn't load/autoplay the looping video. Tear the video
+    session down and fall back to cycling photos."""
+    log.warning("Photo frame video failed on the kiosk — falling back to photos")
+    await stop_photo_frame(state, reason="video_load_error")
+    return await start_photo_frame(state, "", force_photo=True)
+
+
 async def _ensure_ha_ws(state: "AppState"):
     """Late-bound HA WS access. Returns the connected client or None."""
     from .main import _ensure_ha_ws as bootstrap
@@ -200,18 +295,21 @@ async def _on_state_changed(state: "AppState", entity_id: str) -> None:
 
 
 async def stop_photo_frame(state: "AppState", reason: str = "explicit") -> dict:
-    """Close the active photo frame session. Idempotent — no-op when
-    nothing is open."""
+    """Close the active photo frame session (photo OR video). Idempotent —
+    no-op when nothing is open."""
     session: Optional[PhotoFrameSession] = state.photo_frame_session
-    if session is None:
+    video_session = getattr(state, "photo_frame_video_session", None)
+    if session is None and video_session is None:
         return {"status": "not_active", "session": False}
 
-    # Detach the session BEFORE awaiting anything so a re-entrant
-    # start sees a clean slate.
+    # Detach BOTH sessions BEFORE awaiting anything so a re-entrant start
+    # sees a clean slate. A video session has no HA subscription, so the
+    # only teardown it needs is the kiosk hide message below.
     state.photo_frame_session = None
+    state.photo_frame_video_session = None
 
-    # Tear down the HA subscription if we had one.
-    if session.sub_id is not None:
+    # Tear down the HA subscription if we had a photo session with one.
+    if session is not None and session.sub_id is not None:
         from .main import _ensure_ha_ws as _ha
         try:
             client = await _ha(state)

@@ -98,3 +98,21 @@ def test_default_keys_has_expected_entries():
     assert "wake_word" in DEFAULT_KEYS
     assert "ollama_model" in DEFAULT_KEYS
     assert "auto_theme" in DEFAULT_KEYS
+
+
+def test_photo_frame_video_keys_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("PHOTO_FRAME_VIDEO_URL", raising=False)
+    monkeypatch.delenv("PHOTO_FRAME_VIDEO_MODE", raising=False)
+    cfg = RuntimeConfig(str(tmp_path / "config.json"))
+    values = cfg.load()
+    assert values["photo_frame_video_url"] == ""
+    assert values["photo_frame_video_mode"] is False
+
+
+def test_photo_frame_video_mode_coerced_from_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("PHOTO_FRAME_VIDEO_MODE", "on")
+    monkeypatch.setenv("PHOTO_FRAME_VIDEO_URL", "http://nas/loop.mp4")
+    cfg = RuntimeConfig(str(tmp_path / "config.json"))
+    values = cfg.load()
+    assert values["photo_frame_video_mode"] is True
+    assert values["photo_frame_video_url"] == "http://nas/loop.mp4"

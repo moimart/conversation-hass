@@ -4,6 +4,8 @@ server/models/*
 !server/models/.gitkeep
 server/runtime/*
 !server/runtime/.gitkeep
+rpi/media/*
+!rpi/media/.gitkeep
 __pycache__/
 *.pyc
 .venv/

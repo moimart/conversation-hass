@@ -103,6 +103,9 @@ class MQTTBridge:
         self.on_photo_frame_show: Callable[[dict], Awaitable[None]] | None = None
         self.on_photo_frame_hide: Callable[[], Awaitable[None]] | None = None
         self.on_config_photo_frame_entity: Callable[[str], Awaitable[None]] | None = None
+        # Looping-video config: source URL (text) and on/off mode (switch).
+        self.on_config_photo_frame_video_url: Callable[[str], Awaitable[None]] | None = None
+        self.on_config_photo_frame_video_mode: Callable[[bool], Awaitable[None]] | None = None
         # "Start muted" config — whether HAL's mic should be muted on
         # RPi connect / server boot. The current mute state still
         # flows through the existing mute switch; this is just the
@@ -167,6 +170,8 @@ class MQTTBridge:
         self._cached_config_start_muted: bool = False
         # Photo-frame config cache (entity_id, default "")
         self._cached_config_photo_frame_entity: str = ""
+        self._cached_config_photo_frame_video_url: str = ""
+        self._cached_config_photo_frame_video_mode: bool = False
         # Display power: imperative state ("on"|"off") and idle-blank
         # timeout in seconds (0 = disabled).
         self._cached_display_state: str = "on"
@@ -880,6 +885,38 @@ class MQTTBridge:
                 "entity_category": "config",
             },
         ))
+        # Looping-video source URL. The server downloads + caches it; the
+        # kiosk plays it on repeat when Video Mode is on. Empty = no video.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_photo_frame_video_url/config",
+            {
+                "name": "Photo Frame Video URL",
+                "unique_id": f"{self.device_id}_config_photo_frame_video_url",
+                "state_topic":   f"{self.base}/config/photo_frame_video_url/state",
+                "command_topic": f"{self.base}/config/photo_frame_video_url/set",
+                "icon": "mdi:video-outline",
+                "availability": avail,
+                "device": device,
+                "mode": "text",
+                "entity_category": "config",
+            },
+        ))
+        # Toggle: when ON and a video is cached, the photo frame loops the
+        # video instead of cycling photos. OFF (or no video) → photos.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_photo_frame_video_mode/config",
+            {
+                "name": "Photo Frame Video Mode",
+                "unique_id": f"{self.device_id}_config_photo_frame_video_mode",
+                "state_topic":   f"{self.base}/config/photo_frame_video_mode/state",
+                "command_topic": f"{self.base}/config/photo_frame_video_mode/set",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "icon": "mdi:video-box",
+                "availability": avail,
+                "device": device,
+            },
+        ))
 
         return configs
 
@@ -969,6 +1006,12 @@ class MQTTBridge:
                     await self.publish_config_photo_frame_entity(
                         self._cached_config_photo_frame_entity
                     )
+                    await self.publish_config_photo_frame_video_url(
+                        self._cached_config_photo_frame_video_url
+                    )
+                    await self.publish_config_photo_frame_video_mode(
+                        self._cached_config_photo_frame_video_mode
+                    )
                     await self.publish_display_state(self._cached_display_state)
                     await self.publish_config_display_auto_off_seconds(
                         self._cached_config_display_auto_off_seconds
@@ -1030,6 +1073,8 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/photo_frame/show/set")
                     await client.subscribe(f"{self.base}/photo_frame/hide/set")
                     await client.subscribe(f"{self.base}/config/photo_frame_entity/set")
+                    await client.subscribe(f"{self.base}/config/photo_frame_video_url/set")
+                    await client.subscribe(f"{self.base}/config/photo_frame_video_mode/set")
                     await client.subscribe(f"{self.base}/display/set")
                     await client.subscribe(f"{self.base}/config/display_auto_off_seconds/set")
                     await client.subscribe(f"{self.base}/config/photo_frame_idle_minutes/set")
@@ -1295,6 +1340,15 @@ class MQTTBridge:
                 if self.on_config_photo_frame_entity:
                     await self.on_config_photo_frame_entity(payload.strip())
 
+            elif topic == f"{self.base}/config/photo_frame_video_url/set":
+                if self.on_config_photo_frame_video_url:
+                    await self.on_config_photo_frame_video_url(payload.strip())
+
+            elif topic == f"{self.base}/config/photo_frame_video_mode/set":
+                if self.on_config_photo_frame_video_mode:
+                    await self.on_config_photo_frame_video_mode(
+                        payload.strip().upper() == "ON")
+
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")
 
@@ -1483,6 +1537,20 @@ class MQTTBridge:
         await self._safe_publish(
             f"{self.base}/config/photo_frame_entity/state",
             value or "",
+        )
+
+    async def publish_config_photo_frame_video_url(self, value: str):
+        self._cached_config_photo_frame_video_url = value or ""
+        await self._safe_publish(
+            f"{self.base}/config/photo_frame_video_url/state",
+            value or "",
+        )
+
+    async def publish_config_photo_frame_video_mode(self, value: bool):
+        self._cached_config_photo_frame_video_mode = bool(value)
+        await self._safe_publish(
+            f"{self.base}/config/photo_frame_video_mode/state",
+            "ON" if value else "OFF",
         )
 
     async def publish_display_state(self, value: str):
