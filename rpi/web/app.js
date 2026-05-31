@@ -300,11 +300,40 @@
     let pfController = null;
     let pfLoading = null;
 
+    // The image and video controllers each own a SEPARATE sub-layer inside
+    // #photo-frame-root. They used to share the root and both did
+    // innerHTML="" on mount, so whichever mounted last orphaned the other's
+    // elements (a stuck broken-image <img> from the image controller would
+    // then sit over a detached, invisible <video>). Separate layers +
+    // showing only the active one keeps photo and video modes from
+    // clobbering each other. display:contents means the layer adds no box,
+    // so .pf-img / .pf-video still position against the stage as before.
+    function pfLayer(id) {
+        const root = document.getElementById("photo-frame-root");
+        let el = document.getElementById(id);
+        if (!el) {
+            el = document.createElement("div");
+            el.id = id;
+            el.style.display = "contents";
+            root.appendChild(el);
+        }
+        return el;
+    }
+
+    // Show exactly one of the two layers ("img" | "video"), hiding the
+    // other so a dismissed/idle controller can't bleed through.
+    function pfShowLayer(which) {
+        const img = pfLayer("pf-img-layer");
+        const vid = pfLayer("pf-video-layer");
+        img.style.display = which === "img" ? "contents" : "none";
+        vid.style.display = which === "video" ? "contents" : "none";
+    }
+
     async function getPhotoFrame() {
         if (pfController) return pfController;
         if (!pfLoading) {
             pfLoading = import("./photo_frame.js").then((mod) => {
-                const root = document.getElementById("photo-frame-root");
+                const root = pfLayer("pf-img-layer");
                 pfController = mod.mountPhotoFrame(root, {
                     // When the kiosk dismisses itself (touch / state / etc.),
                     // tell the server so it tears down the HA subscription.
@@ -337,7 +366,7 @@
         if (pfVideoController) return pfVideoController;
         if (!pfVideoLoading) {
             pfVideoLoading = import("./photo_frame.js").then((mod) => {
-                const root = document.getElementById("photo-frame-root");
+                const root = pfLayer("pf-video-layer");
                 pfVideoController = mod.mountPhotoFrameVideo(root, {
                     // Same dismissal protocol as the image frame.
                     onDismiss: (reason) => {
@@ -534,13 +563,18 @@
                 break;
             case "show_photo_frame":
                 // Protect through HAL's confirmation TTS for THIS turn —
-                // see the "state" case above.
+                // see the "state" case above. Flip to the image layer so a
+                // previously-shown video can't bleed through.
                 pfProtectedTurn = true;
+                pfShowLayer("img");
+                if (pfVideoController) pfVideoController.dismiss("explicit").catch(() => {});
                 getPhotoFrame().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] show failed:", e));
                 break;
             case "show_photo_frame_video":
                 pfProtectedTurn = true;
+                pfShowLayer("video");
+                if (pfController) pfController.dismiss("explicit").catch(() => {});
                 getPhotoFrameVideo().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] video show failed:", e));
                 break;
