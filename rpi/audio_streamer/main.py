@@ -516,10 +516,23 @@ class AudioManager:
 
         uri = f"ws://{self.ai_server_host}:8765/ws/audio"
 
+        # How long to let a single WS connection live before forcing a fresh
+        # reconnect. Defensive against a class of bugs where the websockets
+        # library's keepalive stops firing and the connection appears alive
+        # while no data flows. Cheap (~1s blip), guarantees recovery.
+        MAX_WS_LIFETIME_S = 1800  # 30 min
+
         while True:
             try:
                 log.info(f"Connecting to AI server at {uri}...")
-                async with websockets.connect(uri, max_size=16 * 1024 * 1024) as ws:
+                async with websockets.connect(
+                    uri,
+                    max_size=16 * 1024 * 1024,
+                    # Tighter than the library defaults (20/20) so half-open
+                    # TCP gets detected within ~30s instead of ~40s.
+                    ping_interval=15,
+                    ping_timeout=15,
+                ) as ws:
                     log.info("Connected to AI server")
                     self._server_ws = ws
 
@@ -579,10 +592,23 @@ class AudioManager:
                     send_task = asyncio.create_task(send_audio())
                     recv_task = asyncio.create_task(receive_messages())
                     try:
-                        done, pending = await asyncio.wait(
-                            {send_task, recv_task},
-                            return_when=asyncio.FIRST_COMPLETED,
-                        )
+                        try:
+                            done, pending = await asyncio.wait_for(
+                                asyncio.wait(
+                                    {send_task, recv_task},
+                                    return_when=asyncio.FIRST_COMPLETED,
+                                ),
+                                timeout=MAX_WS_LIFETIME_S,
+                            )
+                        except asyncio.TimeoutError:
+                            # Lifetime cap hit — neither task finished and
+                            # the library never raised. Force a clean
+                            # reconnect rather than trust the silent WS.
+                            log.info(
+                                f"Scheduled reconnect: {MAX_WS_LIFETIME_S}s "
+                                "WS lifetime cap reached"
+                            )
+                            raise websockets.ConnectionClosed(None, None)
                         for t in pending:
                             t.cancel()
                             try:
