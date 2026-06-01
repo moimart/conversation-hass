@@ -27,11 +27,238 @@ Topic layout (with HAL_DEVICE_ID = "hal-default"):
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 log = logging.getLogger("hal.mqtt")
 
 DISCOVERY_PREFIX = "homeassistant"
+
+# Sentinel returned by a ConfigEntity.parse to signal "ignore this payload"
+# (e.g. an out-of-range orientation value). The dispatcher skips the callback.
+_SKIP = object()
+
+# Sentinel option string used by the fallback/router selects to represent
+# "disabled" in the HA UI; maps to "" on the wire.
+_NONE_SENTINEL = "(none — disabled)"
+
+
+def _switch_parse(p: str) -> bool:
+    return p.strip().upper() == "ON"
+
+
+def _switch_serialize(v: Any) -> str:
+    return "ON" if v else "OFF"
+
+
+def _none_sentinel_parse(p: str) -> str:
+    raw = p.strip()
+    return "" if raw.startswith("(none") else raw
+
+
+def _none_sentinel_serialize(v: Any) -> str:
+    v = (v or "")
+    if not isinstance(v, str):
+        v = str(v)
+    v = v.strip()
+    return v if v else _NONE_SENTINEL
+
+
+def _clamped_int_parse(lo: int, hi: int, default: int) -> Callable[[str], int]:
+    def _parse(p: str) -> int:
+        try:
+            n = int(float(p.strip()))
+        except ValueError:
+            n = default
+        return max(lo, min(hi, n))
+    return _parse
+
+
+def _clamped_int_serialize(lo: int, hi: int, default: int) -> Callable[[Any], str]:
+    def _serialize(v: Any) -> str:
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            n = default
+        return str(max(lo, min(hi, n)))
+    return _serialize
+
+
+def _validated_lower_parse(allowed: set[str]) -> Callable[[str], Any]:
+    def _parse(p: str) -> Any:
+        val = p.strip().lower()
+        return val if val in allowed else _SKIP
+    return _parse
+
+
+def _str_or_empty(v: Any) -> str:
+    return str(v) if v is not None else ""
+
+
+@dataclass
+class ConfigEntity:
+    """Data-driven spec for one HA "config" entity.
+
+    Collapses the per-entity boilerplate (callback attr, cache slot,
+    discovery payload, subscribe, dispatch branch, publisher) into a single
+    declarative record. See CONFIG_ENTITIES below.
+    """
+
+    key: str
+    platform: str                  # "text"|"number"|"switch"|"select"
+    name: str
+    icon: str = ""
+    category: str | None = "config"
+    extra: dict = field(default_factory=dict)        # static discovery fields
+    parse: Callable[[str], Any] = lambda p: p.strip()
+    serialize: Callable[[Any], str] = _str_or_empty
+    default: Any = ""
+    options_attr: str | None = None  # for selects: bridge attr with options list
+    options_placeholder: str = ""    # placeholder when the options list is empty
+    options_prefix_none: bool = False  # prepend the "(none)" sentinel option
+    max_attr: str | None = None      # for num_ctx-style dynamic max
+
+
+CONFIG_ENTITIES: list[ConfigEntity] = [
+    ConfigEntity(
+        key="theme_day", platform="select", name="Day Theme",
+        icon="mdi:weather-sunny", options_attr="theme_options",
+    ),
+    ConfigEntity(
+        key="theme_night", platform="select", name="Night Theme",
+        icon="mdi:weather-night", options_attr="theme_options",
+    ),
+    ConfigEntity(
+        key="tts_voice", platform="select", name="TTS Voice",
+        icon="mdi:account-voice", options_attr="voice_options",
+        options_placeholder="(no voices found)",
+        serialize=lambda v: v or "",
+    ),
+    ConfigEntity(
+        key="wake_word", platform="text", name="Wake Word",
+        icon="mdi:microphone-message", extra={"mode": "text"},
+    ),
+    ConfigEntity(
+        key="ollama_model", platform="select", name="Ollama Model",
+        icon="mdi:chip", options_attr="model_options",
+        options_placeholder="(no models found)",
+    ),
+    ConfigEntity(
+        key="fallback_ollama_model", platform="select", name="LLM Fallback Model",
+        icon="mdi:robot-confused-outline", options_attr="model_options",
+        options_prefix_none=True,
+        parse=_none_sentinel_parse, serialize=_none_sentinel_serialize,
+    ),
+    ConfigEntity(
+        key="num_ctx", platform="number", name="LLM Context Size",
+        icon="mdi:format-letter-case", default=32768, max_attr="num_ctx_max",
+        extra={
+            "min": 2048, "step": 1024,
+            "unit_of_measurement": "tok", "mode": "box",
+        },
+        serialize=lambda v: str(v),  # already clamped by publisher
+    ),
+    ConfigEntity(
+        key="auto_theme", platform="switch", name="Auto Day/Night Theme",
+        icon="mdi:theme-light-dark", default=True,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        parse=_switch_parse, serialize=_switch_serialize,
+    ),
+    ConfigEntity(
+        key="router_enabled", platform="switch", name="Router Model Enabled",
+        icon="mdi:call-split", default=False,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        parse=_switch_parse, serialize=_switch_serialize,
+    ),
+    ConfigEntity(
+        key="router_model", platform="select", name="Router Model",
+        icon="mdi:directions-fork", options_attr="model_options",
+        options_prefix_none=True,
+        parse=_none_sentinel_parse, serialize=_none_sentinel_serialize,
+    ),
+    ConfigEntity(
+        key="calendar_default_source", platform="text",
+        name="Calendar Default Source", icon="mdi:calendar-text",
+        extra={"mode": "text"}, serialize=lambda v: v or "",
+    ),
+    ConfigEntity(
+        key="calendar_dismiss_seconds", platform="number",
+        name="Calendar Dismiss Seconds", icon="mdi:timer-sand", default=30,
+        extra={"min": 5, "max": 600, "step": 5, "unit_of_measurement": "s"},
+        parse=_clamped_int_parse(5, 600, 30),
+        serialize=_clamped_int_serialize(5, 600, 30),
+    ),
+    ConfigEntity(
+        key="start_muted", platform="switch", name="Start Muted",
+        icon="mdi:microphone-off", default=False,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        parse=_switch_parse, serialize=_switch_serialize,
+    ),
+    ConfigEntity(
+        key="photo_frame_entity", platform="text", name="Photo Frame Entity",
+        icon="mdi:image-multiple-outline", extra={"mode": "text"},
+        serialize=lambda v: v or "",
+    ),
+    ConfigEntity(
+        key="photo_frame_video_url", platform="text",
+        name="Photo Frame Video URL", icon="mdi:video-outline",
+        extra={"mode": "text"}, serialize=lambda v: v or "",
+    ),
+    ConfigEntity(
+        key="photo_frame_video_mode", platform="switch",
+        name="Photo Frame Video Mode", icon="mdi:video-box", default=False,
+        category=None,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        parse=_switch_parse, serialize=_switch_serialize,
+    ),
+    ConfigEntity(
+        key="display_auto_off_seconds", platform="number",
+        name="Display Auto-off Seconds", icon="mdi:monitor-off", default=0,
+        extra={"min": 0, "max": 7200, "step": 30, "unit_of_measurement": "s"},
+        parse=_clamped_int_parse(0, 7200, 0),
+        serialize=_clamped_int_serialize(0, 7200, 0),
+    ),
+    ConfigEntity(
+        key="photo_frame_idle_minutes", platform="number",
+        name="Photo Frame Idle Minutes", icon="mdi:image-multiple-outline",
+        default=0,
+        extra={"min": 0, "max": 720, "step": 1, "unit_of_measurement": "min"},
+        parse=_clamped_int_parse(0, 720, 0),
+        serialize=_clamped_int_serialize(0, 720, 0),
+    ),
+    ConfigEntity(
+        key="openclaw_enabled", platform="switch", name="OpenClaw",
+        icon="mdi:brain", default=False,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        # NOTE: the callback receives the raw stripped string (it coerces
+        # to bool itself), matching the original _handle_message branch.
+        parse=lambda p: p.strip(), serialize=_switch_serialize,
+    ),
+    ConfigEntity(
+        key="openclaw_gateway_url", platform="text",
+        name="OpenClaw Gateway URL", icon="mdi:web",
+        serialize=lambda v: str(v or ""),
+    ),
+    ConfigEntity(
+        key="openclaw_workspace", platform="text", name="OpenClaw Workspace",
+        icon="mdi:folder-account",
+        serialize=lambda v: str(v or ""),
+    ),
+    ConfigEntity(
+        key="display_orientation", platform="select",
+        name="Display Orientation", icon="mdi:phone-rotate-landscape",
+        default="portrait", extra={"options": ["portrait", "landscape"]},
+        parse=_validated_lower_parse({"portrait", "landscape"}),
+    ),
+    ConfigEntity(
+        key="orb_side", platform="select", name="Orb Side",
+        icon="mdi:swap-horizontal", default="left",
+        extra={"options": ["left", "right"]},
+        parse=_validated_lower_parse({"left", "right"}),
+    ),
+]
+
+_CONFIG_BY_KEY: dict[str, ConfigEntity] = {e.key: e for e in CONFIG_ENTITIES}
 
 
 class MQTTBridge:
@@ -190,6 +417,47 @@ class MQTTBridge:
     @property
     def connected(self) -> bool:
         return self._connected
+
+    def _config_discovery(self, entity: ConfigEntity) -> tuple[str, dict]:
+        """Build the (config_topic, payload) for one data-driven config entity.
+
+        Reproduces the exact discovery payload the per-entity hand-written
+        blocks used to emit. Key order is irrelevant (the golden test
+        compares parsed dicts), but every key/value is preserved.
+        """
+        device = self._device_block()
+        avail = [{"topic": self.availability_topic}]
+        topic = (
+            f"{DISCOVERY_PREFIX}/{entity.platform}/{self.device_id}/"
+            f"config_{entity.key}/config"
+        )
+        payload: dict = {
+            "name": entity.name,
+            "unique_id": f"{self.device_id}_config_{entity.key}",
+            "state_topic": f"{self.base}/config/{entity.key}/state",
+            "command_topic": f"{self.base}/config/{entity.key}/set",
+        }
+        # Selects pull their option list dynamically at discovery time.
+        if entity.platform == "select" and entity.options_attr:
+            opts = list(getattr(self, entity.options_attr) or [])
+            if entity.options_prefix_none:
+                payload["options"] = [_NONE_SENTINEL] + opts
+            elif opts:
+                payload["options"] = opts
+            else:
+                payload["options"] = [entity.options_placeholder]
+        # Static discovery fields (min/step/unit/mode, payload_on/off,
+        # explicit options for fixed-option selects, etc.).
+        payload.update(entity.extra)
+        # Dynamic upper bound for num_ctx-style numbers.
+        if entity.max_attr:
+            payload["max"] = max(2048, int(getattr(self, entity.max_attr)))
+        payload["icon"] = entity.icon
+        payload["availability"] = avail
+        payload["device"] = device
+        if entity.category is not None:
+            payload["entity_category"] = entity.category
+        return topic, payload
 
     def _device_block(self) -> dict:
         return {
@@ -447,149 +715,13 @@ class MQTTBridge:
                 payload,
             ))
 
-        # Live runtime-config controls: 6 entities under entity_category=
-        # "config" so HA groups them under the device's "Configuration"
-        # section. Selects for theme_day/night, tts_voice, ollama_model;
-        # text for wake_word; switch for auto_theme.
+        # Live runtime-config controls: data-driven config entities,
+        # emitted from the CONFIG_ENTITIES registry. Each lands under
+        # entity_category="config" (except where category=None) so HA
+        # groups them under the device's Configuration section.
+        for _entity in CONFIG_ENTITIES:
+            configs.append(self._config_discovery(_entity))
 
-        def _select_options(opts: list[str], placeholder: str) -> list[str]:
-            return list(opts) if opts else [placeholder]
-
-        configs.append((
-            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_theme_day/config",
-            {
-                "name": "Day Theme",
-                "unique_id": f"{self.device_id}_config_theme_day",
-                "state_topic":   f"{self.base}/config/theme_day/state",
-                "command_topic": f"{self.base}/config/theme_day/set",
-                "options": list(self.theme_options),
-                "icon": "mdi:weather-sunny",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_theme_night/config",
-            {
-                "name": "Night Theme",
-                "unique_id": f"{self.device_id}_config_theme_night",
-                "state_topic":   f"{self.base}/config/theme_night/state",
-                "command_topic": f"{self.base}/config/theme_night/set",
-                "options": list(self.theme_options),
-                "icon": "mdi:weather-night",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_tts_voice/config",
-            {
-                "name": "TTS Voice",
-                "unique_id": f"{self.device_id}_config_tts_voice",
-                "state_topic":   f"{self.base}/config/tts_voice/state",
-                "command_topic": f"{self.base}/config/tts_voice/set",
-                "options": _select_options(self.voice_options, "(no voices found)"),
-                "icon": "mdi:account-voice",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_ollama_model/config",
-            {
-                "name": "Ollama Model",
-                "unique_id": f"{self.device_id}_config_ollama_model",
-                "state_topic":   f"{self.base}/config/ollama_model/state",
-                "command_topic": f"{self.base}/config/ollama_model/set",
-                "options": _select_options(self.model_options, "(no models found)"),
-                "icon": "mdi:chip",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        # Fallback model: same option list as primary, plus an "(none)"
-        # sentinel at the top so the user can disable the fallback from
-        # the HA UI. The sentinel maps to empty-string on the wire.
-        _NONE_FALLBACK = "(none — disabled)"
-        configs.append((
-            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_fallback_ollama_model/config",
-            {
-                "name": "LLM Fallback Model",
-                "unique_id": f"{self.device_id}_config_fallback_ollama_model",
-                "state_topic":   f"{self.base}/config/fallback_ollama_model/state",
-                "command_topic": f"{self.base}/config/fallback_ollama_model/set",
-                "options": [_NONE_FALLBACK] + (list(self.model_options) if self.model_options else []),
-                "icon": "mdi:robot-confused-outline",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_wake_word/config",
-            {
-                "name": "Wake Word",
-                "unique_id": f"{self.device_id}_config_wake_word",
-                "state_topic":   f"{self.base}/config/wake_word/state",
-                "command_topic": f"{self.base}/config/wake_word/set",
-                "icon": "mdi:microphone-message",
-                "availability": avail,
-                "device": device,
-                "mode": "text",
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_auto_theme/config",
-            {
-                "name": "Auto Day/Night Theme",
-                "unique_id": f"{self.device_id}_config_auto_theme",
-                "state_topic":   f"{self.base}/config/auto_theme/state",
-                "command_topic": f"{self.base}/config/auto_theme/set",
-                "payload_on": "ON",
-                "payload_off": "OFF",
-                "icon": "mdi:theme-light-dark",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        # Router model — a small LLM that decides Ollama vs OpenClaw per command.
-        # On/off switch + model picker (with a "(none)" sentinel → empty wire).
-        configs.append((
-            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_router_enabled/config",
-            {
-                "name": "Router Model Enabled",
-                "unique_id": f"{self.device_id}_config_router_enabled",
-                "state_topic":   f"{self.base}/config/router_enabled/state",
-                "command_topic": f"{self.base}/config/router_enabled/set",
-                "payload_on": "ON",
-                "payload_off": "OFF",
-                "icon": "mdi:call-split",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        _NONE_ROUTER = "(none — disabled)"
-        configs.append((
-            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_router_model/config",
-            {
-                "name": "Router Model",
-                "unique_id": f"{self.device_id}_config_router_model",
-                "state_topic":   f"{self.base}/config/router_model/state",
-                "command_topic": f"{self.base}/config/router_model/set",
-                "options": [_NONE_ROUTER] + (list(self.model_options) if self.model_options else []),
-                "icon": "mdi:directions-fork",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
 
         # Calendar overlay — three buttons (month/week/day) + a "Hide
         # Calendar" button, plus a text entity for the default calendar
@@ -626,76 +758,6 @@ class MQTTBridge:
                 "device": device,
             },
         ))
-        # Default calendar source — empty = merge all HA calendars.
-        # No `max` field (HA's text entity caps at 255 silently if the
-        # value is set higher; the default fits any reasonable name).
-        configs.append((
-            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_calendar_default_source/config",
-            {
-                "name": "Calendar Default Source",
-                "unique_id": f"{self.device_id}_config_calendar_default_source",
-                "state_topic":   f"{self.base}/config/calendar_default_source/state",
-                "command_topic": f"{self.base}/config/calendar_default_source/set",
-                "icon": "mdi:calendar-text",
-                "availability": avail,
-                "device": device,
-                "mode": "text",
-                "entity_category": "config",
-            },
-        ))
-        # Start-muted default — switch under the Configuration section.
-        # When ON, every time the RPi audio_streamer connects the
-        # server pushes a mute_set so it boots muted.
-        configs.append((
-            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_start_muted/config",
-            {
-                "name": "Start Muted",
-                "unique_id": f"{self.device_id}_config_start_muted",
-                "state_topic":   f"{self.base}/config/start_muted/state",
-                "command_topic": f"{self.base}/config/start_muted/set",
-                "payload_on": "ON",
-                "payload_off": "OFF",
-                "icon": "mdi:microphone-off",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/number/{self.device_id}/config_calendar_dismiss_seconds/config",
-            {
-                "name": "Calendar Dismiss Seconds",
-                "unique_id": f"{self.device_id}_config_calendar_dismiss_seconds",
-                "state_topic":   f"{self.base}/config/calendar_dismiss_seconds/state",
-                "command_topic": f"{self.base}/config/calendar_dismiss_seconds/set",
-                "min": 5,
-                "max": 600,
-                "step": 5,
-                "unit_of_measurement": "s",
-                "icon": "mdi:timer-sand",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/number/{self.device_id}/config_num_ctx/config",
-            {
-                "name": "LLM Context Size",
-                "unique_id": f"{self.device_id}_config_num_ctx",
-                "state_topic":   f"{self.base}/config/num_ctx/state",
-                "command_topic": f"{self.base}/config/num_ctx/set",
-                "min": 2048,
-                "max": max(2048, int(self.num_ctx_max)),
-                "step": 1024,
-                "unit_of_measurement": "tok",
-                "icon": "mdi:format-letter-case",
-                "mode": "box",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
         # Display power: a top-level switch (not in Configuration) so it's
         # one tap from the device card, plus a Configuration-section
         # number for the idle-blank timeout.
@@ -713,114 +775,8 @@ class MQTTBridge:
                 "device": device,
             },
         ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/number/{self.device_id}/config_display_auto_off_seconds/config",
-            {
-                "name": "Display Auto-off Seconds",
-                "unique_id": f"{self.device_id}_config_display_auto_off_seconds",
-                "state_topic":   f"{self.base}/config/display_auto_off_seconds/state",
-                "command_topic": f"{self.base}/config/display_auto_off_seconds/set",
-                "min": 0,
-                "max": 7200,
-                "step": 30,
-                "unit_of_measurement": "s",
-                "icon": "mdi:monitor-off",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/number/{self.device_id}/config_photo_frame_idle_minutes/config",
-            {
-                "name": "Photo Frame Idle Minutes",
-                "unique_id": f"{self.device_id}_config_photo_frame_idle_minutes",
-                "state_topic":   f"{self.base}/config/photo_frame_idle_minutes/state",
-                "command_topic": f"{self.base}/config/photo_frame_idle_minutes/set",
-                "min": 0,
-                "max": 720,
-                "step": 1,
-                "unit_of_measurement": "min",
-                "icon": "mdi:image-multiple-outline",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
 
-        # OpenClaw config entities
-        configs.append((
-            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_openclaw_enabled/config",
-            {
-                "name": "OpenClaw",
-                "unique_id": f"{self.device_id}_config_openclaw_enabled",
-                "state_topic":   f"{self.base}/config/openclaw_enabled/state",
-                "command_topic": f"{self.base}/config/openclaw_enabled/set",
-                "payload_on": "ON",
-                "payload_off": "OFF",
-                "icon": "mdi:brain",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_openclaw_gateway_url/config",
-            {
-                "name": "OpenClaw Gateway URL",
-                "unique_id": f"{self.device_id}_config_openclaw_gateway_url",
-                "state_topic":   f"{self.base}/config/openclaw_gateway_url/state",
-                "command_topic": f"{self.base}/config/openclaw_gateway_url/set",
-                "icon": "mdi:web",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        configs.append((
-            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_openclaw_workspace/config",
-            {
-                "name": "OpenClaw Workspace",
-                "unique_id": f"{self.device_id}_config_openclaw_workspace",
-                "state_topic":   f"{self.base}/config/openclaw_workspace/state",
-                "command_topic": f"{self.base}/config/openclaw_workspace/set",
-                "icon": "mdi:folder-account",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
 
-        # Display orientation select
-        configs.append((
-            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_display_orientation/config",
-            {
-                "name": "Display Orientation",
-                "unique_id": f"{self.device_id}_config_display_orientation",
-                "state_topic":   f"{self.base}/config/display_orientation/state",
-                "command_topic": f"{self.base}/config/display_orientation/set",
-                "options": ["portrait", "landscape"],
-                "icon": "mdi:phone-rotate-landscape",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
-        # Orb side select (landscape only)
-        configs.append((
-            f"{DISCOVERY_PREFIX}/select/{self.device_id}/config_orb_side/config",
-            {
-                "name": "Orb Side",
-                "unique_id": f"{self.device_id}_config_orb_side",
-                "state_topic":   f"{self.base}/config/orb_side/state",
-                "command_topic": f"{self.base}/config/orb_side/set",
-                "options": ["left", "right"],
-                "icon": "mdi:swap-horizontal",
-                "availability": avail,
-                "device": device,
-                "entity_category": "config",
-            },
-        ))
 
         # Push-to-Talk: three button entities under the device's
         # Configuration section. HA dashboards, automations, and
@@ -867,56 +823,6 @@ class MQTTBridge:
                     "device": device,
                 },
             ))
-        # Default image entity for the photo frame. Empty = feature
-        # disabled (Show button is a no-op). No `max` field — HA's text
-        # entity caps at 255 silently if set above that, which an
-        # entity_id never reaches anyway.
-        configs.append((
-            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_photo_frame_entity/config",
-            {
-                "name": "Photo Frame Entity",
-                "unique_id": f"{self.device_id}_config_photo_frame_entity",
-                "state_topic":   f"{self.base}/config/photo_frame_entity/state",
-                "command_topic": f"{self.base}/config/photo_frame_entity/set",
-                "icon": "mdi:image-multiple-outline",
-                "availability": avail,
-                "device": device,
-                "mode": "text",
-                "entity_category": "config",
-            },
-        ))
-        # Looping-video source URL. The server downloads + caches it; the
-        # kiosk plays it on repeat when Video Mode is on. Empty = no video.
-        configs.append((
-            f"{DISCOVERY_PREFIX}/text/{self.device_id}/config_photo_frame_video_url/config",
-            {
-                "name": "Photo Frame Video URL",
-                "unique_id": f"{self.device_id}_config_photo_frame_video_url",
-                "state_topic":   f"{self.base}/config/photo_frame_video_url/state",
-                "command_topic": f"{self.base}/config/photo_frame_video_url/set",
-                "icon": "mdi:video-outline",
-                "availability": avail,
-                "device": device,
-                "mode": "text",
-                "entity_category": "config",
-            },
-        ))
-        # Toggle: when ON and a video is cached, the photo frame loops the
-        # video instead of cycling photos. OFF (or no video) → photos.
-        configs.append((
-            f"{DISCOVERY_PREFIX}/switch/{self.device_id}/config_photo_frame_video_mode/config",
-            {
-                "name": "Photo Frame Video Mode",
-                "unique_id": f"{self.device_id}_config_photo_frame_video_mode",
-                "state_topic":   f"{self.base}/config/photo_frame_video_mode/state",
-                "command_topic": f"{self.base}/config/photo_frame_video_mode/set",
-                "payload_on": "ON",
-                "payload_off": "OFF",
-                "icon": "mdi:video-box",
-                "availability": avail,
-                "device": device,
-            },
-        ))
 
         return configs
 
