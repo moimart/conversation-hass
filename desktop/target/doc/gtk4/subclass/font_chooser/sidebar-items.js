@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["font_chooser_font_activated","font_chooser_get_font_face","font_chooser_get_font_family","font_chooser_get_font_map","font_chooser_get_font_size","font_chooser_set_filter_func","font_chooser_set_font_map"],"mod":["sealed"],"struct":["FilterCallback"],"trait":["FontChooserImpl","FontChooserImplExt"]};

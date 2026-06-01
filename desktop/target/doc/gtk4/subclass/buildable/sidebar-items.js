@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["buildable_add_child","buildable_construct_child","buildable_get_id","buildable_get_internal_child","buildable_parser_finished","buildable_set_buildable_property","buildable_set_id"],"mod":["sealed"],"trait":["BuildableImpl","BuildableImplExt"]};

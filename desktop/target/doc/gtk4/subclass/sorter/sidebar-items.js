@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["sorter_compare","sorter_get_order"],"mod":["sealed"],"trait":["SorterImpl","SorterImplExt"]};

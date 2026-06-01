@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["builder_scope_create_closure","builder_scope_get_type_from_function","builder_scope_get_type_from_name"],"mod":["sealed"],"trait":["BuilderCScopeImpl","BuilderScopeImpl","BuilderScopeImplExt"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["sealed"],"struct":["Fixed","FixedBuilder"],"trait":["FixedExt"]};

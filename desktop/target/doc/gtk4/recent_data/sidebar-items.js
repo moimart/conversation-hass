@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["clear_recent_data","copy_into_recent_data","init_recent_data"],"struct":["RecentData"]};

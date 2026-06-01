@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["cell_renderer_text_edited"],"mod":["sealed"],"trait":["CellRendererTextImpl","CellRendererTextImplExt"]};

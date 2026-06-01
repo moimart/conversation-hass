@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SortColumn"],"fn":["destroy_closure","into_raw","trampoline"],"mod":["sealed"],"trait":["TreeSortableExtManual"]};

@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["graphene",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.1/core/ops/arith/trait.AddAssign.html\" title=\"trait core::ops::arith::AddAssign\">AddAssign</a> for <a class=\"struct\" href=\"graphene/struct.Quaternion.html\" title=\"struct graphene::Quaternion\">Quaternion</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.1/core/ops/arith/trait.AddAssign.html\" title=\"trait core::ops::arith::AddAssign\">AddAssign</a> for <a class=\"struct\" href=\"graphene/struct.Vec2.html\" title=\"struct graphene::Vec2\">Vec2</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.1/core/ops/arith/trait.AddAssign.html\" title=\"trait core::ops::arith::AddAssign\">AddAssign</a> for <a class=\"struct\" href=\"graphene/struct.Vec3.html\" title=\"struct graphene::Vec3\">Vec3</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.1/core/ops/arith/trait.AddAssign.html\" title=\"trait core::ops::arith::AddAssign\">AddAssign</a> for <a class=\"struct\" href=\"graphene/struct.Vec4.html\" title=\"struct graphene::Vec4\">Vec4</a>",0]]],["toml_parser",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.1/core/ops/arith/trait.AddAssign.html\" title=\"trait core::ops::arith::AddAssign\">AddAssign</a>&lt;<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.94.1/std/primitive.usize.html\">usize</a>&gt; for <a class=\"struct\" href=\"toml_parser/struct.Span.html\" title=\"struct toml_parser::Span\">Span</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1096,397]}

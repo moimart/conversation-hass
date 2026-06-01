@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["IS_MAIN_THREAD"],"fn":["init","is_initialized","is_initialized_main_thread","set_initialized"],"macro":["assert_initialized_main_thread","assert_not_initialized","skip_assert_initialized"],"static":["INITIALIZED"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["recent_manager_changed"],"mod":["sealed"],"trait":["RecentManagerImpl","RecentManagerImplExt"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["scrollable_get_border"],"mod":["sealed"],"trait":["ScrollableImpl","ScrollableImplExt"]};

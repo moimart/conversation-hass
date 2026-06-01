@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["insert_text_trampoline"],"mod":["sealed"],"trait":["EditableExtManual"]};

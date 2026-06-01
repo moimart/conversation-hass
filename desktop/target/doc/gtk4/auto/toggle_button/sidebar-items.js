@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["sealed"],"struct":["ToggleButton","ToggleButtonBuilder"],"trait":["ToggleButtonExt"]};

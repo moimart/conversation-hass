@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["dialog_hide","dialog_response","dialog_show"],"mod":["sealed"],"trait":["NativeDialogImpl","NativeDialogImplExt"]};

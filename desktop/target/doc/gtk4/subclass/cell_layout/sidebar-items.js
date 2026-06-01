@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["cell_layout_add_attribute","cell_layout_clear","cell_layout_clear_attributes","cell_layout_get_area","cell_layout_get_cells","cell_layout_pack_end","cell_layout_pack_start","cell_layout_reorder","cell_layout_set_cell_data_func"],"mod":["sealed"],"struct":["CellLayoutDataCallback"],"trait":["CellLayoutImpl","CellLayoutImplExt"]};

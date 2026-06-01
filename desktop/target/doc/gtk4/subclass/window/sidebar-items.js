@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["window_activate_default","window_activate_focus","window_close_request","window_enable_debugging","window_keys_changed"],"mod":["sealed"],"trait":["WindowImpl","WindowImplExt"]};

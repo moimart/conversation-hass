@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["range_adjust_bounds","range_change_value","range_get_range_border","range_move_slider","range_value_changed"],"mod":["sealed"],"trait":["RangeImpl","RangeImplExt"]};

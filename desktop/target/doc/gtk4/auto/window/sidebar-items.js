@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["sealed"],"struct":["Window","WindowBuilder"],"trait":["GtkWindowExt"]};

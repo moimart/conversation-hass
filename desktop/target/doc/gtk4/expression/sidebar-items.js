@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["define_expression"],"trait":["GObjectPropertyExpressionExt","IsExpression"]};

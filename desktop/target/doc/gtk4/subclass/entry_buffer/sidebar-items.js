@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["entry_buffer_delete_text","entry_buffer_deleted_text","entry_buffer_get_length","entry_buffer_get_text","entry_buffer_insert_text","entry_buffer_inserted_text","text_n_chars"],"mod":["sealed"],"trait":["EntryBufferImpl","EntryBufferImplExt"]};

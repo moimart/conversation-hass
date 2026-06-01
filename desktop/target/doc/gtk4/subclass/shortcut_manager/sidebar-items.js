@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["shortcut_manager_add_controller","shortcut_manager_remove_controller"],"mod":["sealed"],"trait":["ShortcutManagerImpl","ShortcutManagerImplExt"]};

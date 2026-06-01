@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["style_context_changed"],"mod":["sealed"],"trait":["StyleContextImpl","StyleContextImplExt"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["sealed"],"struct":["FlowBoxChild","FlowBoxChildBuilder"],"trait":["FlowBoxChildExt"]};
