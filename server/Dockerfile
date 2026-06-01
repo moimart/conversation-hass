@@ -34,10 +34,13 @@ ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 
-# Pin numpy first, then install the CPU-only torch wheel so resemblyzer /
-# silero-vad resolve against it instead of pulling the multi-GB CUDA build.
+# Pin numpy first, then install the CPU-only torch AND torchaudio wheels so
+# resemblyzer / silero-vad resolve against them instead of pulling the multi-GB
+# CUDA builds. torchaudio MUST be pinned too: silero-vad depends on it, and the
+# default PyPI torchaudio is a CUDA build that fails with
+# "libcudart.so.NN: cannot open shared object file" on this CUDA-less base.
 RUN pip3 install --no-cache-dir numpy==1.26.4 \
-    && pip3 install --no-cache-dir torch==2.4.1 \
+    && pip3 install --no-cache-dir torch==2.4.1 torchaudio==2.4.1 \
        --index-url https://download.pytorch.org/whl/cpu
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
