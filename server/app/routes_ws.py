@@ -61,6 +61,20 @@ async def audio_endpoint(websocket: WebSocket):
     except Exception as e:
         log.warning(f"Could not push initial orientation to RPi: {e}")
 
+    # Reconcile the kiosk's photo/video frame with our session state. After a
+    # server restart our session is None, but the kiosk may still be showing
+    # an orphaned frame — a static photo, or a video looping from the RPi's
+    # local /media/loop.mp4 (which survives the server restart). Without this
+    # the orphan can't be dismissed (the config callbacks bail when there's no
+    # session), so toggling Video Mode / Hide appears to "do nothing". Only
+    # clear when we genuinely have no active session, so a live frame on a
+    # brief RPi reconnect is left alone.
+    if state.photo_frame_session is None and state.photo_frame_video_session is None:
+        try:
+            await websocket.send_json({"type": "hide_photo_frame", "reason": "server_reconnect"})
+        except Exception as e:
+            log.warning(f"Could not push photo-frame reset to RPi: {e}")
+
     async def on_wake_word():
         """Callback: play chime on RPi and flash the UI."""
         # Wake the display first so the chime / listening cue actually
