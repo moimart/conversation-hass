@@ -299,25 +299,15 @@ class MQTTBridge:
         # {entity_id, live?, duration_s?}). Routes to show_camera
         # (snapshot) or stream_camera (live WebRTC).
         self.on_camera_set: Callable[[str], Awaitable[None]] | None = None
-        # Live runtime-config callbacks (theme_day/night, voice, model,
-        # wake_word, auto_theme) — wire from main.py.
-        self.on_config_theme_day: Callable[[str], Awaitable[None]] | None = None
-        self.on_config_theme_night: Callable[[str], Awaitable[None]] | None = None
-        self.on_config_tts_voice: Callable[[str], Awaitable[None]] | None = None
-        self.on_config_wake_word: Callable[[str], Awaitable[None]] | None = None
-        self.on_config_ollama_model: Callable[[str], Awaitable[None]] | None = None
-        self.on_config_fallback_ollama_model: Callable[[str], Awaitable[None]] | None = None
-        self.on_config_num_ctx: Callable[[int], Awaitable[None]] | None = None
-        self.on_config_auto_theme: Callable[[bool], Awaitable[None]] | None = None
-        self.on_config_router_enabled: Callable[[bool], Awaitable[None]] | None = None
-        self.on_config_router_model: Callable[[str], Awaitable[None]] | None = None
+        # Live runtime-config callbacks, registered per-key via
+        # set_config_callback("<key>", cb) from mqtt_callbacks.wire().
+        # Replaces the ~23 individual on_config_* attrs; the dispatcher in
+        # _handle_message resolves the callback by entity key.
+        self._config_callbacks: dict[str, Callable] = {}
         # Calendar overlay callbacks. on_calendar_show receives a dict like
         # {"view": "month"|"week"|"day", "calendar_name"?: str, "duration_s"?: int}.
         self.on_calendar_show: Callable[[dict], Awaitable[None]] | None = None
         self.on_calendar_hide: Callable[[], Awaitable[None]] | None = None
-        # Calendar runtime-config callbacks (default source name + dismiss timeout).
-        self.on_config_calendar_default_source: Callable[[str], Awaitable[None]] | None = None
-        self.on_config_calendar_dismiss_seconds: Callable[[int], Awaitable[None]] | None = None
         # Push-to-Talk callbacks. Bare-trigger topics (payload ignored):
         # `start` opens a PTT session, `end` closes it (runs the LLM),
         # `cancel` closes it AND discards the captured audio.
@@ -329,29 +319,10 @@ class MQTTBridge:
         # hide is a bare trigger.
         self.on_photo_frame_show: Callable[[dict], Awaitable[None]] | None = None
         self.on_photo_frame_hide: Callable[[], Awaitable[None]] | None = None
-        self.on_config_photo_frame_entity: Callable[[str], Awaitable[None]] | None = None
-        # Looping-video config: source URL (text) and on/off mode (switch).
-        self.on_config_photo_frame_video_url: Callable[[str], Awaitable[None]] | None = None
-        self.on_config_photo_frame_video_mode: Callable[[bool], Awaitable[None]] | None = None
-        # "Start muted" config — whether HAL's mic should be muted on
-        # RPi connect / server boot. The current mute state still
-        # flows through the existing mute switch; this is just the
-        # boot-time default.
-        self.on_config_start_muted: Callable[[bool], Awaitable[None]] | None = None
-        # Display power callbacks. `on_display_set` is the imperative
-        # switch payload (ON/OFF), `on_config_display_auto_off_seconds`
-        # is the idle-blank timeout config (0 = disabled).
+        # Display power callback. `on_display_set` is the imperative
+        # switch payload (ON/OFF); the idle-blank timeout config lives in
+        # the data-driven config registry (display_auto_off_seconds).
         self.on_display_set: Callable[[bool], Awaitable[None]] | None = None
-        self.on_config_display_auto_off_seconds: Callable[[int], Awaitable[None]] | None = None
-        # Photo-frame idle auto-activation timeout, in minutes (0 = disabled).
-        self.on_config_photo_frame_idle_minutes: Callable[[int], Awaitable[None]] | None = None
-        # OpenClaw configuration
-        self.on_config_openclaw_enabled: Callable | None = None
-        self.on_config_openclaw_gateway_url: Callable | None = None
-        self.on_config_openclaw_workspace: Callable | None = None
-        # Display orientation
-        self.on_config_display_orientation: Callable[[str], Awaitable[None]] | None = None
-        self.on_config_orb_side: Callable[[str], Awaitable[None]] | None = None
         # Lists populated by main.py at startup so the select entities
         # advertise the right options. Empty lists publish a "none found"
         # placeholder so the entity still appears in HA.
@@ -374,44 +345,19 @@ class MQTTBridge:
         self._cached_theme: str = "dark"
         self._cached_last_response: str = ""
         self._cached_task_metrics: dict | None = None
-        # Live config caches for republish-on-reconnect.
-        self._cached_config_theme_day: str = ""
-        self._cached_config_theme_night: str = ""
-        self._cached_config_tts_voice: str = ""
-        self._cached_config_wake_word: str = ""
-        self._cached_config_ollama_model: str = ""
-        # Empty string here means "no fallback" — must match the
-        # default sentinel option in the HA Discovery select payload.
-        self._cached_config_fallback_ollama_model: str = ""
-        self._cached_config_num_ctx: int = 32768
+        # Live config caches for republish-on-reconnect — one dict keyed by
+        # ConfigEntity.key, seeded from each entity's declared default.
+        # (Callers seed real values via self._cached_config["<key>"] = ...)
+        self._cached_config: dict[str, Any] = {
+            e.key: e.default for e in CONFIG_ENTITIES
+        }
         # Dynamic upper bound for the LLM context size — main.py refreshes
         # this from Ollama's /api/show whenever the model changes, so the
         # HA Number entity exposes exactly what the current model supports.
         self.num_ctx_max: int = 131072
-        self._cached_config_auto_theme: bool = True
-        self._cached_config_router_enabled: bool = False
-        self._cached_config_router_model: str = ""
-        # Calendar config caches
-        self._cached_config_calendar_default_source: str = ""
-        self._cached_config_calendar_dismiss_seconds: int = 30
-        self._cached_config_start_muted: bool = False
-        # Photo-frame config cache (entity_id, default "")
-        self._cached_config_photo_frame_entity: str = ""
-        self._cached_config_photo_frame_video_url: str = ""
-        self._cached_config_photo_frame_video_mode: bool = False
-        # Display power: imperative state ("on"|"off") and idle-blank
-        # timeout in seconds (0 = disabled).
+        # Display power: imperative state ("on"|"off"). The idle-blank
+        # timeout lives in the config registry (display_auto_off_seconds).
         self._cached_display_state: str = "on"
-        self._cached_config_display_auto_off_seconds: int = 0
-        # Photo-frame idle-minutes cache for republish-on-connect.
-        self._cached_config_photo_frame_idle_minutes: int = 0
-        # OpenClaw config cache
-        self._cached_config_openclaw_enabled: bool = False
-        self._cached_config_openclaw_gateway_url: str = ""
-        self._cached_config_openclaw_workspace: str = ""
-        # Display orientation cache
-        self._cached_config_display_orientation: str = "portrait"
-        self._cached_config_orb_side: str = "left"
         self._cached_conversation_engine: str = "ollama"
 
     @property
@@ -887,65 +833,14 @@ class MQTTBridge:
                         await self.publish_task_metrics(self._cached_task_metrics)
                     # Live runtime-config — publish the cached values so
                     # the HA selects/text/switch start with their real
-                    # state, not "unknown".
-                    if self._cached_config_theme_day:
-                        await self.publish_config_theme_day(self._cached_config_theme_day)
-                    if self._cached_config_theme_night:
-                        await self.publish_config_theme_night(self._cached_config_theme_night)
-                    await self.publish_config_tts_voice(self._cached_config_tts_voice)
-                    if self._cached_config_wake_word:
-                        await self.publish_config_wake_word(self._cached_config_wake_word)
-                    if self._cached_config_ollama_model:
-                        await self.publish_config_ollama_model(self._cached_config_ollama_model)
-                    await self.publish_config_fallback_ollama_model(
-                        self._cached_config_fallback_ollama_model
-                    )
-                    await self.publish_config_num_ctx(self._cached_config_num_ctx)
-                    await self.publish_config_auto_theme(self._cached_config_auto_theme)
-                    await self.publish_config_calendar_default_source(
-                        self._cached_config_calendar_default_source
-                    )
-                    await self.publish_config_calendar_dismiss_seconds(
-                        self._cached_config_calendar_dismiss_seconds
-                    )
-                    await self.publish_config_start_muted(self._cached_config_start_muted)
-                    await self.publish_config_photo_frame_entity(
-                        self._cached_config_photo_frame_entity
-                    )
-                    await self.publish_config_photo_frame_video_url(
-                        self._cached_config_photo_frame_video_url
-                    )
-                    await self.publish_config_photo_frame_video_mode(
-                        self._cached_config_photo_frame_video_mode
-                    )
+                    # state, not "unknown". Data-driven: one pass over the
+                    # registry. The imperative display switch isn't a config
+                    # entity, so it's published separately.
+                    for _entity in CONFIG_ENTITIES:
+                        await self.publish_config(
+                            _entity.key, self._cached_config[_entity.key]
+                        )
                     await self.publish_display_state(self._cached_display_state)
-                    await self.publish_config_display_auto_off_seconds(
-                        self._cached_config_display_auto_off_seconds
-                    )
-                    await self.publish_config_photo_frame_idle_minutes(
-                        self._cached_config_photo_frame_idle_minutes
-                    )
-                    await self.publish_config_openclaw_enabled(
-                        self._cached_config_openclaw_enabled
-                    )
-                    await self.publish_config_openclaw_gateway_url(
-                        self._cached_config_openclaw_gateway_url
-                    )
-                    await self.publish_config_openclaw_workspace(
-                        self._cached_config_openclaw_workspace
-                    )
-                    await self.publish_config_display_orientation(
-                        self._cached_config_display_orientation
-                    )
-                    await self.publish_config_orb_side(
-                        self._cached_config_orb_side
-                    )
-                    await self.publish_config_router_enabled(
-                        self._cached_config_router_enabled
-                    )
-                    await self.publish_config_router_model(
-                        self._cached_config_router_model
-                    )
                     await self.publish_conversation_engine(
                         self._cached_conversation_engine
                     )
@@ -960,37 +855,19 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/rtsp/set")
                     await client.subscribe(f"{self.base}/video/set")
                     await client.subscribe(f"{self.base}/camera/set")
-                    await client.subscribe(f"{self.base}/config/theme_day/set")
-                    await client.subscribe(f"{self.base}/config/theme_night/set")
-                    await client.subscribe(f"{self.base}/config/tts_voice/set")
-                    await client.subscribe(f"{self.base}/config/ollama_model/set")
-                    await client.subscribe(f"{self.base}/config/fallback_ollama_model/set")
-                    await client.subscribe(f"{self.base}/config/num_ctx/set")
-                    await client.subscribe(f"{self.base}/config/wake_word/set")
-                    await client.subscribe(f"{self.base}/config/auto_theme/set")
+                    # Data-driven config-entity set topics.
+                    for _entity in CONFIG_ENTITIES:
+                        await client.subscribe(
+                            f"{self.base}/config/{_entity.key}/set"
+                        )
                     await client.subscribe(f"{self.base}/calendar/show/set")
                     await client.subscribe(f"{self.base}/calendar/hide/set")
-                    await client.subscribe(f"{self.base}/config/calendar_default_source/set")
-                    await client.subscribe(f"{self.base}/config/calendar_dismiss_seconds/set")
-                    await client.subscribe(f"{self.base}/config/start_muted/set")
                     await client.subscribe(f"{self.base}/ptt/start")
                     await client.subscribe(f"{self.base}/ptt/end")
                     await client.subscribe(f"{self.base}/ptt/cancel")
                     await client.subscribe(f"{self.base}/photo_frame/show/set")
                     await client.subscribe(f"{self.base}/photo_frame/hide/set")
-                    await client.subscribe(f"{self.base}/config/photo_frame_entity/set")
-                    await client.subscribe(f"{self.base}/config/photo_frame_video_url/set")
-                    await client.subscribe(f"{self.base}/config/photo_frame_video_mode/set")
                     await client.subscribe(f"{self.base}/display/set")
-                    await client.subscribe(f"{self.base}/config/display_auto_off_seconds/set")
-                    await client.subscribe(f"{self.base}/config/photo_frame_idle_minutes/set")
-                    await client.subscribe(f"{self.base}/config/openclaw_enabled/set")
-                    await client.subscribe(f"{self.base}/config/openclaw_gateway_url/set")
-                    await client.subscribe(f"{self.base}/config/openclaw_workspace/set")
-                    await client.subscribe(f"{self.base}/config/display_orientation/set")
-                    await client.subscribe(f"{self.base}/config/orb_side/set")
-                    await client.subscribe(f"{self.base}/config/router_enabled/set")
-                    await client.subscribe(f"{self.base}/config/router_model/set")
 
                     # Listen for messages
                     async for msg in client.messages:
@@ -1035,6 +912,31 @@ class MQTTBridge:
         log.debug(f"MQTT recv {topic}: {payload[:80]}")
 
         try:
+            # Data-driven config-entity dispatch: any hal/<id>/config/<key>/set
+            # topic resolves to its ConfigEntity, parses the payload per its
+            # spec, and invokes the registered callback. _SKIP (e.g. an
+            # invalid orientation) silently drops the message.
+            cfg_prefix = f"{self.base}/config/"
+            if topic.startswith(cfg_prefix) and topic.endswith("/set"):
+                key = topic[len(cfg_prefix):-len("/set")]
+                entity = _CONFIG_BY_KEY.get(key)
+                if entity is not None:
+                    cb = self._config_callbacks.get(key)
+                    if cb is not None:
+                        if entity.max_attr:
+                            # num_ctx-style: clamp against the dynamic ceiling.
+                            try:
+                                n = int(float(payload.strip()))
+                            except ValueError:
+                                n = int(entity.default)
+                            lo = int(entity.extra.get("min", 0))
+                            value = max(lo, min(int(getattr(self, entity.max_attr)), n))
+                        else:
+                            value = entity.parse(payload)
+                        if value is not _SKIP:
+                            await cb(value)
+                    return
+
             if topic == f"{self.base}/volume/set":
                 level = max(0.0, min(1.0, float(payload) / 100.0))
                 if self.on_volume_set:
@@ -1070,47 +972,13 @@ class MQTTBridge:
                 if payload and self.on_camera_set:
                     await self.on_camera_set(payload)
 
-            elif topic == f"{self.base}/config/theme_day/set":
-                if self.on_config_theme_day:
-                    await self.on_config_theme_day(payload.strip())
 
-            elif topic == f"{self.base}/config/theme_night/set":
-                if self.on_config_theme_night:
-                    await self.on_config_theme_night(payload.strip())
 
-            elif topic == f"{self.base}/config/tts_voice/set":
-                if self.on_config_tts_voice:
-                    await self.on_config_tts_voice(payload.strip())
 
-            elif topic == f"{self.base}/config/ollama_model/set":
-                if self.on_config_ollama_model:
-                    await self.on_config_ollama_model(payload.strip())
 
-            elif topic == f"{self.base}/config/fallback_ollama_model/set":
-                if self.on_config_fallback_ollama_model:
-                    raw = payload.strip()
-                    # Map the "(none — disabled)" sentinel back to the
-                    # empty-string wire value the runtime config uses.
-                    if raw.startswith("(none"):
-                        raw = ""
-                    await self.on_config_fallback_ollama_model(raw)
 
-            elif topic == f"{self.base}/config/num_ctx/set":
-                if self.on_config_num_ctx:
-                    try:
-                        n = int(float(payload.strip()))
-                    except ValueError:
-                        n = 32768
-                    n = max(2048, min(int(self.num_ctx_max), n))
-                    await self.on_config_num_ctx(n)
 
-            elif topic == f"{self.base}/config/wake_word/set":
-                if self.on_config_wake_word:
-                    await self.on_config_wake_word(payload.strip())
 
-            elif topic == f"{self.base}/config/auto_theme/set":
-                if self.on_config_auto_theme:
-                    await self.on_config_auto_theme(payload.strip().upper() == "ON")
 
             elif topic == f"{self.base}/calendar/show/set":
                 args: dict = {}
@@ -1135,78 +1003,21 @@ class MQTTBridge:
                 if self.on_calendar_hide:
                     await self.on_calendar_hide()
 
-            elif topic == f"{self.base}/config/calendar_default_source/set":
-                if self.on_config_calendar_default_source:
-                    await self.on_config_calendar_default_source(payload.strip())
 
-            elif topic == f"{self.base}/config/calendar_dismiss_seconds/set":
-                if self.on_config_calendar_dismiss_seconds:
-                    try:
-                        seconds = int(float(payload.strip()))
-                    except ValueError:
-                        seconds = 30
-                    seconds = max(5, min(600, seconds))
-                    await self.on_config_calendar_dismiss_seconds(seconds)
 
-            elif topic == f"{self.base}/config/start_muted/set":
-                if self.on_config_start_muted:
-                    await self.on_config_start_muted(payload.strip().upper() == "ON")
 
             elif topic == f"{self.base}/display/set":
                 if self.on_display_set:
                     await self.on_display_set(payload.strip().upper() == "ON")
 
-            elif topic == f"{self.base}/config/display_auto_off_seconds/set":
-                if self.on_config_display_auto_off_seconds:
-                    try:
-                        seconds = int(float(payload.strip()))
-                    except ValueError:
-                        seconds = 0
-                    seconds = max(0, min(7200, seconds))
-                    await self.on_config_display_auto_off_seconds(seconds)
 
-            elif topic == f"{self.base}/config/photo_frame_idle_minutes/set":
-                if self.on_config_photo_frame_idle_minutes:
-                    try:
-                        minutes = int(float(payload.strip()))
-                    except ValueError:
-                        minutes = 0
-                    minutes = max(0, min(720, minutes))
-                    await self.on_config_photo_frame_idle_minutes(minutes)
 
-            elif topic == f"{self.base}/config/openclaw_enabled/set":
-                if self.on_config_openclaw_enabled:
-                    await self.on_config_openclaw_enabled(payload.strip())
 
-            elif topic == f"{self.base}/config/openclaw_gateway_url/set":
-                if self.on_config_openclaw_gateway_url:
-                    await self.on_config_openclaw_gateway_url(payload.strip())
 
-            elif topic == f"{self.base}/config/openclaw_workspace/set":
-                if self.on_config_openclaw_workspace:
-                    await self.on_config_openclaw_workspace(payload.strip())
 
-            elif topic == f"{self.base}/config/display_orientation/set":
-                val = payload.strip().lower()
-                if val in ("portrait", "landscape") and self.on_config_display_orientation:
-                    await self.on_config_display_orientation(val)
 
-            elif topic == f"{self.base}/config/orb_side/set":
-                val = payload.strip().lower()
-                if val in ("left", "right") and self.on_config_orb_side:
-                    await self.on_config_orb_side(val)
 
-            elif topic == f"{self.base}/config/router_enabled/set":
-                if self.on_config_router_enabled:
-                    await self.on_config_router_enabled(payload.strip().upper() == "ON")
 
-            elif topic == f"{self.base}/config/router_model/set":
-                if self.on_config_router_model:
-                    raw = payload.strip()
-                    # Map the "(none — disabled)" sentinel back to empty string.
-                    if raw.startswith("(none"):
-                        raw = ""
-                    await self.on_config_router_model(raw)
 
             elif topic == f"{self.base}/ptt/start":
                 if self.on_ptt_start:
@@ -1242,18 +1053,8 @@ class MQTTBridge:
                 if self.on_photo_frame_hide:
                     await self.on_photo_frame_hide()
 
-            elif topic == f"{self.base}/config/photo_frame_entity/set":
-                if self.on_config_photo_frame_entity:
-                    await self.on_config_photo_frame_entity(payload.strip())
 
-            elif topic == f"{self.base}/config/photo_frame_video_url/set":
-                if self.on_config_photo_frame_video_url:
-                    await self.on_config_photo_frame_video_url(payload.strip())
 
-            elif topic == f"{self.base}/config/photo_frame_video_mode/set":
-                if self.on_config_photo_frame_video_mode:
-                    await self.on_config_photo_frame_video_mode(
-                        payload.strip().upper() == "ON")
 
         except Exception as e:
             log.error(f"Error handling MQTT {topic}: {e}")
@@ -1278,6 +1079,35 @@ class MQTTBridge:
             await self._client.publish(topic, payload, qos=1, retain=retain)
         except Exception as e:
             log.debug(f"MQTT publish failed for {topic}: {e}")
+
+    # Generic data-driven config API ---------------------------------------
+
+    def set_config_callback(self, key: str, cb: Callable) -> None:
+        """Register the handler invoked when HA writes config/<key>/set."""
+        self._config_callbacks[key] = cb
+
+    async def publish_config(self, key: str, value) -> None:
+        """Publish a config entity's state (cached for republish-on-connect).
+
+        Serialization is per-entity. num_ctx is clamped to the dynamic
+        ceiling here (it depends on self.num_ctx_max).
+        """
+        entity = _CONFIG_BY_KEY.get(key)
+        if entity is None:
+            log.warning(f"publish_config: unknown config key {key!r}")
+            return
+        if entity.max_attr:
+            # num_ctx-style number: clamp to [min, dynamic-max] before publish.
+            lo = int(entity.extra.get("min", 0))
+            try:
+                n = int(value)
+            except (TypeError, ValueError):
+                n = int(entity.default)
+            value = max(lo, min(int(getattr(self, entity.max_attr)), n))
+        self._cached_config[key] = value
+        await self._safe_publish(
+            f"{self.base}/config/{key}/state", entity.serialize(value)
+        )
 
     # Public publishers (called from server when state changes)
 
@@ -1328,46 +1158,10 @@ class MQTTBridge:
         """Publish a JPEG snapshot of the display."""
         await self._safe_publish(f"{self.base}/snapshot", jpeg_bytes)
 
-    # Live runtime-config publishers ---------------------------------------
-
-    async def publish_config_theme_day(self, value: str):
-        self._cached_config_theme_day = value
-        await self._safe_publish(f"{self.base}/config/theme_day/state", value)
-
-    async def publish_config_theme_night(self, value: str):
-        self._cached_config_theme_night = value
-        await self._safe_publish(f"{self.base}/config/theme_night/state", value)
-
-    async def publish_config_tts_voice(self, value: str):
-        self._cached_config_tts_voice = value
-        await self._safe_publish(f"{self.base}/config/tts_voice/state", value or "")
-
-    async def publish_config_wake_word(self, value: str):
-        self._cached_config_wake_word = value
-        await self._safe_publish(f"{self.base}/config/wake_word/state", value)
-
-    async def publish_config_ollama_model(self, value: str):
-        self._cached_config_ollama_model = value
-        await self._safe_publish(f"{self.base}/config/ollama_model/state", value)
-
-    async def publish_config_fallback_ollama_model(self, value: str):
-        # Empty wire value renders as the "(none — disabled)" sentinel
-        # in HA so the select shows the disabled option as selected.
-        value = (value or "").strip()
-        self._cached_config_fallback_ollama_model = value
-        await self._safe_publish(
-            f"{self.base}/config/fallback_ollama_model/state",
-            value if value else "(none — disabled)",
-        )
-
-    async def publish_config_num_ctx(self, value: int):
-        try:
-            n = int(value)
-        except (TypeError, ValueError):
-            n = 32768
-        n = max(2048, min(int(self.num_ctx_max), n))
-        self._cached_config_num_ctx = n
-        await self._safe_publish(f"{self.base}/config/num_ctx/state", str(n))
+    # Live runtime-config publishers: collapsed into the generic
+    # publish_config(key, value) above. Only the imperative display-state
+    # publisher and the num_ctx-max updater remain (they aren't plain
+    # config entities).
 
     async def update_num_ctx_max(self, value: int):
         """Set the dynamic upper bound and republish discovery so the HA
@@ -1386,78 +1180,8 @@ class MQTTBridge:
         except Exception as e:
             log.warning(f"num_ctx_max republish_discovery failed: {e}")
         # If the current value exceeds the new ceiling, clamp + republish.
-        if self._cached_config_num_ctx > n:
-            await self.publish_config_num_ctx(n)
-
-    async def publish_config_auto_theme(self, value: bool):
-        self._cached_config_auto_theme = bool(value)
-        await self._safe_publish(
-            f"{self.base}/config/auto_theme/state",
-            "ON" if value else "OFF",
-        )
-
-    async def publish_config_router_enabled(self, value: bool):
-        self._cached_config_router_enabled = bool(value)
-        await self._safe_publish(
-            f"{self.base}/config/router_enabled/state",
-            "ON" if value else "OFF",
-        )
-
-    async def publish_config_router_model(self, value: str):
-        # Empty wire value renders as the "(none — disabled)" sentinel in HA.
-        value = (value or "").strip()
-        self._cached_config_router_model = value
-        await self._safe_publish(
-            f"{self.base}/config/router_model/state",
-            value if value else "(none — disabled)",
-        )
-
-    async def publish_config_calendar_default_source(self, value: str):
-        self._cached_config_calendar_default_source = value or ""
-        await self._safe_publish(
-            f"{self.base}/config/calendar_default_source/state",
-            value or "",
-        )
-
-    async def publish_config_calendar_dismiss_seconds(self, value: int):
-        try:
-            v = int(value)
-        except (TypeError, ValueError):
-            v = 30
-        v = max(5, min(600, v))
-        self._cached_config_calendar_dismiss_seconds = v
-        await self._safe_publish(
-            f"{self.base}/config/calendar_dismiss_seconds/state",
-            str(v),
-        )
-
-    async def publish_config_start_muted(self, value: bool):
-        self._cached_config_start_muted = bool(value)
-        await self._safe_publish(
-            f"{self.base}/config/start_muted/state",
-            "ON" if value else "OFF",
-        )
-
-    async def publish_config_photo_frame_entity(self, value: str):
-        self._cached_config_photo_frame_entity = value or ""
-        await self._safe_publish(
-            f"{self.base}/config/photo_frame_entity/state",
-            value or "",
-        )
-
-    async def publish_config_photo_frame_video_url(self, value: str):
-        self._cached_config_photo_frame_video_url = value or ""
-        await self._safe_publish(
-            f"{self.base}/config/photo_frame_video_url/state",
-            value or "",
-        )
-
-    async def publish_config_photo_frame_video_mode(self, value: bool):
-        self._cached_config_photo_frame_video_mode = bool(value)
-        await self._safe_publish(
-            f"{self.base}/config/photo_frame_video_mode/state",
-            "ON" if value else "OFF",
-        )
+        if int(self._cached_config["num_ctx"]) > n:
+            await self.publish_config("num_ctx", n)
 
     async def publish_display_state(self, value: str):
         v = (value or "").strip().lower()
@@ -1467,68 +1191,6 @@ class MQTTBridge:
         await self._safe_publish(
             f"{self.base}/display/state",
             "ON" if v == "on" else "OFF",
-        )
-
-    async def publish_config_display_auto_off_seconds(self, value: int):
-        try:
-            n = int(value)
-        except (TypeError, ValueError):
-            n = 0
-        n = max(0, min(7200, n))
-        self._cached_config_display_auto_off_seconds = n
-        await self._safe_publish(
-            f"{self.base}/config/display_auto_off_seconds/state",
-            str(n),
-        )
-
-    async def publish_config_photo_frame_idle_minutes(self, value: int):
-        try:
-            n = int(value)
-        except (TypeError, ValueError):
-            n = 0
-        n = max(0, min(720, n))
-        self._cached_config_photo_frame_idle_minutes = n
-        await self._safe_publish(
-            f"{self.base}/config/photo_frame_idle_minutes/state",
-            str(n),
-        )
-
-    async def publish_config_openclaw_enabled(self, value: bool):
-        val = bool(value)
-        self._cached_config_openclaw_enabled = val
-        await self._safe_publish(
-            f"{self.base}/config/openclaw_enabled/state",
-            "ON" if val else "OFF",
-        )
-
-    async def publish_config_openclaw_gateway_url(self, value: str):
-        val = str(value or "")
-        self._cached_config_openclaw_gateway_url = val
-        await self._safe_publish(
-            f"{self.base}/config/openclaw_gateway_url/state",
-            val,
-        )
-
-    async def publish_config_openclaw_workspace(self, value: str):
-        val = str(value or "")
-        self._cached_config_openclaw_workspace = val
-        await self._safe_publish(
-            f"{self.base}/config/openclaw_workspace/state",
-            val,
-        )
-
-    async def publish_config_display_orientation(self, value: str):
-        self._cached_config_display_orientation = value
-        await self._safe_publish(
-            f"{self.base}/config/display_orientation/state",
-            value,
-        )
-
-    async def publish_config_orb_side(self, value: str):
-        self._cached_config_orb_side = value
-        await self._safe_publish(
-            f"{self.base}/config/orb_side/state",
-            value,
         )
 
     async def publish_conversation_engine(

@@ -170,7 +170,7 @@ async def post_photo_frame_idle(request: Request, req: PhotoFrameIdleRequest):
     except (TypeError, ValueError):
         n = 0
     n = max(0, min(720, n))
-    cb = getattr(state.mqtt_bridge, "on_config_photo_frame_idle_minutes", None) if state.mqtt_bridge else None
+    cb = state.mqtt_bridge._config_callbacks.get("photo_frame_idle_minutes") if state.mqtt_bridge else None
     if cb is not None:
         await cb(n)
     else:

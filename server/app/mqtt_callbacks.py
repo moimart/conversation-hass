@@ -1,8 +1,10 @@
 """MQTT bridge callback wiring, extracted from main.lifespan.
 
 `wire(state, bridge)` defines every MQTT command + live-config callback as a
-closure over `state`/`bridge`, assigns them to the bridge's `on_*` hooks, seeds
-the bridge's discovery caches, and registers the theme-change listener. Called
+closure over `state`/`bridge`, assigns command callbacks to the bridge's `on_*`
+hooks and config callbacks via `bridge.set_config_callback(key, cb)`, seeds the
+bridge's discovery caches (`bridge._cached_config[key] = ...`), and registers
+the theme-change listener. Called
 once during startup. Cross-module helpers are late-imported from `.main` to
 dodge the import cycle (same pattern as photo_frame.py / media.py)."""
 
@@ -226,7 +228,7 @@ async def wire(state, bridge) -> None:
             return
         state.theme_day = name
         await _persist("theme_day", name)
-        await bridge.publish_config_theme_day(name)
+        await bridge.publish_config("theme_day", name)
         await _re_evaluate_active_theme()
 
     async def _cfg_theme_night(name: str):
@@ -235,7 +237,7 @@ async def wire(state, bridge) -> None:
             return
         state.theme_night = name
         await _persist("theme_night", name)
-        await bridge.publish_config_theme_night(name)
+        await bridge.publish_config("theme_night", name)
         await _re_evaluate_active_theme()
 
     async def _cfg_tts_voice(name: str):
@@ -245,7 +247,7 @@ async def wire(state, bridge) -> None:
         if state.tts_engine is not None:
             state.tts_engine.voice = name
         await _persist("tts_voice", name)
-        await bridge.publish_config_tts_voice(name)
+        await bridge.publish_config("tts_voice", name)
 
     async def _cfg_ollama_model(name: str):
         if state.model_options and name not in state.model_options:
@@ -254,7 +256,7 @@ async def wire(state, bridge) -> None:
         if state.conversation is not None:
             state.conversation.ollama_model = name
         await _persist("ollama_model", name)
-        await bridge.publish_config_ollama_model(name)
+        await bridge.publish_config("ollama_model", name)
         # Refresh the num_ctx ceiling so the HA Number entity reflects
         # the new model's true context capacity (republishes discovery).
         ctx_max = await _fetch_ollama_context_length(
@@ -277,7 +279,7 @@ async def wire(state, bridge) -> None:
         if state.conversation is not None:
             state.conversation.fallback_ollama_model = name
         await _persist("fallback_ollama_model", name)
-        await bridge.publish_config_fallback_ollama_model(name)
+        await bridge.publish_config("fallback_ollama_model", name)
 
     async def _cfg_num_ctx(value: int):
         try:
@@ -288,19 +290,19 @@ async def wire(state, bridge) -> None:
         if state.conversation is not None:
             state.conversation.num_ctx = n
         await _persist("num_ctx", n)
-        await bridge.publish_config_num_ctx(n)
+        await bridge.publish_config("num_ctx", n)
 
     async def _cfg_wake_word(value: str):
         value = (value or "").strip()
         if state.conversation is not None:
             state.conversation.wake_word = value.lower()
         await _persist("wake_word", value)
-        await bridge.publish_config_wake_word(value)
+        await bridge.publish_config("wake_word", value)
 
     async def _cfg_auto_theme(enabled: bool):
         state.auto_theme = bool(enabled)
         await _persist("auto_theme", state.auto_theme)
-        await bridge.publish_config_auto_theme(state.auto_theme)
+        await bridge.publish_config("auto_theme", state.auto_theme)
         # Start/stop the scheduler to match the new value.
         existing = getattr(state, "theme_scheduler_task", None)
         if state.auto_theme and (existing is None or existing.done()):
@@ -343,21 +345,21 @@ async def wire(state, bridge) -> None:
         state.themes.add_listener(_on_themes_changed)
     # Seed the bridge's caches with the current values so the first
     # publish on connect reflects reality.
-    bridge._cached_config_theme_day = state.theme_day
-    bridge._cached_config_theme_night = state.theme_night
-    bridge._cached_config_tts_voice = (
+    bridge._cached_config["theme_day"] = state.theme_day
+    bridge._cached_config["theme_night"] = state.theme_night
+    bridge._cached_config["tts_voice"] = (
         state.tts_engine.voice if state.tts_engine is not None else ""
     )
-    bridge._cached_config_wake_word = (
+    bridge._cached_config["wake_word"] = (
         state.conversation.wake_word if state.conversation is not None else ""
     )
-    bridge._cached_config_ollama_model = (
+    bridge._cached_config["ollama_model"] = (
         state.conversation.ollama_model if state.conversation is not None else ""
     )
-    bridge._cached_config_fallback_ollama_model = (
+    bridge._cached_config["fallback_ollama_model"] = (
         state.conversation.fallback_ollama_model if state.conversation is not None else ""
     )
-    bridge._cached_config_num_ctx = int(
+    bridge._cached_config["num_ctx"] = int(
         state.conversation.num_ctx if state.conversation is not None
         else state.runtime_config.get("num_ctx", 32768) or 32768
     )
@@ -374,28 +376,28 @@ async def wire(state, bridge) -> None:
     if ctx_max:
         bridge.num_ctx_max = ctx_max
         # Clamp the cached current value to the ceiling we just learned.
-        if bridge._cached_config_num_ctx > ctx_max:
-            bridge._cached_config_num_ctx = ctx_max
+        if bridge._cached_config["num_ctx"] > ctx_max:
+            bridge._cached_config["num_ctx"] = ctx_max
             if state.conversation is not None:
                 state.conversation.num_ctx = ctx_max
             await _persist("num_ctx", ctx_max)
-    bridge._cached_config_auto_theme = state.auto_theme
-    bridge._cached_config_calendar_default_source = str(
+    bridge._cached_config["auto_theme"] = state.auto_theme
+    bridge._cached_config["calendar_default_source"] = str(
         state.runtime_config.get("calendar_default_source", "") or ""
     )
-    bridge._cached_config_calendar_dismiss_seconds = int(
+    bridge._cached_config["calendar_dismiss_seconds"] = int(
         state.runtime_config.get("calendar_dismiss_seconds", 30) or 30
     )
-    bridge._cached_config_start_muted = bool(
+    bridge._cached_config["start_muted"] = bool(
         state.runtime_config.get("start_muted", False)
     )
-    bridge._cached_config_photo_frame_entity = str(
+    bridge._cached_config["photo_frame_entity"] = str(
         state.runtime_config.get("photo_frame_entity", "") or ""
     )
-    bridge._cached_config_photo_frame_video_url = str(
+    bridge._cached_config["photo_frame_video_url"] = str(
         state.runtime_config.get("photo_frame_video_url", "") or ""
     )
-    bridge._cached_config_photo_frame_video_mode = bool(
+    bridge._cached_config["photo_frame_video_mode"] = bool(
         state.runtime_config.get("photo_frame_video_mode", False)
     )
     # Display power: pull the timeout from config; the imperative
@@ -407,23 +409,23 @@ async def wire(state, bridge) -> None:
     state.display_state = "on"
     state.display_last_activity = time.time()
     bridge._cached_display_state = "on"
-    bridge._cached_config_display_auto_off_seconds = state.display_auto_off_seconds
+    bridge._cached_config["display_auto_off_seconds"] = state.display_auto_off_seconds
     # Photo-frame idle auto-activation.
     state.photo_frame_idle_minutes = int(
         state.runtime_config.get("photo_frame_idle_minutes", 0) or 0
     )
     state.user_last_activity = time.time()
-    bridge._cached_config_photo_frame_idle_minutes = state.photo_frame_idle_minutes
+    bridge._cached_config["photo_frame_idle_minutes"] = state.photo_frame_idle_minutes
     # OpenClaw
-    bridge._cached_config_openclaw_enabled = state.openclaw_enabled
-    bridge._cached_config_openclaw_gateway_url = state.openclaw_gateway_url
-    bridge._cached_config_openclaw_workspace = state.openclaw_workspace
+    bridge._cached_config["openclaw_enabled"] = state.openclaw_enabled
+    bridge._cached_config["openclaw_gateway_url"] = state.openclaw_gateway_url
+    bridge._cached_config["openclaw_workspace"] = state.openclaw_workspace
     # Display orientation
-    bridge._cached_config_display_orientation = state.display_orientation
-    bridge._cached_config_orb_side = state.orb_side
+    bridge._cached_config["display_orientation"] = state.display_orientation
+    bridge._cached_config["orb_side"] = state.orb_side
     # Router model
-    bridge._cached_config_router_enabled = state.router_enabled
-    bridge._cached_config_router_model = state.router_model
+    bridge._cached_config["router_enabled"] = state.router_enabled
+    bridge._cached_config["router_model"] = state.router_model
     async def _mqtt_calendar_show(args: dict):
         view = (args.get("view") or "month").lower()
         calendar_name = (args.get("calendar_name") or "").strip()
@@ -456,14 +458,14 @@ async def wire(state, bridge) -> None:
     async def _cfg_photo_frame_entity(value: str):
         value = (value or "").strip()
         await _persist("photo_frame_entity", value)
-        await bridge.publish_config_photo_frame_entity(value)
+        await bridge.publish_config("photo_frame_entity", value)
 
     async def _cfg_photo_frame_video_url(value: str):
         value = (value or "").strip()
         unchanged = value == state.photo_frame_video_url
         state.photo_frame_video_url = value
         await _persist("photo_frame_video_url", value)
-        await bridge.publish_config_photo_frame_video_url(value)
+        await bridge.publish_config("photo_frame_video_url", value)
         if unchanged:
             return
         if not value:
@@ -491,7 +493,7 @@ async def wire(state, bridge) -> None:
             if not isinstance(enabled, bool) else enabled
         state.photo_frame_video_mode = bool(val)
         await _persist("photo_frame_video_mode", bool(val))
-        await bridge.publish_config_photo_frame_video_mode(bool(val))
+        await bridge.publish_config("photo_frame_video_mode", bool(val))
         # Apply live: if a frame is currently shown, restart it so it
         # re-picks video vs photo under the new switch.
         if (state.photo_frame_session is not None
@@ -503,7 +505,7 @@ async def wire(state, bridge) -> None:
     async def _cfg_calendar_default_source(value: str):
         value = (value or "").strip()
         await _persist("calendar_default_source", value)
-        await bridge.publish_config_calendar_default_source(value)
+        await bridge.publish_config("calendar_default_source", value)
 
     async def _cfg_calendar_dismiss_seconds(seconds: int):
         try:
@@ -511,11 +513,11 @@ async def wire(state, bridge) -> None:
         except (TypeError, ValueError):
             seconds = 30
         await _persist("calendar_dismiss_seconds", seconds)
-        await bridge.publish_config_calendar_dismiss_seconds(seconds)
+        await bridge.publish_config("calendar_dismiss_seconds", seconds)
 
     async def _cfg_start_muted(enabled: bool):
         await _persist("start_muted", bool(enabled))
-        await bridge.publish_config_start_muted(bool(enabled))
+        await bridge.publish_config("start_muted", bool(enabled))
         # Apply right now too: push the desired state to the RPi if
         # connected, so flipping the HA switch takes effect without
         # waiting for the next reconnect.
@@ -541,7 +543,7 @@ async def wire(state, bridge) -> None:
         # the instant they enable the feature.
         state.display_last_activity = time.time()
         await _persist("display_auto_off_seconds", n)
-        await bridge.publish_config_display_auto_off_seconds(n)
+        await bridge.publish_config("display_auto_off_seconds", n)
 
     async def _cfg_photo_frame_idle_minutes(minutes: int):
         try:
@@ -555,7 +557,7 @@ async def wire(state, bridge) -> None:
         # enable the feature.
         state.user_last_activity = time.time()
         await _persist("photo_frame_idle_minutes", n)
-        await bridge.publish_config_photo_frame_idle_minutes(n)
+        await bridge.publish_config("photo_frame_idle_minutes", n)
 
     async def _cfg_openclaw_enabled(enabled):
         val = str(enabled).strip().lower() in ("true", "1", "yes", "on")
@@ -579,7 +581,7 @@ async def wire(state, bridge) -> None:
             if state.openclaw_client and not val:
                 log.info("OpenClaw disabled")
         await _persist("openclaw_enabled", val)
-        await bridge.publish_config_openclaw_enabled(val)
+        await bridge.publish_config("openclaw_enabled", val)
 
     async def _cfg_openclaw_gateway_url(url):
         url = str(url).strip()
@@ -596,17 +598,17 @@ async def wire(state, bridge) -> None:
                 state.conversation.openclaw_client = state.openclaw_client
             log.info(f"OpenClaw gateway URL updated → {url}")
         await _persist("openclaw_gateway_url", url)
-        await bridge.publish_config_openclaw_gateway_url(url)
+        await bridge.publish_config("openclaw_gateway_url", url)
 
     async def _cfg_openclaw_workspace(name):
         name = str(name).strip()
         state.openclaw_workspace = name
         await _persist("openclaw_workspace", name)
-        await bridge.publish_config_openclaw_workspace(name)
+        await bridge.publish_config("openclaw_workspace", name)
 
-    bridge.on_config_openclaw_enabled = _cfg_openclaw_enabled
-    bridge.on_config_openclaw_gateway_url = _cfg_openclaw_gateway_url
-    bridge.on_config_openclaw_workspace = _cfg_openclaw_workspace
+    bridge.set_config_callback("openclaw_enabled", _cfg_openclaw_enabled)
+    bridge.set_config_callback("openclaw_gateway_url", _cfg_openclaw_gateway_url)
+    bridge.set_config_callback("openclaw_workspace", _cfg_openclaw_workspace)
 
     async def _cfg_display_orientation(value: str):
         value = value.strip().lower()
@@ -614,7 +616,7 @@ async def wire(state, bridge) -> None:
             return
         state.display_orientation = value
         await _persist("display_orientation", value)
-        await bridge.publish_config_display_orientation(value)
+        await bridge.publish_config("display_orientation", value)
         msg = {"type": "set_orientation", "orientation": value, "orb_side": state.orb_side}
         await _push_to_rpi(state, msg)
 
@@ -624,19 +626,19 @@ async def wire(state, bridge) -> None:
             return
         state.orb_side = value
         await _persist("orb_side", value)
-        await bridge.publish_config_orb_side(value)
+        await bridge.publish_config("orb_side", value)
         msg = {"type": "set_orientation", "orientation": state.display_orientation, "orb_side": value}
         await _push_to_rpi(state, msg)
 
-    bridge.on_config_display_orientation = _cfg_display_orientation
-    bridge.on_config_orb_side = _cfg_orb_side
+    bridge.set_config_callback("display_orientation", _cfg_display_orientation)
+    bridge.set_config_callback("orb_side", _cfg_orb_side)
 
     async def _cfg_router_enabled(enabled: bool):
         state.router_enabled = bool(enabled)
         if state.conversation is not None:
             state.conversation.router_enabled = state.router_enabled
         await _persist("router_enabled", state.router_enabled)
-        await bridge.publish_config_router_enabled(state.router_enabled)
+        await bridge.publish_config("router_enabled", state.router_enabled)
 
     async def _cfg_router_model(name: str):
         # Empty string = no router model. Anything non-empty must be in
@@ -651,10 +653,10 @@ async def wire(state, bridge) -> None:
         if state.conversation is not None:
             state.conversation.router_model = name
         await _persist("router_model", name)
-        await bridge.publish_config_router_model(name)
+        await bridge.publish_config("router_model", name)
 
-    bridge.on_config_router_enabled = _cfg_router_enabled
-    bridge.on_config_router_model = _cfg_router_model
+    bridge.set_config_callback("router_enabled", _cfg_router_enabled)
+    bridge.set_config_callback("router_model", _cfg_router_model)
 
     bridge.on_volume_set = _mqtt_volume
     bridge.on_mute_set = _mqtt_mute
@@ -665,27 +667,27 @@ async def wire(state, bridge) -> None:
     bridge.on_rtsp_set = _mqtt_rtsp_set
     bridge.on_video_set = _mqtt_video_set
     bridge.on_camera_set = _mqtt_camera_set
-    bridge.on_config_theme_day = _cfg_theme_day
-    bridge.on_config_theme_night = _cfg_theme_night
-    bridge.on_config_tts_voice = _cfg_tts_voice
-    bridge.on_config_ollama_model = _cfg_ollama_model
-    bridge.on_config_fallback_ollama_model = _cfg_fallback_ollama_model
-    bridge.on_config_num_ctx = _cfg_num_ctx
-    bridge.on_config_wake_word = _cfg_wake_word
-    bridge.on_config_auto_theme = _cfg_auto_theme
+    bridge.set_config_callback("theme_day", _cfg_theme_day)
+    bridge.set_config_callback("theme_night", _cfg_theme_night)
+    bridge.set_config_callback("tts_voice", _cfg_tts_voice)
+    bridge.set_config_callback("ollama_model", _cfg_ollama_model)
+    bridge.set_config_callback("fallback_ollama_model", _cfg_fallback_ollama_model)
+    bridge.set_config_callback("num_ctx", _cfg_num_ctx)
+    bridge.set_config_callback("wake_word", _cfg_wake_word)
+    bridge.set_config_callback("auto_theme", _cfg_auto_theme)
     bridge.on_calendar_show = _mqtt_calendar_show
     bridge.on_calendar_hide = _mqtt_calendar_hide
     bridge.on_photo_frame_show = _mqtt_photo_frame_show
     bridge.on_photo_frame_hide = _mqtt_photo_frame_hide
-    bridge.on_config_photo_frame_entity = _cfg_photo_frame_entity
-    bridge.on_config_photo_frame_video_url = _cfg_photo_frame_video_url
-    bridge.on_config_photo_frame_video_mode = _cfg_photo_frame_video_mode
-    bridge.on_config_calendar_default_source = _cfg_calendar_default_source
-    bridge.on_config_calendar_dismiss_seconds = _cfg_calendar_dismiss_seconds
-    bridge.on_config_start_muted = _cfg_start_muted
+    bridge.set_config_callback("photo_frame_entity", _cfg_photo_frame_entity)
+    bridge.set_config_callback("photo_frame_video_url", _cfg_photo_frame_video_url)
+    bridge.set_config_callback("photo_frame_video_mode", _cfg_photo_frame_video_mode)
+    bridge.set_config_callback("calendar_default_source", _cfg_calendar_default_source)
+    bridge.set_config_callback("calendar_dismiss_seconds", _cfg_calendar_dismiss_seconds)
+    bridge.set_config_callback("start_muted", _cfg_start_muted)
     bridge.on_display_set = _mqtt_display_set
-    bridge.on_config_display_auto_off_seconds = _cfg_display_auto_off_seconds
-    bridge.on_config_photo_frame_idle_minutes = _cfg_photo_frame_idle_minutes
+    bridge.set_config_callback("display_auto_off_seconds", _cfg_display_auto_off_seconds)
+    bridge.set_config_callback("photo_frame_idle_minutes", _cfg_photo_frame_idle_minutes)
 
     async def _mqtt_ptt_start():
         from .ptt import start_ptt

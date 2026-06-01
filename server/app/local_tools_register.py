@@ -677,7 +677,7 @@ def build_local_tools(state) -> LocalToolsClient:
         except (TypeError, ValueError):
             return "minutes must be an integer between 0 and 720"
         n = max(0, min(720, n))
-        cb = getattr(state.mqtt_bridge, "on_config_photo_frame_idle_minutes", None) if state.mqtt_bridge else None
+        cb = state.mqtt_bridge._config_callbacks.get("photo_frame_idle_minutes") if state.mqtt_bridge else None
         if cb is None:
             # No MQTT bridge running — still apply locally + persist so
             # the loop picks it up.
