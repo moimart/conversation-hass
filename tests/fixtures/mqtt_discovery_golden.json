@@ -1,0 +1,1466 @@
+[
+  [
+    "homeassistant/button/hal-default/hide_calendar/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/calendar/hide/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:calendar-remove",
+      "name": "Hide Calendar",
+      "payload_press": "",
+      "unique_id": "hal-default_hide_calendar"
+    }
+  ],
+  [
+    "homeassistant/button/hal-default/photo_frame_hide/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/photo_frame/hide/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:image-off-outline",
+      "name": "Hide Photo Frame",
+      "payload_press": "PRESS",
+      "unique_id": "hal-default_photo_frame_hide"
+    }
+  ],
+  [
+    "homeassistant/button/hal-default/photo_frame_show/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/photo_frame/show/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:image-frame",
+      "name": "Show Photo Frame",
+      "payload_press": "PRESS",
+      "unique_id": "hal-default_photo_frame_show"
+    }
+  ],
+  [
+    "homeassistant/button/hal-default/ptt_cancel/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/ptt/cancel",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:microphone-question",
+      "name": "PTT Cancel",
+      "payload_press": "PRESS",
+      "unique_id": "hal-default_ptt_cancel"
+    }
+  ],
+  [
+    "homeassistant/button/hal-default/ptt_end/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/ptt/end",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:microphone-off",
+      "name": "PTT End",
+      "payload_press": "PRESS",
+      "unique_id": "hal-default_ptt_end"
+    }
+  ],
+  [
+    "homeassistant/button/hal-default/ptt_start/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/ptt/start",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:microphone",
+      "name": "PTT Start",
+      "payload_press": "PRESS",
+      "unique_id": "hal-default_ptt_start"
+    }
+  ],
+  [
+    "homeassistant/button/hal-default/show_calendar_day/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/calendar/show/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:calendar-today",
+      "name": "Show Calendar \u2014 Day",
+      "payload_press": "{\"view\": \"day\"}",
+      "unique_id": "hal-default_show_calendar_day"
+    }
+  ],
+  [
+    "homeassistant/button/hal-default/show_calendar_month/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/calendar/show/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:calendar-month",
+      "name": "Show Calendar \u2014 Month",
+      "payload_press": "{\"view\": \"month\"}",
+      "unique_id": "hal-default_show_calendar_month"
+    }
+  ],
+  [
+    "homeassistant/button/hal-default/show_calendar_week/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/calendar/show/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:calendar-week",
+      "name": "Show Calendar \u2014 Week",
+      "payload_press": "{\"view\": \"week\"}",
+      "unique_id": "hal-default_show_calendar_week"
+    }
+  ],
+  [
+    "homeassistant/camera/hal-default/snapshot/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:monitor",
+      "name": "Display",
+      "topic": "hal/hal-default/snapshot",
+      "unique_id": "hal-default_snapshot"
+    }
+  ],
+  [
+    "homeassistant/number/hal-default/config_calendar_dismiss_seconds/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/calendar_dismiss_seconds/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:timer-sand",
+      "max": 600,
+      "min": 5,
+      "name": "Calendar Dismiss Seconds",
+      "state_topic": "hal/hal-default/config/calendar_dismiss_seconds/state",
+      "step": 5,
+      "unique_id": "hal-default_config_calendar_dismiss_seconds",
+      "unit_of_measurement": "s"
+    }
+  ],
+  [
+    "homeassistant/number/hal-default/config_display_auto_off_seconds/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/display_auto_off_seconds/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:monitor-off",
+      "max": 7200,
+      "min": 0,
+      "name": "Display Auto-off Seconds",
+      "state_topic": "hal/hal-default/config/display_auto_off_seconds/state",
+      "step": 30,
+      "unique_id": "hal-default_config_display_auto_off_seconds",
+      "unit_of_measurement": "s"
+    }
+  ],
+  [
+    "homeassistant/number/hal-default/config_num_ctx/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/num_ctx/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:format-letter-case",
+      "max": 131072,
+      "min": 2048,
+      "mode": "box",
+      "name": "LLM Context Size",
+      "state_topic": "hal/hal-default/config/num_ctx/state",
+      "step": 1024,
+      "unique_id": "hal-default_config_num_ctx",
+      "unit_of_measurement": "tok"
+    }
+  ],
+  [
+    "homeassistant/number/hal-default/config_photo_frame_idle_minutes/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/photo_frame_idle_minutes/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:image-multiple-outline",
+      "max": 720,
+      "min": 0,
+      "name": "Photo Frame Idle Minutes",
+      "state_topic": "hal/hal-default/config/photo_frame_idle_minutes/state",
+      "step": 1,
+      "unique_id": "hal-default_config_photo_frame_idle_minutes",
+      "unit_of_measurement": "min"
+    }
+  ],
+  [
+    "homeassistant/number/hal-default/volume/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/volume/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:volume-high",
+      "max": 100,
+      "min": 0,
+      "name": "Volume",
+      "state_topic": "hal/hal-default/volume/state",
+      "step": 1,
+      "unique_id": "hal-default_volume",
+      "unit_of_measurement": "%"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/config_display_orientation/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/display_orientation/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:phone-rotate-landscape",
+      "name": "Display Orientation",
+      "options": [
+        "portrait",
+        "landscape"
+      ],
+      "state_topic": "hal/hal-default/config/display_orientation/state",
+      "unique_id": "hal-default_config_display_orientation"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/config_fallback_ollama_model/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/fallback_ollama_model/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:robot-confused-outline",
+      "name": "LLM Fallback Model",
+      "options": [
+        "(none \u2014 disabled)"
+      ],
+      "state_topic": "hal/hal-default/config/fallback_ollama_model/state",
+      "unique_id": "hal-default_config_fallback_ollama_model"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/config_ollama_model/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/ollama_model/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:chip",
+      "name": "Ollama Model",
+      "options": [
+        "(no models found)"
+      ],
+      "state_topic": "hal/hal-default/config/ollama_model/state",
+      "unique_id": "hal-default_config_ollama_model"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/config_orb_side/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/orb_side/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:swap-horizontal",
+      "name": "Orb Side",
+      "options": [
+        "left",
+        "right"
+      ],
+      "state_topic": "hal/hal-default/config/orb_side/state",
+      "unique_id": "hal-default_config_orb_side"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/config_router_model/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/router_model/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:directions-fork",
+      "name": "Router Model",
+      "options": [
+        "(none \u2014 disabled)"
+      ],
+      "state_topic": "hal/hal-default/config/router_model/state",
+      "unique_id": "hal-default_config_router_model"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/config_theme_day/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/theme_day/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:weather-sunny",
+      "name": "Day Theme",
+      "options": [
+        "dark",
+        "sal",
+        "glados",
+        "matrix",
+        "mother",
+        "joi",
+        "kitt",
+        "birch",
+        "odyssey",
+        "japandi",
+        "forest",
+        "sunset"
+      ],
+      "state_topic": "hal/hal-default/config/theme_day/state",
+      "unique_id": "hal-default_config_theme_day"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/config_theme_night/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/theme_night/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:weather-night",
+      "name": "Night Theme",
+      "options": [
+        "dark",
+        "sal",
+        "glados",
+        "matrix",
+        "mother",
+        "joi",
+        "kitt",
+        "birch",
+        "odyssey",
+        "japandi",
+        "forest",
+        "sunset"
+      ],
+      "state_topic": "hal/hal-default/config/theme_night/state",
+      "unique_id": "hal-default_config_theme_night"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/config_tts_voice/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/tts_voice/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:account-voice",
+      "name": "TTS Voice",
+      "options": [
+        "(no voices found)"
+      ],
+      "state_topic": "hal/hal-default/config/tts_voice/state",
+      "unique_id": "hal-default_config_tts_voice"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/theme/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/theme/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:palette",
+      "name": "Theme",
+      "options": [
+        "dark",
+        "sal",
+        "glados",
+        "matrix",
+        "mother",
+        "joi",
+        "kitt",
+        "birch",
+        "odyssey",
+        "japandi",
+        "forest",
+        "sunset"
+      ],
+      "state_topic": "hal/hal-default/theme/state",
+      "unique_id": "hal-default_theme"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/conversation_engine/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "diagnostic",
+      "icon": "mdi:brain",
+      "json_attributes_topic": "hal/hal-default/conversation_engine/attrs",
+      "name": "Conversation Engine",
+      "state_topic": "hal/hal-default/conversation_engine",
+      "unique_id": "hal-default_conversation_engine"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/gen_n/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "diagnostic",
+      "icon": "mdi:counter",
+      "name": "Last Generated Tokens",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_gen_n",
+      "unit_of_measurement": "tokens",
+      "value_template": "{{ value_json.gen_n }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/gen_tps/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "diagnostic",
+      "icon": "mdi:speedometer",
+      "name": "Last Generation Speed",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_gen_tps",
+      "unit_of_measurement": "t/s",
+      "value_template": "{{ value_json.gen_tps }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/last_response/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:message-text",
+      "json_attributes_topic": "hal/hal-default/last_response/attrs",
+      "name": "Last Response",
+      "state_topic": "hal/hal-default/last_response",
+      "unique_id": "hal-default_last_response"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/llm_total_s/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "device_class": "duration",
+      "entity_category": "diagnostic",
+      "icon": "mdi:brain",
+      "name": "Last LLM Duration",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_llm_total_s",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.llm_total_s }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/memory_recall_s/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "device_class": "duration",
+      "entity_category": "diagnostic",
+      "icon": "mdi:book-search",
+      "name": "Last Memory Recall",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_memory_recall_s",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.memory_recall_s }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/memory_remember_s/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "device_class": "duration",
+      "entity_category": "diagnostic",
+      "icon": "mdi:bookmark-plus",
+      "name": "Last Memory Remember",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_memory_remember_s",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.memory_remember_s }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/model/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "diagnostic",
+      "icon": "mdi:chip",
+      "name": "Last Model",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_model",
+      "value_template": "{{ value_json.model }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/prompt_tps/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "diagnostic",
+      "icon": "mdi:speedometer",
+      "name": "Last Prompt Eval Speed",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_prompt_tps",
+      "unit_of_measurement": "t/s",
+      "value_template": "{{ value_json.prompt_tps }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/rounds/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "diagnostic",
+      "icon": "mdi:rotate-3d-variant",
+      "name": "Last LLM Rounds",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_rounds",
+      "value_template": "{{ value_json.rounds }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/state/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:robot",
+      "name": "State",
+      "state_topic": "hal/hal-default/state",
+      "unique_id": "hal-default_state"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/task_total_s/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "device_class": "duration",
+      "entity_category": "diagnostic",
+      "icon": "mdi:timer-outline",
+      "name": "Last Task Duration",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_task_total_s",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.task_total_s }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/tools_total_s/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "device_class": "duration",
+      "entity_category": "diagnostic",
+      "icon": "mdi:tools",
+      "name": "Last Tools Duration",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_tools_total_s",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.tools_total_s }}"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/tts_s/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "device_class": "duration",
+      "entity_category": "diagnostic",
+      "icon": "mdi:account-voice",
+      "name": "Last TTS Duration",
+      "state_topic": "hal/hal-default/task_metrics",
+      "unique_id": "hal-default_tts_s",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.tts_s }}"
+    }
+  ],
+  [
+    "homeassistant/switch/hal-default/config_auto_theme/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/auto_theme/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:theme-light-dark",
+      "name": "Auto Day/Night Theme",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/auto_theme/state",
+      "unique_id": "hal-default_config_auto_theme"
+    }
+  ],
+  [
+    "homeassistant/switch/hal-default/config_openclaw_enabled/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/openclaw_enabled/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:brain",
+      "name": "OpenClaw",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/openclaw_enabled/state",
+      "unique_id": "hal-default_config_openclaw_enabled"
+    }
+  ],
+  [
+    "homeassistant/switch/hal-default/config_photo_frame_video_mode/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/photo_frame_video_mode/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:video-box",
+      "name": "Photo Frame Video Mode",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/photo_frame_video_mode/state",
+      "unique_id": "hal-default_config_photo_frame_video_mode"
+    }
+  ],
+  [
+    "homeassistant/switch/hal-default/config_router_enabled/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/router_enabled/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:call-split",
+      "name": "Router Model Enabled",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/router_enabled/state",
+      "unique_id": "hal-default_config_router_enabled"
+    }
+  ],
+  [
+    "homeassistant/switch/hal-default/config_start_muted/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/start_muted/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:microphone-off",
+      "name": "Start Muted",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/start_muted/state",
+      "unique_id": "hal-default_config_start_muted"
+    }
+  ],
+  [
+    "homeassistant/switch/hal-default/display/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/display/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:monitor",
+      "name": "Display",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/display/state",
+      "unique_id": "hal-default_display"
+    }
+  ],
+  [
+    "homeassistant/switch/hal-default/mute/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/mute/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:microphone-off",
+      "name": "Mute",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_off": "OFF",
+      "state_on": "ON",
+      "state_topic": "hal/hal-default/mute/state",
+      "unique_id": "hal-default_mute"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/command/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/command",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:console",
+      "mode": "text",
+      "name": "Command",
+      "unique_id": "hal-default_command"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/config_calendar_default_source/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/calendar_default_source/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:calendar-text",
+      "mode": "text",
+      "name": "Calendar Default Source",
+      "state_topic": "hal/hal-default/config/calendar_default_source/state",
+      "unique_id": "hal-default_config_calendar_default_source"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/config_openclaw_gateway_url/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/openclaw_gateway_url/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:web",
+      "name": "OpenClaw Gateway URL",
+      "state_topic": "hal/hal-default/config/openclaw_gateway_url/state",
+      "unique_id": "hal-default_config_openclaw_gateway_url"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/config_openclaw_workspace/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/openclaw_workspace/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:folder-account",
+      "name": "OpenClaw Workspace",
+      "state_topic": "hal/hal-default/config/openclaw_workspace/state",
+      "unique_id": "hal-default_config_openclaw_workspace"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/config_photo_frame_entity/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/photo_frame_entity/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:image-multiple-outline",
+      "mode": "text",
+      "name": "Photo Frame Entity",
+      "state_topic": "hal/hal-default/config/photo_frame_entity/state",
+      "unique_id": "hal-default_config_photo_frame_entity"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/config_photo_frame_video_url/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/photo_frame_video_url/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:video-outline",
+      "mode": "text",
+      "name": "Photo Frame Video URL",
+      "state_topic": "hal/hal-default/config/photo_frame_video_url/state",
+      "unique_id": "hal-default_config_photo_frame_video_url"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/config_wake_word/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/wake_word/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:microphone-message",
+      "mode": "text",
+      "name": "Wake Word",
+      "state_topic": "hal/hal-default/config/wake_word/state",
+      "unique_id": "hal-default_config_wake_word"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/play_video/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/video/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:play-circle",
+      "mode": "text",
+      "name": "Play Video",
+      "unique_id": "hal-default_play_video"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/show_camera/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/camera/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:cctv",
+      "mode": "text",
+      "name": "Show Camera",
+      "unique_id": "hal-default_show_camera"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/show_image/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/image/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:image",
+      "mode": "text",
+      "name": "Show Image",
+      "unique_id": "hal-default_show_image"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/speak/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/speak",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:bullhorn",
+      "mode": "text",
+      "name": "Speak",
+      "unique_id": "hal-default_speak"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/stream_rtsp/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/rtsp/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:cctv",
+      "mode": "text",
+      "name": "Stream RTSP",
+      "unique_id": "hal-default_stream_rtsp"
+    }
+  ]
+]
