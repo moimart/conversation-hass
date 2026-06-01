@@ -1,7 +1,7 @@
-"""STT microservice: a thin HTTP wrapper around the shared transcriber engines.
+"""STT microservice: a thin HTTP wrapper around the local ASR engines.
 
-Reuses server/app/transcriber.py (COPYd in at build time) so the faster-whisper
-/ NeMo ASR classes live in exactly one place. The model is loaded and warmed at
+The faster-whisper / NeMo engines live next to this file in engines.py (owned
+by this image — no cross-service COPY). The model is loaded and warmed at
 startup and kept resident; the HAL AI server's RemoteTranscriber POSTs raw
 float32 16kHz PCM to /transcribe and gets back the text. VAD, buffering, and the
 partial/final cadence stay in the AI server — this service is stateless.
@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 import numpy as np
 from fastapi import FastAPI, Request, Response
 
-from transcriber import create_transcriber
+from engines import create_transcriber
 
 logging.basicConfig(
     level=logging.INFO,

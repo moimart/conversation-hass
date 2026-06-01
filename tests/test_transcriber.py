@@ -1,124 +1,103 @@
-"""Tests for the streaming transcriber."""
+"""Tests for the server-side STT client (server/app/transcriber.py).
 
-from unittest.mock import MagicMock, patch
+The AI server only carries RemoteTranscriber (a thin httpx client) — the heavy
+ASR engines live in stt-service/engines.py. These tests assert the remote path:
+the wire format, the short-audio shortcut, the create_transcriber factory always
+returning the remote engine, and the never-raise-into-the-pipeline discipline.
+"""
 
+import os
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 import numpy as np
 import pytest
 
-from server.app.transcriber import WhisperTranscriber as StreamingTranscriber
+from server.app.transcriber import (
+    BaseTranscriber,
+    RemoteTranscriber,
+    create_transcriber,
+)
 
 
-class TestTranscriberInit:
-    def test_default_model_size(self):
-        t = StreamingTranscriber()
-        assert t.model_size == "large-v3-turbo"
-        assert t.model is None
+class TestFactory:
+    def test_remote_engine_returns_remote(self):
+        assert isinstance(create_transcriber("remote"), RemoteTranscriber)
 
-    def test_custom_model_size(self):
-        t = StreamingTranscriber(model_size="large-v3")
-        assert t.model_size == "large-v3"
+    def test_unknown_engine_falls_back_to_remote(self):
+        # whisper/nemotron aren't available on the server — fall back to remote.
+        assert isinstance(create_transcriber("whisper"), RemoteTranscriber)
+        assert isinstance(create_transcriber("nemotron"), RemoteTranscriber)
+
+    def test_url_from_env(self, monkeypatch):
+        monkeypatch.setenv("STT_REMOTE_URL", "http://stt-host:9999")
+        t = create_transcriber("remote")
+        assert t.url == "http://stt-host:9999"
+
+    def test_is_base_transcriber(self):
+        assert isinstance(create_transcriber("remote"), BaseTranscriber)
 
 
 class TestTranscribe:
     @pytest.mark.asyncio
-    async def test_returns_empty_when_no_model(self):
-        t = StreamingTranscriber()
-        audio = np.random.randn(16000).astype(np.float32)
-        result = await t.transcribe(audio)
+    async def test_short_audio_skips_round_trip(self):
+        t = RemoteTranscriber("http://x")
+        t._client = MagicMock()
+        t._client.post = AsyncMock()
+        result = await t.transcribe(np.zeros(100, dtype=np.float32))
         assert result == ""
+        t._client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_returns_empty_for_short_audio(self):
-        t = StreamingTranscriber()
-        t.model = MagicMock()
-        short_audio = np.random.randn(100).astype(np.float32)
-        result = await t.transcribe(short_audio)
-        assert result == ""
-        t.model.transcribe.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_transcribes_audio(self):
-        t = StreamingTranscriber()
-
-        seg1 = MagicMock()
-        seg1.text = "hello"
-        seg1.no_speech_prob = 0.1
-        seg2 = MagicMock()
-        seg2.text = "world"
-        seg2.no_speech_prob = 0.1
-
-        mock_model = MagicMock()
-        mock_model.transcribe.return_value = (iter([seg1, seg2]), MagicMock())
-        t.model = mock_model
+    async def test_posts_float32_and_returns_text(self):
+        t = RemoteTranscriber("http://stt:8770/")
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json = MagicMock(return_value={"text": "  hello world  "})
+        t._client = MagicMock()
+        t._client.post = AsyncMock(return_value=resp)
 
         audio = np.random.randn(16000).astype(np.float32)
         result = await t.transcribe(audio)
 
         assert result == "hello world"
-        mock_model.transcribe.assert_called_once()
-        call_kwargs = mock_model.transcribe.call_args
-        assert call_kwargs.kwargs["beam_size"] == 1
-        assert call_kwargs.kwargs["language"] == "en"
-        assert call_kwargs.kwargs["vad_filter"] is False
+        args, kwargs = t._client.post.call_args
+        assert args[0] == "http://stt:8770/transcribe"
+        # Body is the raw float32 bytes, byte-identical to the buffer.
+        assert kwargs["content"] == audio.astype(np.float32).tobytes()
+        assert kwargs["headers"]["X-Sample-Rate"] == "16000"
 
     @pytest.mark.asyncio
-    async def test_handles_empty_segments(self):
-        t = StreamingTranscriber()
-        mock_model = MagicMock()
-        mock_model.transcribe.return_value = (iter([]), MagicMock())
-        t.model = mock_model
+    async def test_retries_once_on_connect_error_then_returns_empty(self):
+        t = RemoteTranscriber("http://x")
+        t._client = MagicMock()
+        t._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        result = await t.transcribe(np.random.randn(16000).astype(np.float32))
+        assert result == ""
+        assert t._client.post.await_count == 2  # original + one retry
 
-        audio = np.random.randn(16000).astype(np.float32)
-        result = await t.transcribe(audio)
+    @pytest.mark.asyncio
+    async def test_never_raises_on_unexpected_error(self):
+        t = RemoteTranscriber("http://x")
+        t._client = MagicMock()
+        t._client.post = AsyncMock(side_effect=RuntimeError("boom"))
+        # Must degrade to "" rather than propagating into the pipeline.
+        result = await t.transcribe(np.random.randn(16000).astype(np.float32))
         assert result == ""
 
+
+class TestWarmUp:
     @pytest.mark.asyncio
-    async def test_strips_whitespace(self):
-        t = StreamingTranscriber()
-        seg = MagicMock()
-        seg.text = "  hello  "
-        seg.no_speech_prob = 0.1
-        mock_model = MagicMock()
-        mock_model.transcribe.return_value = (iter([seg]), MagicMock())
-        t.model = mock_model
-
-        audio = np.random.randn(16000).astype(np.float32)
-        result = await t.transcribe(audio)
-        assert result == "hello"
-
-
-class TestInitialize:
-    @pytest.mark.asyncio
-    async def test_initialize_tries_cuda_first(self):
-        t = StreamingTranscriber(model_size="tiny")
-        mock_model = MagicMock()
-
-        # WhisperModel is imported lazily inside initialize(), so use create=True
-        with patch("server.app.transcriber.WhisperModel", return_value=mock_model, create=True) as MockWhisper:
-            # Patch the import inside the method
-            import server.app.transcriber as mod
-            with patch.dict("sys.modules", {"faster_whisper": MagicMock(WhisperModel=MockWhisper)}):
-                await t.initialize()
-
-            assert t.model == mock_model
+    async def test_warm_up_returns_when_healthy(self):
+        t = RemoteTranscriber("http://x")
+        resp = MagicMock(status_code=200)
+        t._client = MagicMock()
+        t._client.get = AsyncMock(return_value=resp)
+        await t.warm_up()  # should return promptly without raising
+        t._client.get.assert_awaited()
 
     @pytest.mark.asyncio
-    async def test_initialize_falls_back_to_cpu(self):
-        t = StreamingTranscriber(model_size="tiny")
-        mock_model = MagicMock()
-
-        call_count = 0
-        def side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if kwargs.get("device") == "cuda":
-                raise RuntimeError("CUDA not available")
-            return mock_model
-
-        mock_whisper_cls = MagicMock(side_effect=side_effect)
-        mock_faster_whisper = MagicMock(WhisperModel=mock_whisper_cls)
-
-        with patch.dict("sys.modules", {"faster_whisper": mock_faster_whisper}):
-            await t.initialize()
-            assert t.model == mock_model
-            assert call_count == 2
+    async def test_reload_model_is_noop(self):
+        # The remote service owns its model lifecycle; this must not raise.
+        t = RemoteTranscriber("http://x")
+        assert t._reload_model() is None

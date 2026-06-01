@@ -1,12 +1,16 @@
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+# CPU-only base: STT (the only GPU consumer) now runs in the stt-service
+# container, so the AI server no longer needs the multi-GB CUDA runtime.
+# The local audio front-end (silero-vad via onnxruntime, resemblyzer via
+# torch-CPU) runs fine on CPU. This is what takes the image from ~14 GB to
+# a few GB.
+FROM python:3.11-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
 # System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-dev \
-    gcc g++ git curl wget gnupg \
+    gcc g++ git curl wget gnupg ca-certificates \
     libsndfile1 ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,8 +34,11 @@ ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 
-# Pin numpy before the rest so resemblyzer/librosa resolve against it.
-RUN pip3 install --no-cache-dir numpy==1.26.4
+# Pin numpy first, then install the CPU-only torch wheel so resemblyzer /
+# silero-vad resolve against it instead of pulling the multi-GB CUDA build.
+RUN pip3 install --no-cache-dir numpy==1.26.4 \
+    && pip3 install --no-cache-dir torch==2.4.1 \
+       --index-url https://download.pytorch.org/whl/cpu
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 

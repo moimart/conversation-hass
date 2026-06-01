@@ -1,5 +1,6 @@
-# Build context must be the repo ROOT so we can COPY the shared transcriber.
-#   docker build -f stt-service/Dockerfile .
+# Self-contained: build context is this directory.
+#   docker build -f stt-service/Dockerfile stt-service/
+# (docker-compose.server.yml sets context: ./stt-service)
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,14 +14,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Pre-install build deps NeMo needs for metadata generation (mirrors server/Dockerfile)
+# Pre-install build deps NeMo needs for metadata generation
 RUN pip3 install --no-cache-dir numpy==1.26.4 setuptools wheel Cython typing_extensions
-COPY stt-service/requirements.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Shared transcriber engines — single source of truth (from server/app)
-COPY server/app/transcriber.py ./transcriber.py
-COPY stt-service/app.py ./app.py
+# ASR engines + the HTTP wrapper — both owned by this image (no cross-service COPY).
+COPY engines.py ./engines.py
+COPY app.py ./app.py
 
 RUN mkdir -p /app/models
 

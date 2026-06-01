@@ -1,10 +1,9 @@
 """Tests for the decoupled stt-service FastAPI app.
 
 The service lives in a dash-named directory (`stt-service/`), which Python
-can't import normally, so we load it by file path with importlib and make
-the shared `transcriber` module (server/app/transcriber.py — COPYd into the
-container at /app/transcriber.py at build time) importable by adding
-server/app to sys.path before loading.
+can't import normally, so we load `app.py` by file path with importlib. Its
+sibling `engines.py` (the ASR engines, owned by this image) is made importable
+by adding the `stt-service/` dir to sys.path before loading.
 """
 
 import importlib.util
@@ -18,18 +17,18 @@ from fastapi.testclient import TestClient
 
 
 REPO = Path(__file__).resolve().parent.parent
-SERVER_APP = REPO / "server" / "app"
-STT_APP_PATH = REPO / "stt-service" / "app.py"
+STT_DIR = REPO / "stt-service"
+STT_APP_PATH = STT_DIR / "app.py"
 
 
 def _load_stt_app(*, env=None):
-    """Import stt-service/app.py with `transcriber` resolvable.
+    """Import stt-service/app.py with its `engines` sibling resolvable.
 
     Reloads on each call so module-level env (STT_ENGINE/STT_MODEL) is
     re-evaluated under any `env=` overrides the test wants.
     """
-    if str(SERVER_APP) not in sys.path:
-        sys.path.insert(0, str(SERVER_APP))
+    if str(STT_DIR) not in sys.path:
+        sys.path.insert(0, str(STT_DIR))
     sys.modules.pop("stt_service_app", None)
     if env:
         for k, v in env.items():
