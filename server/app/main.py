@@ -441,136 +441,15 @@ async def apply_theme(state: AppState, theme: str) -> bool:
 _VALID_CAL_VIEWS = ("month", "week", "day")
 
 
-def _calendar_range(view: str, anchor: "datetime | None" = None) -> "tuple[datetime, datetime]":
-    """Return (start, end) UTC datetimes covering the requested view.
-
-    `anchor` is the date the user wants to land on. Defaults to today (UTC).
-    For "tomorrow's calendar", the caller passes tomorrow's date; this
-    function then computes the day/week/month that contains it.
-
-    * `day`:   anchor 00:00 → anchor+1 day 00:00 (just that day)
-    * `week`:  Monday of anchor's week → following Monday
-    * `month`: first of anchor's month → first of next month
-    """
-    from datetime import datetime, timedelta, timezone
-    now = anchor or datetime.now(timezone.utc)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    if view == "day":
-        return today, today + timedelta(days=1)
-    if view == "week":
-        # ISO weekday: Mon=0 .. Sun=6
-        start = today - timedelta(days=today.weekday())
-        return start, start + timedelta(days=7)
-    # month — first to first-of-next-month
-    first = today.replace(day=1)
-    if first.month == 12:
-        next_first = first.replace(year=first.year + 1, month=1)
-    else:
-        next_first = first.replace(month=first.month + 1)
-    return first, next_first
-
-
-def _parse_anchor_date(s: str) -> "datetime | None":
-    """Parse the LLM's / MQTT's `anchor_date` string into a UTC datetime.
-
-    Accepts:
-      * ISO date            "2026-05-18"
-      * ISO datetime        "2026-05-18T00:00:00"
-      * Short ISO datetime  "2026-05-18T15:30"
-
-    Returns None on empty/unparseable input — callers should fall back to
-    today() when None.
-    """
-    from datetime import datetime, timezone
-    s = (s or "").strip()
-    if not s:
-        return None
-    try:
-        d = datetime.fromisoformat(s)
-    except ValueError:
-        log.warning(f"_parse_anchor_date: unparseable {s!r}, falling back to today")
-        return None
-    if d.tzinfo is None:
-        d = d.replace(tzinfo=timezone.utc)
-    return d
-
-
-async def _show_calendar(
-    state: AppState,
-    view: str = "month",
-    calendar_name: str = "",
-    duration_s: int | None = None,
-    anchor_date: str = "",
-) -> dict:
-    """Resolve calendar(s), fetch events, push show_calendar to kiosk + UI clients.
-
-    Returns the same payload that was pushed (useful for tests / LLM tool reply).
-    `calendar_name` empty / no match → merged view of all HA calendars.
-    `anchor_date` empty → today; otherwise ISO date string (see
-    `_parse_anchor_date`) to show a specific day/week/month.
-    """
-    _record_user_activity(state)
-    view = (view or "month").lower().strip()
-    if view not in _VALID_CAL_VIEWS:
-        view = "month"
-
-    if duration_s is None:
-        duration_s = int(state.runtime_config.get("calendar_dismiss_seconds", 30) or 30)
-    duration_s = max(5, min(600, int(duration_s)))
-
-    name_query = (calendar_name or "").strip() or str(
-        state.runtime_config.get("calendar_default_source", "") or ""
-    ).strip()
-
-    available = await list_calendars()
-    chosen = resolve_calendars(name_query or None, available)
-
-    anchor = _parse_anchor_date(anchor_date)
-    start, end = _calendar_range(view, anchor)
-    events = await fetch_calendar_events([c["entity_id"] for c in chosen], start, end)
-
-    if not chosen:
-        source_label = "(no calendars)"
-    elif name_query and len(chosen) == 1:
-        source_label = chosen[0]["name"]
-    else:
-        source_label = "All calendars"
-
-    payload = {
-        "type": "show_calendar",
-        "view": view,
-        "title": _format_range_title(view, start),
-        "source_label": source_label,
-        "range": {"start": start.isoformat(), "end": end.isoformat()},
-        "events": events,
-        "duration_s": duration_s,
-    }
-    await _push_to_rpi(state, payload)
-    await broadcast_to_ui(state, payload)
-    log.info(
-        f"calendar shown: view={view} source={source_label!r} "
-        f"events={len(events)} duration={duration_s}s"
-    )
-    return payload
-
-
-async def _hide_calendar(state: AppState) -> bool:
-    msg = {"type": "hide_calendar"}
-    pushed = await _push_to_rpi(state, msg)
-    await broadcast_to_ui(state, msg)
-    log.info("calendar hidden")
-    return pushed
-
-
-def _format_range_title(view: str, start: "datetime") -> str:
-    """e.g. 'May 2026' / 'Week of 11 May 2026' / 'Saturday 16 May 2026'."""
-    if view == "month":
-        return start.strftime("%B %Y")
-    if view == "week":
-        return "Week of " + start.strftime("%d %B %Y")
-    return start.strftime("%A %d %B %Y")
+# Calendar overlay orchestration lives in calendar_ha.py; re-exported here so
+# existing callers (and tests) keep importing them from main.
+from .calendar_ha import (  # noqa: E402
+    _calendar_range,
+    _format_range_title,
+    _hide_calendar,
+    _parse_anchor_date,
+    _show_calendar,
+)
 
 
 @asynccontextmanager
