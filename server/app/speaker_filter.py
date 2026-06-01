@@ -30,6 +30,27 @@ class SpeakerFilter:
                 log.warning(f"Could not load speaker encoder: {e}")
         return self._encoder
 
+    def warm_up(self, sample_rate: int = 16000) -> None:
+        """Run one throwaway embedding so the encoder's (CPU) torch kernels
+        initialize at startup rather than on the first real enroll/identify.
+
+        `identify()` short-circuits to "human" before any AI voice is
+        enrolled, so it never exercises the forward pass — which left the
+        first embedding (enrollment) to pay the cold-start tax. On the
+        CPU-only server that cold start is ~9 s, so we deliberately pay it
+        here at boot, where nobody is waiting."""
+        encoder = self._get_encoder()
+        if encoder is None:
+            return
+        try:
+            # Low-amplitude noise (not pure silence) so the encoder finds a
+            # partial to embed; the resulting vector is discarded.
+            dummy = (np.random.randn(sample_rate) * 1e-3).astype(np.float32)
+            encoder.embed_utterance(dummy)
+            log.info("Speaker encoder warmed up")
+        except Exception as e:
+            log.warning(f"Speaker encoder warm-up failed (non-fatal): {e}")
+
     def enroll_ai_voice(self, audio: np.ndarray, sample_rate: int):
         """
         Enroll the AI's TTS voice so we can filter it out later.

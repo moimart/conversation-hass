@@ -86,7 +86,11 @@ class AudioPipeline:
         except Exception as e:
             log.warning(f"VAD warm-up failed (non-fatal): {e}")
         try:
-            self.speaker_filter.identify(silence, self._target_rate)
+            # Actually exercise the encoder's forward pass — identify()
+            # short-circuits before an AI voice is enrolled, so it wouldn't
+            # warm the (CPU) torch kernels. This pays the ~9 s cold start at
+            # boot instead of on the first real utterance.
+            self.speaker_filter.warm_up(self._target_rate)
             log.info("Speaker filter warm-up complete")
         except Exception as e:
             log.warning(f"Speaker filter warm-up failed (non-fatal): {e}")

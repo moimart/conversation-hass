@@ -29,6 +29,31 @@ class TestIdentifyWithoutEnrollment:
         assert sf.identify(audio, 16000) == "human"
 
 
+class TestWarmUp:
+    def test_warm_up_runs_one_embedding(self):
+        sf = SpeakerFilter()
+        fake_encoder = MagicMock()
+        fake_encoder.embed_utterance.return_value = np.ones(256)
+        with patch.object(sf, "_get_encoder", return_value=fake_encoder):
+            sf.warm_up(16000)
+        # Must actually exercise the encoder's forward pass (the whole point).
+        fake_encoder.embed_utterance.assert_called_once()
+        # Warm-up is throwaway — it must NOT enroll an AI voice.
+        assert sf._ai_embedding is None
+
+    def test_warm_up_no_encoder_is_noop(self):
+        sf = SpeakerFilter()
+        with patch.object(sf, "_get_encoder", return_value=None):
+            sf.warm_up(16000)  # must not raise
+
+    def test_warm_up_swallows_encoder_error(self):
+        sf = SpeakerFilter()
+        fake_encoder = MagicMock()
+        fake_encoder.embed_utterance.side_effect = RuntimeError("boom")
+        with patch.object(sf, "_get_encoder", return_value=fake_encoder):
+            sf.warm_up(16000)  # must not raise
+
+
 class TestEnrollAndIdentify:
     def test_enroll_sets_embedding(self):
         sf = SpeakerFilter()
