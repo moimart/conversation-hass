@@ -117,16 +117,21 @@ class ConfigEntity:
     options_placeholder: str = ""    # placeholder when the options list is empty
     options_prefix_none: bool = False  # prepend the "(none)" sentinel option
     max_attr: str | None = None      # for num_ctx-style dynamic max
+    republish_if_empty: bool = True  # on reconnect, publish even when cached value is falsy
+    #   (False for selects/text that shouldn't push an empty state into HA —
+    #    an empty value isn't in the options list and would clear the selection)
 
 
 CONFIG_ENTITIES: list[ConfigEntity] = [
     ConfigEntity(
         key="theme_day", platform="select", name="Day Theme",
         icon="mdi:weather-sunny", options_attr="theme_options",
+        republish_if_empty=False,
     ),
     ConfigEntity(
         key="theme_night", platform="select", name="Night Theme",
         icon="mdi:weather-night", options_attr="theme_options",
+        republish_if_empty=False,
     ),
     ConfigEntity(
         key="tts_voice", platform="select", name="TTS Voice",
@@ -137,11 +142,13 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
     ConfigEntity(
         key="wake_word", platform="text", name="Wake Word",
         icon="mdi:microphone-message", extra={"mode": "text"},
+        republish_if_empty=False,
     ),
     ConfigEntity(
         key="ollama_model", platform="select", name="Ollama Model",
         icon="mdi:chip", options_attr="model_options",
         options_placeholder="(no models found)",
+        republish_if_empty=False,
     ),
     ConfigEntity(
         key="fallback_ollama_model", platform="select", name="LLM Fallback Model",
@@ -837,9 +844,12 @@ class MQTTBridge:
                     # registry. The imperative display switch isn't a config
                     # entity, so it's published separately.
                     for _entity in CONFIG_ENTITIES:
-                        await self.publish_config(
-                            _entity.key, self._cached_config[_entity.key]
-                        )
+                        _val = self._cached_config[_entity.key]
+                        # A few selects/text skip republish when empty so an
+                        # unconfigured value never clears the HA selection.
+                        if not _entity.republish_if_empty and not _val:
+                            continue
+                        await self.publish_config(_entity.key, _val)
                     await self.publish_display_state(self._cached_display_state)
                     await self.publish_conversation_engine(
                         self._cached_conversation_engine
