@@ -26,6 +26,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
@@ -327,3 +328,120 @@ async def stop_photo_frame(state: "AppState", reason: str = "explicit") -> dict:
     await broadcast_to_ui(state, {"type": "hide_photo_frame", "reason": reason})
     log.info(f"Photo frame closed (reason={reason})")
     return {"status": "ok", "session": False}
+
+
+# --- Photo-frame looping video: download + cache on the server -------------
+# The user sets a source URL in HA; the server downloads it once, caches it
+# under the writable /app/runtime mount, and serves it at
+# /api/photo_frame/video. The RPi pulls that file over HTTP and plays it
+# locally on the kiosk. A .sha256 sidecar lets a restart recover the hash
+# without re-hashing the (large) file.
+PHOTO_FRAME_VIDEO_MAX_BYTES = int(
+    os.environ.get("PHOTO_FRAME_VIDEO_MAX_BYTES", str(150 * 1024 * 1024))
+)
+_VIDEO_FETCH_TIMEOUT = 60.0
+
+
+def _photo_frame_video_cache_path() -> str:
+    return os.environ.get(
+        "PHOTO_FRAME_VIDEO_CACHE", "/app/runtime/photo_frame_video.mp4"
+    )
+
+
+def _photo_frame_video_sidecar_path() -> str:
+    return _photo_frame_video_cache_path() + ".sha256"
+
+
+def _load_photo_frame_video_hash(state: AppState) -> str:
+    """Recover the cached video's hash from the sidecar at startup. Returns
+    "" (and leaves state.photo_frame_video_hash empty) if no usable cache."""
+    cache = _photo_frame_video_cache_path()
+    sidecar = _photo_frame_video_sidecar_path()
+    if not (os.path.isfile(cache) and os.path.isfile(sidecar)):
+        state.photo_frame_video_hash = ""
+        return ""
+    try:
+        with open(sidecar) as f:
+            h = f.read().strip()
+    except Exception:
+        h = ""
+    state.photo_frame_video_hash = h
+    return h
+
+
+def _clear_photo_frame_video_cache(state: AppState) -> None:
+    """Drop the cached video + sidecar and forget its hash (best-effort)."""
+    state.photo_frame_video_hash = ""
+    for p in (_photo_frame_video_cache_path(), _photo_frame_video_sidecar_path()):
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+
+
+async def _download_photo_frame_video(state: AppState, url: str) -> bool:
+    """Stream-download a video URL to the cache (atomic) and set the hash.
+
+    Validates a video/* content-type, enforces PHOTO_FRAME_VIDEO_MAX_BYTES
+    incrementally while streaming, and writes to a temp file then os.replace
+    so a partial/aborted download never leaves a truncated loop.mp4. On any
+    failure the previous cache is left intact and False is returned.
+    """
+    import hashlib
+    import tempfile
+    import httpx
+
+    url = (url or "").strip()
+    if not url:
+        return False
+    headers: dict[str, str] = {}
+    ha_url = os.environ.get("HA_URL", "").rstrip("/")
+    ha_token = os.environ.get("HA_TOKEN", "")
+    if ha_url and ha_token and url.startswith(ha_url):
+        headers["Authorization"] = f"Bearer {ha_token}"
+
+    cache = _photo_frame_video_cache_path()
+    d = os.path.dirname(cache) or "."
+    os.makedirs(d, exist_ok=True)
+    tmp = None
+    sha = hashlib.sha256()
+    total = 0
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True, timeout=_VIDEO_FETCH_TIMEOUT, max_redirects=3
+        ) as client:
+            async with client.stream("GET", url, headers=headers) as r:
+                r.raise_for_status()
+                mime = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+                if not mime.startswith("video/"):
+                    log.warning(f"photo_frame video: refusing non-video content-type {mime!r} from {url}")
+                    return False
+                fd, tmp = tempfile.mkstemp(prefix=".photo_frame_video.", dir=d)
+                with os.fdopen(fd, "wb") as f:
+                    async for chunk in r.aiter_bytes(256 * 1024):
+                        total += len(chunk)
+                        if total > PHOTO_FRAME_VIDEO_MAX_BYTES:
+                            log.warning(
+                                f"photo_frame video at {url} exceeds cap "
+                                f"{PHOTO_FRAME_VIDEO_MAX_BYTES} bytes — aborting"
+                            )
+                            raise ValueError("video too large")
+                        sha.update(chunk)
+                        f.write(chunk)
+        digest = sha.hexdigest()
+        os.replace(tmp, cache)
+        tmp = None
+        with open(_photo_frame_video_sidecar_path(), "w") as f:
+            f.write(digest + "\n")
+        state.photo_frame_video_hash = digest
+        log.info(f"photo_frame video cached: {total} bytes, sha={digest[:12]}")
+        return True
+    except Exception as e:
+        log.warning(f"photo_frame video download failed for {url}: {e}")
+        return False
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass

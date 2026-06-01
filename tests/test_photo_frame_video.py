@@ -96,7 +96,8 @@ async def test_download_rejects_non_video(cache, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_download_aborts_over_cap(cache, monkeypatch):
-    monkeypatch.setattr(srv, "PHOTO_FRAME_VIDEO_MAX_BYTES", 4)
+    from server.app import photo_frame as pf
+    monkeypatch.setattr(pf, "PHOTO_FRAME_VIDEO_MAX_BYTES", 4)
     _patch_httpx(monkeypatch, "video/mp4", [b"aa", b"bb", b"cc"])  # 6 > 4
     state = _state()
     ok = await srv._download_photo_frame_video(state, "http://nas/big.mp4")
