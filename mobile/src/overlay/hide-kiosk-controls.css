@@ -15,6 +15,26 @@ html { zoom: 1 !important; }
     display: none !important;
 }
 
+/* The kiosk lays the orb out in a landscape grid (#app) that is taller than a
+   phone viewport, dropping the orb low and to the left. Pin it centered in the
+   viewport for portrait. Its children are absolutely positioned against it, so
+   centering the container keeps the orb intact. */
+#display-root .eye-container {
+    position: fixed !important;
+    top: 46% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    margin: 0 !important;
+    z-index: 6 !important;
+}
+
+/* The orb itself conveys state, so drop the kiosk's floating status chip and the
+   "TRANSCRIPT" section label, which otherwise overlap the clock on a phone. */
+#display-root .status-bar,
+#display-root .transcript-label {
+    display: none !important;
+}
+
 /* The kiosk lays the transcript + response panels out to the side of the orb
    (landscape). In portrait they fall off the right edge (x≈viewport width), so
    HAL's reply is invisible. Re-anchor them as fixed, full-width panels: the

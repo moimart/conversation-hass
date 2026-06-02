@@ -417,6 +417,15 @@ async def ui_endpoint(websocket: WebSocket):
             "wake_word": state.conversation.wake_word,
         })
 
+    # Push the active theme so a freshly-connected client (e.g. the mobile app,
+    # which has no local history) matches the display instead of defaulting to
+    # its stored 'dark'. The kiosk persists its own theme in localStorage, but
+    # mobile relies on this.
+    try:
+        await websocket.send_json({"type": "set_theme", "name": state.current_theme})
+    except Exception:
+        pass
+
     try:
         while True:
             data = await websocket.receive_text()
