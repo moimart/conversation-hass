@@ -49,6 +49,14 @@
 }
 .hal-btn:active { transform: scale(0.92); }
 .hal-send { color: #7aa2ff; }
+.hal-mic {
+    /* Push-to-talk: hold without the browser hijacking the gesture (scroll /
+       text-select / context menu). */
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
 .hal-mic.active {
     background: #c0392b;
     color: #fff;

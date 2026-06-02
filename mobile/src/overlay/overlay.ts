@@ -50,15 +50,11 @@ export function mountOverlay(cfg: HalConfig): void {
   });
   send.addEventListener("click", () => void submit());
 
-  // Mic: tap to toggle dictation. Partials stream into the field; on stop we
-  // send the final transcript.
-  mic.addEventListener("click", async () => {
-    if (isListening()) {
-      const final = await stopListening();
-      mic.classList.remove("active");
-      if (final) { input.value = final; void submit(); }
-      return;
-    }
+  // Mic: PUSH-TO-TALK. Hold the button to dictate (partials stream into the
+  // field); release to send the final transcript. Pointer capture keeps the
+  // release bound to the button even if the finger drifts off it.
+  async function startPtt() {
+    if (isListening()) return;
     try {
       void haptic();
       mic.classList.add("active");
@@ -70,7 +66,21 @@ export function mountOverlay(cfg: HalConfig): void {
       input.placeholder = "Message HAL…";
       console.warn("[hal] mic start failed", e);
     }
+  }
+  async function endPtt() {
+    if (!isListening()) return;
+    mic.classList.remove("active");
+    input.placeholder = "Message HAL…";
+    const final = await stopListening();
+    if (final) { input.value = final; void submit(); }
+  }
+  mic.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    try { mic.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    void startPtt();
   });
+  mic.addEventListener("pointerup", (e) => { e.preventDefault(); void endPtt(); });
+  mic.addEventListener("pointercancel", () => { void endPtt(); });
 }
 
 async function haptic(): Promise<void> {
