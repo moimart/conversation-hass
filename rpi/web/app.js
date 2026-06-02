@@ -594,6 +594,10 @@
                 // previously-shown video can't bleed through.
                 pfProtectedTurn = true;
                 pfShowLayer("img");
+                // The clock-during-photo-mode preference rides with the show
+                // payload (a browser that reconnected late can't rely on the
+                // connect-time push), so apply it as the frame opens.
+                applyPhotoFrameClock(msg.show_clock !== false);
                 if (pfVideoController) pfVideoController.dismiss("explicit").catch(() => {});
                 getPhotoFrame().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] show failed:", e));
@@ -601,11 +605,13 @@
             case "show_photo_frame_video":
                 pfProtectedTurn = true;
                 pfShowLayer("video");
+                applyPhotoFrameClock(msg.show_clock !== false);
                 if (pfController) pfController.dismiss("explicit").catch(() => {});
                 getPhotoFrameVideo().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] video show failed:", e));
                 break;
             case "photo_frame_update":
+                if (msg.show_clock !== undefined) applyPhotoFrameClock(msg.show_clock !== false);
                 if (pfController) pfController.update(msg);
                 break;
             case "hide_photo_frame":

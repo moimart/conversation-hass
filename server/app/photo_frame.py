@@ -66,6 +66,15 @@ class PhotoFrameVideoSession:
 VIDEO_SRC = "/media/loop.mp4"
 
 
+def _show_clock(state: "AppState") -> bool:
+    """Whether the kiosk should keep the clock/date overlay visible during
+    photo mode (user setting, default on). Carried in every show/update
+    payload so the kiosk applies the right state the moment a frame opens —
+    the value rides with the frame it affects rather than relying on a
+    connect-time push the (separately-connecting) browser might miss."""
+    return bool(getattr(state, "photo_frame_show_clock", True))
+
+
 def _video_available(state: "AppState") -> Optional[str]:
     """Return the cached video's sha256 if video mode is ON and a video has
     been downloaded (hash known), else None. `photo_frame_video_hash` is set
@@ -170,13 +179,13 @@ async def start_photo_frame(
     if existing is not None:
         if existing.entity_id == entity:
             existing.last_hash = sha
-            await _push_to_rpi(state, {
-                "type": "photo_frame_update", "image": b64, "mime": mime, "entity_id": entity,
-            })
+            update_msg = {
+                "type": "photo_frame_update", "image": b64, "mime": mime,
+                "entity_id": entity, "show_clock": _show_clock(state),
+            }
+            await _push_to_rpi(state, update_msg)
             from .main import broadcast_to_ui
-            await broadcast_to_ui(state, {
-                "type": "photo_frame_update", "image": b64, "mime": mime, "entity_id": entity,
-            })
+            await broadcast_to_ui(state, update_msg)
             return {"status": "already_active", "session": True}
         # Different entity → close the old session before opening the new one.
         log.info(f"Photo frame: switching entity {existing.entity_id!r} → {entity!r}")
@@ -208,7 +217,8 @@ async def start_photo_frame(
         entity_id=entity, sub_id=sub_id, last_hash=sha,
     )
 
-    msg = {"type": "show_photo_frame", "image": b64, "mime": mime, "entity_id": entity}
+    msg = {"type": "show_photo_frame", "image": b64, "mime": mime,
+           "entity_id": entity, "show_clock": _show_clock(state)}
     await _push_to_rpi(state, msg)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, msg)
@@ -245,7 +255,8 @@ async def _start_video_frame(state: "AppState", video_hash: str) -> Optional[dic
     if not synced:
         return None
 
-    show = {"type": "show_photo_frame_video", "src": VIDEO_SRC, "hash": video_hash}
+    show = {"type": "show_photo_frame_video", "src": VIDEO_SRC,
+            "hash": video_hash, "show_clock": _show_clock(state)}
     await _push_to_rpi(state, show)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, show)
@@ -291,7 +302,8 @@ async def _on_state_changed(state: "AppState", entity_id: str) -> None:
         # State changed but bytes are identical (e.g. attribute-only update).
         return
     session.last_hash = sha
-    msg = {"type": "photo_frame_update", "image": b64, "mime": mime, "entity_id": entity_id}
+    msg = {"type": "photo_frame_update", "image": b64, "mime": mime,
+           "entity_id": entity_id, "show_clock": _show_clock(state)}
     await _push_to_rpi(state, msg)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, msg)

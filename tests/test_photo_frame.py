@@ -100,6 +100,38 @@ async def test_start_with_configured_entity_succeeds(fake_fetch):
     assert "show_photo_frame" in _push_types(state)
 
 
+def _pushed(state, msg_type):
+    """Return the first message of msg_type pushed to the RPi WS."""
+    for c in state.audio_websocket.send_json.await_args_list:
+        if c.args[0].get("type") == msg_type:
+            return c.args[0]
+    return None
+
+
+@pytest.mark.asyncio
+async def test_show_payload_carries_show_clock_setting(fake_fetch):
+    # The clock-during-photo-mode preference rides with the show payload so
+    # a late-reconnecting kiosk applies it the moment the frame opens.
+    state = _state(configured_entity="image.weather_radar")
+    state.photo_frame_show_clock = False
+    await photo_frame.start_photo_frame(state)
+    assert _pushed(state, "show_photo_frame")["show_clock"] is False
+
+    state2 = _state(configured_entity="image.weather_radar")
+    state2.photo_frame_show_clock = True
+    await photo_frame.start_photo_frame(state2)
+    assert _pushed(state2, "show_photo_frame")["show_clock"] is True
+
+
+@pytest.mark.asyncio
+async def test_video_show_payload_carries_show_clock(fake_fetch):
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=True, video_hash="abc123")
+    state.photo_frame_show_clock = False
+    await photo_frame.start_photo_frame(state)
+    assert _pushed(state, "show_photo_frame_video")["show_clock"] is False
+
+
 @pytest.mark.asyncio
 async def test_start_with_arg_overrides_config(fake_fetch):
     state = _state(configured_entity="image.default")
