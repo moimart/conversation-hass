@@ -498,6 +498,7 @@ class AudioManager:
             "ptt_active",
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
             "show_photo_frame_video", "set_photo_frame_clock",
+            "show_pairing_code", "hide_pairing_code",
         ):
             await self.broadcast_to_ui(msg)
 
