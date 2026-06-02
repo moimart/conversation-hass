@@ -1,0 +1,61 @@
+/* First-run onboarding overlay — sits above everything (incl. pairing code). */
+#hal-onboarding-root {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483600;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: #0a0c10;
+    color: #fff;
+    font-family: 'Inter', system-ui, sans-serif;
+}
+#hal-onboarding-root.visible { display: flex; }
+
+.hal-ob-card {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.hal-ob-title { font-size: 26px; font-weight: 500; margin: 0; }
+.hal-ob-sub { font-size: 15px; line-height: 1.5; opacity: 0.6; margin: 0 0 4px; }
+.hal-ob-input {
+    height: 52px;
+    padding: 0 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(20, 23, 30, 0.9);
+    color: #fff;
+    font-size: 17px;
+    outline: none;
+}
+.hal-ob-input:focus { border-color: rgba(120, 162, 255, 0.7); }
+.hal-ob-code {
+    text-align: center;
+    letter-spacing: 0.4em;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+}
+.hal-ob-btn {
+    height: 52px;
+    border: none;
+    border-radius: 12px;
+    background: #2f6df6;
+    color: #fff;
+    font-size: 17px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.hal-ob-btn:disabled { opacity: 0.5; }
+.hal-ob-link {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 15px;
+    padding: 8px;
+    cursor: pointer;
+}
+.hal-ob-err { color: #ff6b6b; font-size: 14px; min-height: 18px; }

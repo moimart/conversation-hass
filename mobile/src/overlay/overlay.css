@@ -1,0 +1,61 @@
+/* Mobile input bar. Fixed above the mirrored display; respects the home-bar /
+   notch safe areas. High z-index but below the pairing overlay (2147482000)
+   and onboarding (2147483600). */
+.hal-input-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2147481000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(8, 10, 14, 0) 0%, rgba(8, 10, 14, 0.72) 38%, rgba(8, 10, 14, 0.92) 100%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.hal-input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding: 0 16px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(20, 23, 30, 0.82);
+    color: #fff;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 16px;          /* >=16px so iOS doesn't zoom on focus */
+    outline: none;
+}
+.hal-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+.hal-input:focus { border-color: rgba(120, 170, 255, 0.6); }
+
+.hal-btn {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(20, 23, 30, 0.82);
+    color: #cdd6e4;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s, color 0.15s, transform 0.08s;
+}
+.hal-btn:active { transform: scale(0.92); }
+.hal-send { color: #7aa2ff; }
+.hal-mic.active {
+    background: #c0392b;
+    color: #fff;
+    border-color: #e05545;
+    animation: hal-mic-pulse 1.3s ease-in-out infinite;
+}
+@keyframes hal-mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(224, 85, 69, 0.5); }
+    50% { box-shadow: 0 0 0 10px rgba(224, 85, 69, 0); }
+}

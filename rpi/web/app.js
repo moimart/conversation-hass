@@ -91,6 +91,9 @@
     }
 
     function applyOrientation(orientation, orbSide) {
+        // The mobile shell pins landscape (no wrapper rotation) so the kiosk's
+        // configured portrait mounting doesn't render the phone UI sideways.
+        if (HAL.pinLandscape) orientation = "landscape";
         orientation = (orientation || "landscape").toLowerCase();
         orbSide = (orbSide || "left").toLowerCase();
         const wrapper = document.getElementById("orientation-wrapper");
@@ -547,7 +550,8 @@
                 }
                 break;
             case "set_orientation":
-                applyOrientation(msg.orientation, msg.orb_side);
+                // Ignored on mobile (pinned landscape); honored on the kiosk.
+                if (!HAL.pinLandscape) applyOrientation(msg.orientation, msg.orb_side);
                 break;
             case "set_photo_frame_clock":
                 // Whether the clock/date overlay shows DURING photo mode

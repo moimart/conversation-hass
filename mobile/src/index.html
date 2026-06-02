@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+    <title>HAL</title>
+    <!-- Display styles (copied from rpi/web at build time, live at www/ root) -->
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="calendar.css">
+    <!-- Mobile-only layers -->
+    <link rel="stylesheet" href="assets/hide-kiosk-controls.css">
+    <link rel="stylesheet" href="assets/overlay.css">
+    <link rel="stylesheet" href="assets/onboarding.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+    <style>
+        html, body { margin: 0; height: 100%; background: #0a0c10; overflow: hidden; }
+    </style>
+    <!-- The shell bootstraps everything: reads config, runs onboarding or
+         mounts the display + overlay. It loads app.js itself once HAL_CONFIG
+         is set, so app.js is NOT referenced here. -->
+    <script type="module" src="assets/shell.js"></script>
+</head>
+<body>
+    <!-- boot.ts injects the kiosk display body (from display.html) here -->
+    <div id="display-root"></div>
+    <!-- Text + mic input bar, mounted by overlay.ts -->
+    <div id="hal-overlay-root"></div>
+    <!-- First-run onboarding (server URL + pairing code), mounted by onboarding.ts -->
+    <div id="hal-onboarding-root"></div>
+</body>
+</html>
