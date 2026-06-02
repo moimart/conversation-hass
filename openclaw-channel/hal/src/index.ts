@@ -68,78 +68,83 @@ async function handleHalInbound(cfg: any, message: HalInboundMessage) {
   const halBaseUrl: string =
     (cfg?.channels as Record<string, any>)?.hal?.halBaseUrl ?? "";
 
-  // OpenClaw 2026.5.x removed the `runtime.channel.turn.*` aliases; the
-  // channel-owned prepared-dispatch path is now runtime.channel.inbound
-  // .runPreparedReply (same params). See docs/plugins/sdk-channel-inbound.
+  // OpenClaw 2026.5.x removed the `runtime.channel.turn.runAssembled` alias.
+  // The channel-owned prepared-dispatch path is now
+  // runtime.channel.inbound.runPreparedReply, which takes a `runDispatch`
+  // closure instead of the old `delivery` + `dispatchReplyWithBufferedBlock
+  // Dispatcher` params. runDispatch drives the reply pipeline and delivers each
+  // reply block back to the HAL server (mirrors the gateway's own direct-dm
+  // channel / kernel dispatchAssembledChannelTurn). Agent + model are resolved
+  // from ctxPayload, so agentId is no longer passed here.
   await runtime.channel.inbound.runPreparedReply({
-    cfg,
     channel: "hal",
     accountId: "default",
-    agentId: route.agentId,
     routeSessionKey: route.sessionKey,
     storePath,
     ctxPayload,
     recordInboundSession: runtime.channel.session.recordInboundSession,
-    dispatchReplyWithBufferedBlockDispatcher:
-      runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
-    delivery: {
-      deliver: async (payload: any) => {
-        const text: string = payload?.text ?? "";
-
-        const rawMedia: string[] = [];
-        if (Array.isArray(payload.mediaUrls)) rawMedia.push(...payload.mediaUrls);
-        if (typeof payload.mediaUrl === "string" && payload.mediaUrl)
-          rawMedia.push(payload.mediaUrl);
-        // Inline gateway-local files as data: URLs so the Dockerized HAL
-        // server can use them (it can't read the gateway's filesystem).
-        const mediaUrls = await inlineMediaList(rawMedia);
-
-        if (!halBaseUrl) return;
-        if (!text.trim() && mediaUrls.length === 0) return;
-
-        const outbound: HalOutboundMessage = {
-          request_id: message.request_id,
-          text,
-          media_urls: mediaUrls,
-        };
-
-        try {
-          const resp = await fetch(`${halBaseUrl}/api/openclaw/response`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(outbound),
-          });
-          if (!resp.ok) {
-            console.error(`[hal] Delivery failed: ${resp.status}`);
-          } else {
-            console.log(`[hal] Delivered: ${text.length} chars`);
-          }
-        } catch (err: any) {
-          console.error(`[hal] Delivery error: ${err.message}`);
-        }
-      },
-      onError: (error: any) => {
-        console.error("[hal] Dispatch error:", error);
-        if (halBaseUrl) {
-          fetch(`${halBaseUrl}/api/openclaw/response`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              request_id: message.request_id,
-              text: "Sorry, I encountered an error processing that request.",
-              media_urls: [],
-            } satisfies HalOutboundMessage),
-          }).catch(() => {});
-        }
-      },
-    },
-    replyOptions: {},
-    replyPipeline: {},
     record: {
       onRecordError: (error: any) => {
         console.error("[hal] Session record error:", error);
       },
     },
+    runDispatch: async () =>
+      await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+        ctx: ctxPayload,
+        cfg,
+        dispatcherOptions: {
+          deliver: async (payload: any) => {
+            const text: string = payload?.text ?? "";
+
+            const rawMedia: string[] = [];
+            if (Array.isArray(payload.mediaUrls)) rawMedia.push(...payload.mediaUrls);
+            if (typeof payload.mediaUrl === "string" && payload.mediaUrl)
+              rawMedia.push(payload.mediaUrl);
+            // Inline gateway-local files as data: URLs so the Dockerized HAL
+            // server can use them (it can't read the gateway's filesystem).
+            const mediaUrls = await inlineMediaList(rawMedia);
+
+            if (!halBaseUrl) return;
+            if (!text.trim() && mediaUrls.length === 0) return;
+
+            const outbound: HalOutboundMessage = {
+              request_id: message.request_id,
+              text,
+              media_urls: mediaUrls,
+            };
+
+            try {
+              const resp = await fetch(`${halBaseUrl}/api/openclaw/response`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(outbound),
+              });
+              if (!resp.ok) {
+                console.error(`[hal] Delivery failed: ${resp.status}`);
+              } else {
+                console.log(`[hal] Delivered: ${text.length} chars`);
+              }
+            } catch (err: any) {
+              console.error(`[hal] Delivery error: ${err.message}`);
+            }
+          },
+          onError: (error: any) => {
+            console.error("[hal] Dispatch error:", error);
+            if (halBaseUrl) {
+              fetch(`${halBaseUrl}/api/openclaw/response`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  request_id: message.request_id,
+                  text: "Sorry, I encountered an error processing that request.",
+                  media_urls: [],
+                } satisfies HalOutboundMessage),
+              }).catch(() => {});
+            }
+          },
+        },
+        replyOptions: {},
+      }),
   });
 }
 
