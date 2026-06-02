@@ -219,6 +219,12 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
         parse=_switch_parse, serialize=_switch_serialize,
     ),
     ConfigEntity(
+        key="photo_frame_show_clock", platform="switch",
+        name="Photo Frame Clock", icon="mdi:clock-outline", default=True,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        parse=_switch_parse, serialize=_switch_serialize,
+    ),
+    ConfigEntity(
         key="display_auto_off_seconds", platform="number",
         name="Display Auto-off Seconds", icon="mdi:monitor-off", default=0,
         extra={"min": 0, "max": 7200, "step": 30, "unit_of_measurement": "s"},

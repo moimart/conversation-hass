@@ -400,6 +400,9 @@ async def wire(state, bridge) -> None:
     bridge._cached_config["photo_frame_video_mode"] = bool(
         state.runtime_config.get("photo_frame_video_mode", False)
     )
+    bridge._cached_config["photo_frame_show_clock"] = bool(
+        state.runtime_config.get("photo_frame_show_clock", True)
+    )
     # Display power: pull the timeout from config; the imperative
     # state defaults to "on" (the RPi's first display_state relay
     # after connect will correct it if reality differs).
@@ -501,6 +504,18 @@ async def wire(state, bridge) -> None:
             from .photo_frame import stop_photo_frame, start_photo_frame
             await stop_photo_frame(state, reason="video_mode_toggle")
             await start_photo_frame(state, "")
+
+    async def _cfg_photo_frame_show_clock(enabled):
+        val = str(enabled).strip().lower() in ("true", "1", "yes", "on") \
+            if not isinstance(enabled, bool) else enabled
+        state.photo_frame_show_clock = bool(val)
+        await _persist("photo_frame_show_clock", bool(val))
+        await bridge.publish_config("photo_frame_show_clock", bool(val))
+        # Push to the kiosk so it takes effect immediately, even mid-frame
+        # (the kiosk just toggles a body class — no frame restart needed).
+        msg = {"type": "set_photo_frame_clock", "show": bool(val)}
+        await _push_to_rpi(state, msg)
+        await broadcast_to_ui(state, msg)
 
     async def _cfg_calendar_default_source(value: str):
         value = (value or "").strip()
@@ -682,6 +697,7 @@ async def wire(state, bridge) -> None:
     bridge.set_config_callback("photo_frame_entity", _cfg_photo_frame_entity)
     bridge.set_config_callback("photo_frame_video_url", _cfg_photo_frame_video_url)
     bridge.set_config_callback("photo_frame_video_mode", _cfg_photo_frame_video_mode)
+    bridge.set_config_callback("photo_frame_show_clock", _cfg_photo_frame_show_clock)
     bridge.set_config_callback("calendar_default_source", _cfg_calendar_default_source)
     bridge.set_config_callback("calendar_dismiss_seconds", _cfg_calendar_dismiss_seconds)
     bridge.set_config_callback("start_muted", _cfg_start_muted)

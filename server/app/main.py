@@ -111,6 +111,10 @@ class AppState:
     photo_frame_video_url: str = ""
     photo_frame_video_mode: bool = False
     photo_frame_video_hash: str = ""
+    # Whether the clock/date overlay is shown while a photo/video frame is
+    # up (user setting, default on). Pushed to the kiosk on connect and on
+    # change as a set_photo_frame_clock message.
+    photo_frame_show_clock: bool = True
     # Display power (DPMS). state is "on" or "off"; auto_off_seconds
     # of 0 means "no idle blanking" (manual control only).
     display_state: str = "on"
@@ -614,6 +618,7 @@ async def lifespan(app: FastAPI):
     # video is ready without blocking startup.
     state.photo_frame_video_url = str(cfg.get("photo_frame_video_url", "") or "")
     state.photo_frame_video_mode = bool(cfg.get("photo_frame_video_mode", False))
+    state.photo_frame_show_clock = bool(cfg.get("photo_frame_show_clock", True))
     _load_photo_frame_video_hash(state)
     if state.photo_frame_video_url and not state.photo_frame_video_hash:
         asyncio.create_task(_download_photo_frame_video(state, state.photo_frame_video_url))

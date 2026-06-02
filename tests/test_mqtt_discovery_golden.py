@@ -36,7 +36,7 @@ def test_discovery_payloads_match_golden():
 def test_discovery_entity_count_is_stable():
     # Cheap canary independent of the byte-for-byte fixture.
     b = MQTTBridge(host="x", device_id="hal-default", device_name="HAL")
-    assert len(b._discovery_payloads()) == 57
+    assert len(b._discovery_payloads()) == 58
 
 
 def test_every_config_entity_has_set_and_state_topics():

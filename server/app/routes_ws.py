@@ -61,6 +61,16 @@ async def audio_endpoint(websocket: WebSocket):
     except Exception as e:
         log.warning(f"Could not push initial orientation to RPi: {e}")
 
+    # Push the "show clock during photo mode" preference so the kiosk has
+    # the right value before any frame opens (default on).
+    try:
+        await websocket.send_json({
+            "type": "set_photo_frame_clock",
+            "show": bool(state.photo_frame_show_clock),
+        })
+    except Exception as e:
+        log.warning(f"Could not push photo-frame clock setting to RPi: {e}")
+
     # Reconcile the kiosk's photo/video frame with our session state. After a
     # server restart our session is None, but the kiosk may still be showing
     # an orphaned frame — a static photo, or a video looping from the RPi's

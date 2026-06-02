@@ -1165,6 +1165,31 @@ body.photo-frame-active .clock-display .clock-date {
         0 0 16px rgba(0, 0, 0, 0.4);
 }
 
+/* Hide ALL the kiosk chrome while a photo/video frame owns the screen.
+   These three controls are the only z-index>=8 elements that sit above
+   the stage (z:8) — everything else in #app is occluded by the opaque
+   photo. Fade them out (and kill pointer-events so a stray tap can't hit
+   a control the user can't see) whenever the frame is active. */
+body.photo-frame-active .volume-control,
+body.photo-frame-active .theme-picker,
+body.photo-frame-active .connection-indicator {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 400ms ease;
+}
+
+/* Clock/date during photo mode is a user setting (Photo Frame Clock,
+   default ON). When the server pushes show=false the kiosk sets
+   body.pf-hide-clock; combined with photo-frame-active that fades the
+   overlay out. Outside photo mode the class is inert (the clock shows
+   normally on the kiosk home screen regardless). */
+.clock-display {
+    transition: opacity 600ms ease;
+}
+body.photo-frame-active.pf-hide-clock .clock-display {
+    opacity: 0;
+}
+
 /* === Per-theme state-video layer ==========================================
    Themes that declare `state_videos` in their manifest get a stack of
    <video> elements injected into .eye-container by state_videos.js.

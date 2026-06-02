@@ -329,6 +329,15 @@
         vid.style.display = which === "video" ? "contents" : "none";
     }
 
+    // Whether the clock/date overlay is shown during photo mode (server
+    // setting, default on). The kiosk keeps body.pf-hide-clock synced to
+    // its inverse; the CSS only hides the clock when that class AND
+    // .photo-frame-active are both present, so the home-screen clock is
+    // never affected. The server pushes the value on connect and on change.
+    function applyPhotoFrameClock(show) {
+        document.body.classList.toggle("pf-hide-clock", !show);
+    }
+
     async function getPhotoFrame() {
         if (pfController) return pfController;
         if (!pfLoading) {
@@ -519,6 +528,14 @@
                 break;
             case "set_orientation":
                 applyOrientation(msg.orientation, msg.orb_side);
+                break;
+            case "set_photo_frame_clock":
+                // Whether the clock/date overlay shows DURING photo mode
+                // (user setting, default on). Keep body.pf-hide-clock in
+                // sync; the CSS only acts on it under .photo-frame-active,
+                // so this is safe to apply at any time and takes effect
+                // live if a frame is already on screen.
+                applyPhotoFrameClock(msg.show !== false);
                 break;
             case "themes_changed":
                 loadThemes().then(() => {

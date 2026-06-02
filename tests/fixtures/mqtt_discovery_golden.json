@@ -1049,6 +1049,32 @@
     }
   ],
   [
+    "homeassistant/switch/hal-default/config_photo_frame_show_clock/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/photo_frame_show_clock/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "HAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:clock-outline",
+      "name": "Photo Frame Clock",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/photo_frame_show_clock/state",
+      "unique_id": "hal-default_config_photo_frame_show_clock"
+    }
+  ],
+  [
     "homeassistant/switch/hal-default/config_photo_frame_video_mode/config",
     {
       "availability": [

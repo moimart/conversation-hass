@@ -116,3 +116,18 @@ def test_photo_frame_video_mode_coerced_from_env(tmp_path, monkeypatch):
     values = cfg.load()
     assert values["photo_frame_video_mode"] is True
     assert values["photo_frame_video_url"] == "http://nas/loop.mp4"
+
+
+def test_photo_frame_show_clock_defaults_on(tmp_path, monkeypatch):
+    # Default must be ON (clock shown during photo mode) when unset.
+    monkeypatch.delenv("PHOTO_FRAME_SHOW_CLOCK", raising=False)
+    cfg = RuntimeConfig(str(tmp_path / "config.json"))
+    values = cfg.load()
+    assert values["photo_frame_show_clock"] is True
+
+
+def test_photo_frame_show_clock_coerced_from_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("PHOTO_FRAME_SHOW_CLOCK", "off")
+    cfg = RuntimeConfig(str(tmp_path / "config.json"))
+    values = cfg.load()
+    assert values["photo_frame_show_clock"] is False

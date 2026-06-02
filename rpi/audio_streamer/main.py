@@ -497,7 +497,7 @@ class AudioManager:
             "show_calendar", "hide_calendar",
             "ptt_active",
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
-            "show_photo_frame_video",
+            "show_photo_frame_video", "set_photo_frame_clock",
         ):
             await self.broadcast_to_ui(msg)
 

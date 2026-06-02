@@ -54,6 +54,14 @@ def test_set_config_callback_registers():
     assert b._config_callbacks["wake_word"] is cb
 
 
+def test_photo_frame_show_clock_is_switch_defaulting_on():
+    e = _CONFIG_BY_KEY["photo_frame_show_clock"]
+    assert e.platform == "switch"
+    assert e.default is True                 # clock shown in photo mode by default
+    assert e.serialize(True) == "ON"
+    assert e.parse("OFF") is False
+
+
 def test_switch_parse_roundtrip():
     e = _CONFIG_BY_KEY["start_muted"]
     assert e.parse("ON") is True
