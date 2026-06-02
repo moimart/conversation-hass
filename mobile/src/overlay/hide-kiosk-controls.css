@@ -15,9 +15,32 @@ html { zoom: 1 !important; }
     display: none !important;
 }
 
-/* Give the bottom input bar room so it doesn't cover the transcript/response
-   panels of the mirrored display. */
-#display-root .transcript-container,
+/* The kiosk lays the transcript + response panels out to the side of the orb
+   (landscape). In portrait they fall off the right edge (x≈viewport width), so
+   HAL's reply is invisible. Re-anchor them as fixed, full-width panels: the
+   transcript scrolls under the clock at the top, HAL's response sits above the
+   input bar at the bottom — a readable chat layout on a phone. */
+#display-root .transcript-container {
+    position: fixed !important;
+    left: 14px !important;
+    right: 14px !important;
+    top: 92px !important;
+    bottom: auto !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: 16vh !important;
+    overflow-y: auto !important;
+    margin: 0 !important;
+}
 #display-root .response-container {
-    margin-bottom: 64px;
+    position: fixed !important;
+    left: 14px !important;
+    right: 14px !important;
+    top: auto !important;
+    bottom: calc(78px + env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: 38vh !important;
+    overflow-y: auto !important;
+    margin: 0 !important;
 }
