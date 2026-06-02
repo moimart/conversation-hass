@@ -68,7 +68,10 @@ async function handleHalInbound(cfg: any, message: HalInboundMessage) {
   const halBaseUrl: string =
     (cfg?.channels as Record<string, any>)?.hal?.halBaseUrl ?? "";
 
-  await runtime.channel.turn.runAssembled({
+  // OpenClaw 2026.5.x removed the `runtime.channel.turn.*` aliases; the
+  // channel-owned prepared-dispatch path is now runtime.channel.inbound
+  // .runPreparedReply (same params). See docs/plugins/sdk-channel-inbound.
+  await runtime.channel.inbound.runPreparedReply({
     cfg,
     channel: "hal",
     accountId: "default",
