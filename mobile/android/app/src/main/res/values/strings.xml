@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">HAL</string>
+    <string name="title_activity_main">HAL</string>
+    <string name="package_name">sh.martinez.hal.companion</string>
+    <string name="custom_url_scheme">sh.martinez.hal.companion</string>
+</resources>
