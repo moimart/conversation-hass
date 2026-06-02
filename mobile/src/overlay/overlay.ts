@@ -3,7 +3,7 @@
 // #hal-overlay-root (a sibling of the display, NOT inside #orientation-wrapper)
 // so it never inherits the orb's transform/perspective.
 
-import type { HalConfig } from "../config/hal-config";
+import { clearConfig, type HalConfig } from "../config/hal-config";
 import { sendCommand } from "./command";
 import { startListening, stopListening, isListening } from "./mic";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
@@ -36,6 +36,15 @@ export function mountOverlay(cfg: HalConfig): void {
 
   bar.append(mic, input, send);
   root.appendChild(bar);
+
+  // Settings / re-pair affordance (top-right). Lets you point at a different
+  // server or re-pair — clears the stored config and returns to onboarding.
+  const gear = document.createElement("button");
+  gear.className = "hal-gear";
+  gear.setAttribute("aria-label", "Settings");
+  gear.innerHTML = gearIcon();
+  gear.addEventListener("click", () => showSettings(cfg));
+  root.appendChild(gear);
 
   async function submit() {
     const text = input.value;
@@ -83,8 +92,34 @@ export function mountOverlay(cfg: HalConfig): void {
   mic.addEventListener("pointercancel", () => { void endPtt(); });
 }
 
+function showSettings(cfg: HalConfig): void {
+  const root = document.getElementById("hal-overlay-root");
+  if (!root) return;
+  const back = document.createElement("div");
+  back.className = "hal-sheet-backdrop";
+  back.innerHTML = `
+    <div class="hal-sheet">
+      <div class="hal-sheet-title">Connection</div>
+      <div class="hal-sheet-sub">${cfg.serverName ? cfg.serverName + " · " : ""}${cfg.serverBaseUrl}</div>
+      <button class="hal-sheet-btn danger" id="hal-repair">Re-pair / change server</button>
+      <button class="hal-sheet-btn" id="hal-cancel">Cancel</button>
+    </div>`;
+  root.appendChild(back);
+  const close = () => back.remove();
+  back.addEventListener("click", (e) => { if (e.target === back) close(); });
+  back.querySelector("#hal-cancel")!.addEventListener("click", close);
+  back.querySelector("#hal-repair")!.addEventListener("click", async () => {
+    await clearConfig();
+    location.reload();   // boot.ts re-runs with no config → onboarding (code entry)
+  });
+}
+
 async function haptic(): Promise<void> {
   try { await Haptics.impact({ style: ImpactStyle.Light }); } catch { /* web/no-op */ }
+}
+
+function gearIcon(): string {
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
 }
 
 function micIcon(): string {

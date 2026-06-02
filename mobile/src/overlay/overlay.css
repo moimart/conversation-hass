@@ -57,6 +57,62 @@
     user-select: none;
     -webkit-touch-callout: none;
 }
+/* Settings / re-pair gear (top-right, subtle). */
+.hal-gear {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    right: 12px;
+    z-index: 2147481500;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.42);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.hal-gear:active { color: rgba(255, 255, 255, 0.9); }
+
+.hal-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483200;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    padding: 0 12px calc(20px + env(safe-area-inset-bottom));
+}
+.hal-sheet {
+    width: 100%;
+    max-width: 460px;
+    background: #14171e;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #fff;
+}
+.hal-sheet-title { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.5; }
+.hal-sheet-sub { font-size: 14px; opacity: 0.75; word-break: break-all; margin-bottom: 6px; }
+.hal-sheet-btn {
+    height: 50px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+}
+.hal-sheet-btn.danger { color: #ff7a6b; border-color: rgba(255, 122, 107, 0.4); }
+
 .hal-mic.active {
     background: #c0392b;
     color: #fff;
