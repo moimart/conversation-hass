@@ -54,7 +54,11 @@
         card.appendChild(codeEl);
         card.appendChild(countEl);
         root.appendChild(card);
-        doc.body.appendChild(root);
+        // Mount INSIDE #orientation-wrapper so the code follows the kiosk's
+        // portrait/landscape orientation — the wrapper's rotate() transform also
+        // rotates this (and makes its position:fixed resolve against the
+        // wrapper box). Fall back to body where there's no wrapper.
+        (doc.getElementById("orientation-wrapper") || doc.body).appendChild(root);
     }
 
     function clearTimer() {
