@@ -50,4 +50,11 @@ export async function mountDisplay(): Promise<void> {
 
   // app.js (IIFE) connects + drives the display using window.HAL_CONFIG.
   await loadScript("app.js");
+
+  // app.js sizes the orientation wrapper from the viewport at load. In the
+  // WebView the final size isn't settled until after the splash hides, so nudge
+  // a relayout (app.js re-applies orientation on resize) once things settle.
+  for (const ms of [250, 700, 1500]) {
+    setTimeout(() => window.dispatchEvent(new Event("resize")), ms);
+  }
 }

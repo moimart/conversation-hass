@@ -1,3 +1,10 @@
+/* The kiosk auto-zooms the whole page to its panel size
+   (rpi/web/style.css: html{zoom:clamp(1.0, calc(100vmin/691px), 3.125)}). On a
+   phone that resolves large and shrinks the orientation wrapper so the orb
+   overflows and clips. Pin zoom to 1 so the px-based orb fits the viewport.
+   Loaded after style.css, so !important wins without editing the kiosk CSS. */
+html { zoom: 1 !important; }
+
 /* Hide RPi/kiosk-only chrome in the reused display — the phone uses its own
    input bar and has no mic-mute / system-volume / wired connection concept.
    Injected as a separate stylesheet so rpi/web/style.css is never edited. */
