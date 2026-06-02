@@ -43,10 +43,10 @@ export async function mountDisplay(): Promise<void> {
     () => console.warn("[hal] hls.js unavailable — m3u8 video disabled"),
   );
 
-  // pairing_overlay.js sets window.HALPairingOverlay; load it before app.js.
-  await loadScript("pairing_overlay.js").catch(() => {
-    console.warn("[hal] pairing_overlay.js failed to load");
-  });
+  // NOTE: we deliberately do NOT load pairing_overlay.js here. The pairing code
+  // is meant for the kiosk DISPLAY; the phone is where you ENTER it. If the
+  // phone also rendered the code overlay it would cover its own input. app.js's
+  // show_pairing_code case is a no-op when window.HALPairingOverlay is absent.
 
   // app.js (IIFE) connects + drives the display using window.HAL_CONFIG.
   await loadScript("app.js");
