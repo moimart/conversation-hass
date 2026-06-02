@@ -40,11 +40,21 @@ html { zoom: 1 !important; }
    HAL's reply is invisible. Re-anchor them as fixed, full-width panels: the
    transcript scrolls under the clock at the top, HAL's response sits above the
    input bar at the bottom — a readable chat layout on a phone. */
+/* Push the HAL clock below the device status bar (safe-area inset) so it doesn't
+   collide with the system clock at the top, and trim it so it doesn't dominate
+   the phone (the kiosk clock is sized for a big panel). */
+#display-root .clock-display {
+    top: calc(env(safe-area-inset-top, 0px) + 4px) !important;
+    left: 18px !important;
+}
+#display-root .clock-time { font-size: 42px !important; }
+#display-root .clock-date { font-size: 13px !important; }
+
 #display-root .transcript-container {
     position: fixed !important;
     left: 14px !important;
     right: 14px !important;
-    top: 92px !important;
+    top: calc(env(safe-area-inset-top, 0px) + 78px) !important;
     bottom: auto !important;
     width: auto !important;
     max-width: none !important;
