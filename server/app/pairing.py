@@ -169,12 +169,10 @@ async def _push_pairing(state, msg: dict) -> None:
             pass
 
 
-@router.post("/api/pair/request")
-async def pair_request(request: Request):
-    """Mint a pairing code and show it on the display. Called when the user
-    asks HAL to pair a phone."""
-    from .main import _get_state
-    state = _get_state(request.app)
+async def begin_pairing(state) -> tuple[str, int]:
+    """Mint a pairing code, show it full-screen on the kiosk display, and
+    schedule it to auto-hide on expiry. Returns (code, ttl_seconds). Shared by
+    the REST route and the `pair_phone` local tool."""
     code, ttl = state.pairing.create_code()
     await _push_pairing(state, {"type": "show_pairing_code", "code": code, "expires_in": ttl})
 
@@ -185,6 +183,16 @@ async def pair_request(request: Request):
         await _push_pairing(state, {"type": "hide_pairing_code"})
 
     asyncio.create_task(_hide_later())
+    return code, ttl
+
+
+@router.post("/api/pair/request")
+async def pair_request(request: Request):
+    """Mint a pairing code and show it on the display. Called when the user
+    asks HAL to pair a phone."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    code, ttl = await begin_pairing(state)
     return {"code": code, "expires_in": ttl}
 
 

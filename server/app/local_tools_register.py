@@ -642,6 +642,29 @@ def build_local_tools(state) -> LocalToolsClient:
         hide_photo_frame_tool,
     )
 
+    async def pair_phone_tool(_args: dict) -> str:
+        from .pairing import begin_pairing
+        code, ttl = await begin_pairing(state)
+        spoken = " ".join(code)  # read digits individually for TTS clarity
+        return (
+            f"Pairing started. The code is {spoken}. It's shown on the screen — "
+            f"enter it in the HAL app's pairing screen within about {ttl} seconds."
+        )
+
+    tools.register(
+        "pair_phone",
+        (
+            "Start pairing the HAL companion phone app. Generates a one-time "
+            "6-digit code, displays it full-screen on the kiosk, and returns it "
+            "so you can read it aloud. Use when the user says 'pair my phone', "
+            "'pair the app', 'connect my phone to HAL', 'set up the mobile app', "
+            "etc. The code expires in about two minutes; the user types it into "
+            "the app's pairing screen. Read the digits clearly, one by one."
+        ),
+        {"type": "object", "properties": {}},
+        pair_phone_tool,
+    )
+
     async def set_display_power_tool(args: dict) -> str:
         target = (args.get("state") or "").strip().lower()
         if target not in ("on", "off"):
