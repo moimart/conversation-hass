@@ -8,6 +8,27 @@
 (() => {
     "use strict";
 
+    // --- Server config (kiosk vs mobile reuse) ---
+    // The kiosk serves this UI from the RPi and talks to it same-origin, so
+    // window.HAL_CONFIG is undefined and every helper below falls back to
+    // location.host / relative paths (unchanged kiosk behaviour). The mobile
+    // Capacitor shell injects window.HAL_CONFIG = {serverBaseUrl, wsUrl, token}
+    // BEFORE this script runs, pointing the same UI at the AI server directly.
+    const HAL = (typeof window !== "undefined" && window.HAL_CONFIG) || {};
+    // Base URL for server HTTP (themes, api). "" → same-origin (kiosk).
+    function halBase() { return HAL.serverBaseUrl || ""; }
+    // Full WebSocket URL. Kiosk: ws(s)://<host>/ws (the RPi). Mobile:
+    // HAL_CONFIG.wsUrl (the server's /ws/ui), token appended as a query param.
+    function halWsUrl() {
+        if (HAL.wsUrl) {
+            return HAL.token
+                ? HAL.wsUrl + (HAL.wsUrl.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(HAL.token)
+                : HAL.wsUrl;
+        }
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        return `${protocol}//${location.host}/ws`;
+    }
+
     // --- DOM Elements ---
     const transcript = document.getElementById("transcript");
     const responseContainer = document.getElementById("response-container");
@@ -42,7 +63,7 @@
         if (loadedCss.has(name)) return;
         const link = document.createElement("link");
         link.rel = "stylesheet";
-        link.href = `/themes/${encodeURIComponent(name)}/theme.css`;
+        link.href = `${halBase()}/themes/${encodeURIComponent(name)}/theme.css`;
         link.dataset.theme = name;
         document.head.appendChild(link);
         loadedCss.add(name);
@@ -51,7 +72,7 @@
     async function ensureEffect(name) {
         if (loadedEffects.has(name)) return loadedEffects.get(name);
         try {
-            const mod = await import(`/themes/${encodeURIComponent(name)}/effect.js`);
+            const mod = await import(`${halBase()}/themes/${encodeURIComponent(name)}/effect.js`);
             const setup = mod.default;
             if (typeof setup !== "function") return null;
             const ctrl = setup({ root: document.getElementById("orientation-wrapper") || document.body });
@@ -182,7 +203,7 @@
 
     async function loadThemes() {
         try {
-            const r = await fetch("/api/themes", { cache: "no-store" });
+            const r = await fetch(`${halBase()}/api/themes`, { cache: "no-store" });
             const data = await r.json();
             themes = Array.isArray(data.themes) ? data.themes : [];
         } catch (e) {
@@ -222,8 +243,7 @@
 
     // --- WebSocket ---
     function connect() {
-        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-        const url = `${protocol}//${location.host}/ws`;
+        const url = halWsUrl();
 
         ws = new WebSocket(url);
 
@@ -618,6 +638,14 @@
                 pfProtectedTurn = false;
                 if (pfController) pfController.dismiss("explicit").catch(() => {});
                 if (pfVideoController) pfVideoController.dismiss("explicit").catch(() => {});
+                break;
+            case "show_pairing_code":
+                // Mobile device pairing: the server minted a code; show it
+                // fullscreen so the user can type it into the companion app.
+                if (window.HALPairingOverlay) window.HALPairingOverlay.show(msg.code, msg.expires_in);
+                break;
+            case "hide_pairing_code":
+                if (window.HALPairingOverlay) window.HALPairingOverlay.hide();
                 break;
             default:
                 console.log("Unknown message:", msg);

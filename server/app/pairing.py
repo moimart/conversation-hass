@@ -1,0 +1,212 @@
+"""Device pairing + token auth for the mobile companion app.
+
+The server is otherwise unauthenticated (LAN trust). Pairing lets a phone
+exchange a short-lived numeric code — shown on the kiosk display — for a
+long-lived device token, which it then presents on /api/command (Bearer) and
+/ws/ui (?token=). Enforcement is OPT-IN via the HAL_REQUIRE_TOKEN env flag so the
+existing unauthenticated kiosk/RPi keep working until the user turns it on.
+
+Codes are in-memory and ephemeral (single-use, ~120s). Tokens are persisted to a
+small JSON file under the runtime dir so they survive restarts.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import secrets
+import tempfile
+import time
+
+from fastapi import APIRouter, Request, Response
+from pydantic import BaseModel
+
+log = logging.getLogger("hal.pairing")
+
+CODE_TTL_S = 120.0
+CODE_LEN = 6
+REDEEM_WINDOW_S = 60.0          # throttle window
+MAX_REDEEM_ATTEMPTS = 10        # max redeem attempts per window
+
+
+def _tokens_path() -> str:
+    return os.environ.get("PAIRING_TOKENS_FILE", "/app/runtime/pairing_tokens.json")
+
+
+def require_token_enabled() -> bool:
+    """Whether token auth is enforced. Default OFF (LAN trust); turn on once a
+    phone is paired by setting HAL_REQUIRE_TOKEN=1."""
+    return os.environ.get("HAL_REQUIRE_TOKEN", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def extract_bearer(request: Request) -> str | None:
+    """Pull a Bearer token from the Authorization header, or None."""
+    auth = request.headers.get("authorization") or ""
+    if auth[:7].lower() == "bearer ":
+        return auth[7:].strip() or None
+    return None
+
+
+class PairingManager:
+    """Holds pending pairing codes (ephemeral) and issued device tokens
+    (persisted). Not thread-safe; the server runs single-threaded asyncio."""
+
+    def __init__(self) -> None:
+        self._codes: dict[str, float] = {}     # code -> expiry (monotonic)
+        self._tokens: dict[str, dict] = {}     # token -> {device_name, created_at}
+        self._redeem_hits: list[float] = []    # throttle timestamps
+        self._load()
+
+    # --- persistence -------------------------------------------------------
+    def _load(self) -> None:
+        path = _tokens_path()
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                self._tokens = {k: v for k, v in data.items() if isinstance(k, str)}
+                log.info(f"pairing: loaded {len(self._tokens)} device token(s)")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            log.warning(f"pairing: could not load tokens from {path}: {e}")
+
+    def _save(self) -> None:
+        path = _tokens_path()
+        d = os.path.dirname(path) or "."
+        os.makedirs(d, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".pairing_tokens.", dir=d)
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(self._tokens, f, indent=2)
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    # --- codes -------------------------------------------------------------
+    def _purge_expired(self) -> None:
+        now = time.monotonic()
+        self._codes = {c: e for c, e in self._codes.items() if e > now}
+
+    def create_code(self) -> tuple[str, int]:
+        """Mint a single-use numeric code valid for CODE_TTL_S seconds."""
+        self._purge_expired()
+        code = ""
+        for _ in range(20):
+            code = "".join(secrets.choice("0123456789") for _ in range(CODE_LEN))
+            if code not in self._codes:
+                break
+        self._codes[code] = time.monotonic() + CODE_TTL_S
+        return code, int(CODE_TTL_S)
+
+    def expire_code(self, code: str) -> None:
+        self._codes.pop(code, None)
+
+    # --- redeem / tokens ---------------------------------------------------
+    def throttled(self) -> bool:
+        """True if too many redeem attempts in the recent window."""
+        now = time.monotonic()
+        self._redeem_hits = [t for t in self._redeem_hits if now - t < REDEEM_WINDOW_S]
+        if len(self._redeem_hits) >= MAX_REDEEM_ATTEMPTS:
+            return True
+        self._redeem_hits.append(now)
+        return False
+
+    def redeem(self, code: str, device_name: str) -> str | None:
+        """Exchange a valid code for a new device token, or None if invalid."""
+        self._purge_expired()
+        code = (code or "").strip()
+        if code not in self._codes:
+            return None
+        del self._codes[code]                       # single-use
+        token = secrets.token_urlsafe(32)
+        self._tokens[token] = {
+            "device_name": (device_name or "mobile")[:64],
+            "created_at": time.time(),
+        }
+        self._save()
+        log.info(f"pairing: issued token for device {self._tokens[token]['device_name']!r}")
+        return token
+
+    def is_valid_token(self, token: str | None) -> bool:
+        return bool(token) and token in self._tokens
+
+    def revoke(self, token: str) -> bool:
+        if token in self._tokens:
+            del self._tokens[token]
+            self._save()
+            return True
+        return False
+
+
+# === Routes ===================================================================
+router = APIRouter()
+
+
+class RedeemRequest(BaseModel):
+    code: str
+    device_name: str = "mobile"
+
+
+def _json_error(payload: dict, status: int) -> Response:
+    return Response(content=json.dumps(payload), status_code=status,
+                    media_type="application/json")
+
+
+async def _push_pairing(state, msg: dict) -> None:
+    """Send a pairing overlay message to UI clients AND the kiosk (via RPi)."""
+    from .main import broadcast_to_ui
+    await broadcast_to_ui(state, msg)
+    if state.audio_websocket:
+        try:
+            await state.audio_websocket.send_json(msg)
+        except Exception:
+            pass
+
+
+@router.post("/api/pair/request")
+async def pair_request(request: Request):
+    """Mint a pairing code and show it on the display. Called when the user
+    asks HAL to pair a phone."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    code, ttl = state.pairing.create_code()
+    await _push_pairing(state, {"type": "show_pairing_code", "code": code, "expires_in": ttl})
+
+    async def _hide_later() -> None:
+        await asyncio.sleep(ttl)
+        # Only hide if this code is still the pending one (not already redeemed).
+        state.pairing.expire_code(code)
+        await _push_pairing(state, {"type": "hide_pairing_code"})
+
+    asyncio.create_task(_hide_later())
+    return {"code": code, "expires_in": ttl}
+
+
+@router.post("/api/pair/redeem")
+async def pair_redeem(request: Request, req: RedeemRequest):
+    """Exchange a code for a device token (called by the mobile app)."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    if state.pairing.throttled():
+        return _json_error({"error": "too_many_attempts"}, 429)
+    token = state.pairing.redeem(req.code, req.device_name)
+    if token is None:
+        return _json_error({"error": "invalid_or_expired"}, 400)
+    await _push_pairing(state, {"type": "hide_pairing_code"})
+    return {"token": token, "server_name": os.environ.get("HAL_DEVICE_NAME", "HAL")}
+
+
+@router.get("/api/pair/status")
+async def pair_status(request: Request):
+    """Probe whether a Bearer token is still valid (used at app launch)."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    if state.pairing.is_valid_token(extract_bearer(request)):
+        return {"valid": True}
+    return _json_error({"valid": False}, 401)

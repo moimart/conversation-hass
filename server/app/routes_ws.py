@@ -394,7 +394,17 @@ async def ptt_endpoint(websocket: WebSocket):
 async def ui_endpoint(websocket: WebSocket):
     """WebSocket for the web UI to receive live transcription and state updates."""
     from .main import _get_state
+    from .pairing import require_token_enabled
     state = _get_state(websocket.app)
+
+    # Mobile auth gate (opt-in): when HAL_REQUIRE_TOKEN is set, the read-only
+    # display feed requires a paired device token (passed as ?token=). The
+    # same-origin kiosk doesn't send one, so enforcement stays OFF by default.
+    if require_token_enabled():
+        token = websocket.query_params.get("token")
+        if not (state.pairing and state.pairing.is_valid_token(token)):
+            await websocket.close(code=4401)
+            return
 
     await websocket.accept()
     state.ui_clients.add(websocket)

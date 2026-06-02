@@ -17,6 +17,13 @@
 
 const FULLSCREEN_OVERLAY_CLASSES = ["show-calendar", "photo-frame-active"];
 
+// Base URL for theme assets. "" → same-origin (kiosk). The mobile shell sets
+// window.HAL_CONFIG.serverBaseUrl so state-video files resolve against the AI
+// server rather than the (non-existent on a phone) same-origin RPi.
+function halBase() {
+    return (typeof window !== "undefined" && window.HAL_CONFIG && window.HAL_CONFIG.serverBaseUrl) || "";
+}
+
 export function mountStateVideos(container, themeName, videoMap) {
     if (!container) throw new Error("mountStateVideos: container required");
     if (!themeName) throw new Error("mountStateVideos: themeName required");
@@ -47,7 +54,7 @@ export function mountStateVideos(container, themeName, videoMap) {
         let el = fileToEl.get(filename);
         if (!el) {
             el = doc.createElement("video");
-            el.src = `/themes/${encodeURIComponent(themeName)}/${encodeURIComponent(filename)}`;
+            el.src = `${halBase()}/themes/${encodeURIComponent(themeName)}/${encodeURIComponent(filename)}`;
             el.loop = true;
             el.muted = true;
             el.playsInline = true;

@@ -196,7 +196,18 @@ async def post_command(request: Request, req: CommandRequest):
         _record_user_activity,
         _dismiss_photo_frame_async,
     )
+    from .pairing import require_token_enabled, extract_bearer
     state = _get_state(request.app)
+
+    # Mobile auth gate (opt-in): when HAL_REQUIRE_TOKEN is set, a paired device
+    # token is required. Default OFF leaves the existing LAN behaviour intact.
+    if require_token_enabled():
+        if not (state.pairing and state.pairing.is_valid_token(extract_bearer(request))):
+            return Response(
+                content='{"status":"error","message":"unauthorized"}',
+                status_code=401, media_type="application/json",
+            )
+
     conversation = state.conversation
     text = req.text.strip()
 

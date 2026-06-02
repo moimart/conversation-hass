@@ -66,6 +66,7 @@ class AppState:
     audio_websocket: WebSocket | None = None  # RPi audio client
     mic_muted: bool = False  # cached from RPi
     local_tools: object | None = None  # LocalToolsClient
+    pairing: object | None = None  # pairing.PairingManager (mobile device tokens)
     current_theme: str = "dark"
     theme_day: str = "birch"
     theme_night: str = "dark"
@@ -475,6 +476,12 @@ async def lifespan(app: FastAPI):
     state.runtime_config = RuntimeConfig(runtime_config_path)
     cfg = state.runtime_config.load()
     log.info(f"Runtime config loaded from {runtime_config_path}: {cfg}")
+
+    # Mobile device pairing (loads any persisted device tokens). Token auth is
+    # only ENFORCED when HAL_REQUIRE_TOKEN is set; otherwise this is inert.
+    from .pairing import PairingManager, require_token_enabled
+    state.pairing = PairingManager()
+    log.info(f"Pairing ready (token enforcement: {'ON' if require_token_enabled() else 'OFF'})")
     state.theme_day = cfg.get("theme_day", "birch")
     state.theme_night = cfg.get("theme_night", "dark")
     state.auto_theme = bool(cfg.get("auto_theme", True))
@@ -733,9 +740,11 @@ async def broadcast_to_ui(state: AppState, msg: dict):
 
 from .routes_ws import router as _ws_router  # noqa: E402
 from .routes_http import router as _http_router  # noqa: E402
+from .pairing import router as _pairing_router  # noqa: E402
 
 app.include_router(_ws_router)
 app.include_router(_http_router)
+app.include_router(_pairing_router)
 
 # Re-export the moved WS + HTTP handlers and request models so existing
 # callers/tests that do `from .main import <handler>` (or `srv.<handler>`)
