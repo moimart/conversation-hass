@@ -471,20 +471,34 @@ async def ui_endpoint(websocket: WebSocket):
             if mtype == "ping":
                 await websocket.send_json({"type": "pong"})
             elif mtype == "webrtc_signal" and is_satellite:
-                # A satellite consuming a fanned-out live stream. Only go2rtc/RTSP
-                # streams are supported on satellites (stateless per-offer, so the
-                # same stream serves the kiosk + every phone). HA-camera streams,
-                # which use trickle ICE + per-session HA subscriptions, stay
-                # kiosk-only. We negotiate the offer with go2rtc and answer back
-                # over THIS satellite's socket.
-                if msg.get("kind") == "offer" and msg.get("sdp"):
-                    session_id = str(msg.get("session_id", ""))
-                    sess = state.active_stream
-                    if sess and sess.get("session_id") == session_id and sess.get("kind") == "rtsp":
-                        from .main import _negotiate_rtsp_offer
-                        await _negotiate_rtsp_offer(
-                            state, session_id, msg["sdp"], reply_ws=websocket,
-                        )
+                # A satellite consuming a fanned-out live stream. Two stream kinds:
+                #   rtsp — go2rtc, stateless per-offer (non-trickle): negotiate the
+                #          offer and answer back over THIS satellite's socket.
+                #   ha   — Home Assistant camera (trickle ICE): start a per-peer HA
+                #          subscription for the offer and relay this peer's ICE
+                #          candidates to HA, with answer/candidates routed back here.
+                session_id = str(msg.get("session_id", ""))
+                sess = state.active_stream
+                kind = sess.get("kind") if sess else None
+                if sess and sess.get("session_id") == session_id:
+                    signal_kind = msg.get("kind")
+                    if signal_kind == "offer" and msg.get("sdp"):
+                        if kind == "rtsp":
+                            from .main import _negotiate_rtsp_offer
+                            await _negotiate_rtsp_offer(
+                                state, session_id, msg["sdp"], reply_ws=websocket,
+                            )
+                        elif kind == "ha":
+                            from .main import _start_webrtc_stream
+                            asyncio.create_task(_start_webrtc_stream(
+                                state, sess.get("entity_id", ""), session_id,
+                                msg["sdp"], reply_ws=websocket,
+                            ))
+                    elif signal_kind == "candidate" and kind == "ha":
+                        from .main import _forward_kiosk_candidate
+                        asyncio.create_task(_forward_kiosk_candidate(
+                            state, session_id, msg, reply_ws=websocket,
+                        ))
     except WebSocketDisconnect:
         pass
     finally:

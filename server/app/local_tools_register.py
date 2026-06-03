@@ -355,16 +355,27 @@ def build_local_tools(state) -> LocalToolsClient:
             "safety_task": asyncio.create_task(safety_stop()),
         }
 
+        stream_start_msg = {
+            "type": "stream_start",
+            "session_id": session_id,
+            "entity_id": entity_id,
+            "mode": "trickle",
+        }
         try:
-            await ws.send_json({
-                "type": "stream_start",
-                "session_id": session_id,
-                "entity_id": entity_id,
-                "mode": "trickle",
-            })
+            await ws.send_json(stream_start_msg)
         except Exception as e:
             await _stop_active_stream(state, notify_kiosk=False)
             return f"Failed to notify kiosk: {e}"
+
+        # Fan the stream out to satellites: each phone opens its own per-peer HA
+        # WebRTC subscription via /ws/ui (see ui_endpoint + _start_webrtc_stream).
+        # Dismiss any idle photo frame first so the stream is visible. NOTE:
+        # satellites need LAN reachability to the camera's WebRTC media path.
+        from .main import send_to_satellites, dismiss_satellite_photo_frames
+        await dismiss_satellite_photo_frames(state)
+        n_sat = await send_to_satellites(state, stream_start_msg)
+        if n_sat:
+            log.info(f"stream_camera fanned out to {n_sat} satellite(s)")
 
         return f"Streaming {entity_id} live for up to {duration_s} seconds — say 'stop streaming' to end early"
 

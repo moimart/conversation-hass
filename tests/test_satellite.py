@@ -5,7 +5,7 @@ import json
 import sys
 import time
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -238,6 +238,94 @@ async def test_stop_active_stream_fans_stop_to_satellites():
     await _stop_active_stream(st)
     sat.send_text.assert_awaited_once()
     assert json.loads(sat.send_text.await_args.args[0]) == {"type": "stream_stop", "session_id": "s1"}
+
+
+# --- HA-camera per-peer signaling to satellites -----------------------------
+
+def _ha_stream_state(sat, *, ha_session_id=None, sub=7):
+    from server.app.ha_ws import HAWSClient
+    st = _state()
+    st.audio_websocket = _ws()   # kiosk peer
+    st.ha_ws = MagicMock(spec=HAWSClient)
+    st.ha_ws.unsubscribe = AsyncMock()
+    st.ha_ws.send_command = AsyncMock()
+    st.active_stream = {
+        "session_id": "s1", "kind": "ha", "entity_id": "camera.x", "safety_task": None,
+        "ha_sub_id": None, "ha_session_id": None,
+        "peers": {id(sat): {"ws": sat, "ha_sub_id": sub, "ha_session_id": ha_session_id}},
+    }
+    return st
+
+
+@pytest.mark.asyncio
+async def test_ha_answer_routes_to_satellite_not_kiosk():
+    from server.app.streaming import _on_ha_webrtc_event
+    sat = _ws()
+    st = _ha_stream_state(sat)
+    # session event captured into the peer's slot, not forwarded
+    await _on_ha_webrtc_event(st, "s1", {"type": "session", "session_id": "HA-7"}, reply_ws=sat)
+    assert st.active_stream["peers"][id(sat)]["ha_session_id"] == "HA-7"
+    sat.send_json.assert_not_awaited()
+    # answer forwarded to the satellite only
+    await _on_ha_webrtc_event(st, "s1", {"type": "answer", "answer": "v=0"}, reply_ws=sat)
+    sat.send_json.assert_awaited_once()
+    assert sat.send_json.await_args.args[0]["kind"] == "answer"
+    st.audio_websocket.send_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ha_satellite_error_drops_only_that_peer():
+    from server.app.streaming import _on_ha_webrtc_event
+    sat = _ws()
+    st = _ha_stream_state(sat, ha_session_id="HA-7")
+    await _on_ha_webrtc_event(st, "s1", {"type": "error", "code": "x"}, reply_ws=sat)
+    assert st.active_stream is not None          # shared stream survives
+    assert id(sat) not in st.active_stream["peers"]  # only this peer dropped
+    st.ha_ws.unsubscribe.assert_awaited_once_with(7)
+    sat.send_json.assert_awaited()               # satellite told to stop
+
+
+@pytest.mark.asyncio
+async def test_ha_forward_candidate_uses_peer_session_id():
+    from server.app.streaming import _forward_kiosk_candidate
+    sat = _ws()
+    st = _ha_stream_state(sat, ha_session_id="HA-SAT")
+    await _forward_kiosk_candidate(
+        st, "s1", {"candidate": "c", "sdpMid": "0", "sdpMLineIndex": 0}, reply_ws=sat,
+    )
+    st.ha_ws.send_command.assert_awaited_once()
+    assert st.ha_ws.send_command.await_args.args[0]["session_id"] == "HA-SAT"
+
+
+@pytest.mark.asyncio
+async def test_start_webrtc_stream_stores_satellite_sub(monkeypatch):
+    from server.app import streaming
+    from server.app.ha_ws import HAWSClient
+    sat = _ws()
+    st = _state()
+    st.audio_websocket = _ws()
+    st.active_stream = {"session_id": "s1", "kind": "ha", "entity_id": "camera.x"}
+    ha = MagicMock(spec=HAWSClient)
+    ha.subscribe = AsyncMock(return_value=99)
+    monkeypatch.setattr(streaming, "_ensure_ha_ws", AsyncMock(return_value=ha))
+    ok = await streaming._start_webrtc_stream(st, "camera.x", "s1", "OFFER", reply_ws=sat)
+    assert ok is True
+    assert st.active_stream["peers"][id(sat)]["ha_sub_id"] == 99
+    assert st.active_stream.get("ha_sub_id") is None   # kiosk slot untouched
+
+
+@pytest.mark.asyncio
+async def test_stop_stream_unsubscribes_all_peers_and_fans_stop():
+    from server.app.streaming import _stop_active_stream
+    sat = _ws()
+    st = _ha_stream_state(sat)
+    st.active_stream["ha_sub_id"] = 1       # kiosk's own sub
+    st.satellite_ws = {"tS": sat}
+    st.satellite_ws_tokens = {sat: "tS"}
+    await _stop_active_stream(st)
+    subs = {c.args[0] for c in st.ha_ws.unsubscribe.await_args_list}
+    assert subs == {1, 7}                    # kiosk sub + satellite peer sub
+    sat.send_text.assert_awaited()           # satellite got stream_stop via fan-out
 
 
 # --- cache_satellite_tts ----------------------------------------------------
