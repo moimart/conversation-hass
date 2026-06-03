@@ -211,7 +211,7 @@
             themes = Array.isArray(data.themes) ? data.themes : [];
         } catch (e) {
             console.warn("theme list fetch failed:", e);
-            themes = [{ name: "dark", display_name: "HAL — Dark", has_effect: false, kind: "dark" }];
+            themes = [{ name: "dark", display_name: "PAL — Dark", has_effect: false, kind: "dark" }];
         }
         rebuildThemeDropdown();
     }

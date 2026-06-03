@@ -297,7 +297,7 @@ class TestChatCompletion:
 class TestSystemPrompt:
     def test_returns_system_prompt(self, conversation):
         prompt = conversation._build_system_prompt()
-        assert "HAL" in prompt
+        assert "PAL" in prompt
 
     def test_custom_prompt(self, mock_mcp_client, mock_tts):
         cm = ConversationManager(
@@ -322,7 +322,7 @@ class TestSystemPrompt:
             system_prompt="",
         )
         prompt = cm._build_system_prompt()
-        assert "HAL" in prompt
+        assert "PAL" in prompt
 
     def test_prompt_includes_context_summary(self, conversation):
         conversation._context_summary = "User prefers metric units; lives in Berlin."

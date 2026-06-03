@@ -422,7 +422,7 @@ class MQTTBridge:
         return {
             "identifiers": [self.device_id],
             "name": self.device_name,
-            "manufacturer": "HAL Voice Assistant",
+            "manufacturer": "PAL Voice Assistant",
             "model": "Voice Server",
         }
 

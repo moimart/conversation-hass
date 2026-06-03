@@ -719,7 +719,7 @@ async def lifespan(app: FastAPI):
         await state.openclaw_client.close()
 
 
-app = FastAPI(title="HAL Voice Server", lifespan=lifespan)
+app = FastAPI(title="PAL Voice Server", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 

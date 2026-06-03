@@ -18,7 +18,7 @@ from .tts import TTSEngine
 
 log = logging.getLogger("hal.conversation")
 
-DEFAULT_SYSTEM_PROMPT = """You are HAL, a helpful voice assistant for a smart home. \
+DEFAULT_SYSTEM_PROMPT = """You are PAL, a helpful voice assistant for a smart home. \
 You speak naturally and concisely, like a person in a conversation. \
 Keep responses brief — 1-2 sentences max — because they will be spoken aloud.
 

@@ -23,9 +23,9 @@ log = logging.getLogger("hal.mcp_server")
 def build_mcp_server(state: "AppState") -> FastMCP:
     """Create the MCP server with HAL's tools registered via decorators."""
     mcp = FastMCP(
-        "HAL Voice Assistant",
+        "PAL Voice Assistant",
         instructions=(
-            "HAL is a voice assistant kiosk with a display (the orb). "
+            "PAL is a voice assistant kiosk with a display (the orb). "
             "Use these tools to control volume, mute, display power, "
             "show images/videos/cameras on the orb, open the photo frame "
             "or calendar, and speak text aloud. When you execute an action, "

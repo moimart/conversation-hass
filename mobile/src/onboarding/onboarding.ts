@@ -26,8 +26,8 @@ export function runOnboarding(): Promise<HalConfig> {
 
     const stepUrl = () => {
       card.innerHTML = `
-        <h1 class="hal-ob-title">Connect to HAL</h1>
-        <p class="hal-ob-sub">Enter your HAL server address.</p>
+        <h1 class="hal-ob-title">Connect to PAL</h1>
+        <p class="hal-ob-sub">Enter your PAL server address.</p>
         <input class="hal-ob-input" id="ob-url" type="url" inputmode="url"
                autocapitalize="off" autocorrect="off" spellcheck="false"
                value="${DEFAULT_SERVER_BASE_URL}" placeholder="http://10.20.30.185:8765" />
@@ -51,7 +51,7 @@ export function runOnboarding(): Promise<HalConfig> {
     const stepCode = () => {
       card.innerHTML = `
         <h1 class="hal-ob-title">Pair your phone</h1>
-        <p class="hal-ob-sub">On your HAL display, ask to pair a phone, then enter the 6-digit code shown.</p>
+        <p class="hal-ob-sub">On your PAL display, ask to pair a phone, then enter the 6-digit code shown.</p>
         <input class="hal-ob-input hal-ob-code" id="ob-code" type="text" inputmode="numeric"
                maxlength="6" autocomplete="one-time-code" placeholder="------" />
         <div class="hal-ob-err" id="ob-err"></div>

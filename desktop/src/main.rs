@@ -141,7 +141,7 @@ fn main() {
     let width = ui.width.unwrap_or(500);
     let top_margin = ui.top_margin.unwrap_or(300);
     let dismiss_delay = ui.dismiss_delay.unwrap_or(400);
-    let placeholder = ui.placeholder.unwrap_or_else(|| "Command HAL...".to_string());
+    let placeholder = ui.placeholder.unwrap_or_else(|| "Command PAL...".to_string());
 
     app.connect_activate(move |app| {
         build_ui(app, &url, width, top_margin, dismiss_delay, &placeholder)

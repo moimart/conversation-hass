@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "=== HAL Command — Install ==="
+echo "=== PAL Command — Install ==="
 
 # Build
 echo "Building..."
