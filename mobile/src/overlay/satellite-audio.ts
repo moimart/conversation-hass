@@ -13,6 +13,15 @@
 import type { HalConfig } from "../config/hal-config";
 
 let ctx: AudioContext | null = null;
+let playing = false;
+let activeSrc: AudioBufferSourceNode | null = null;
+
+function setOrb(state: "speaking" | "idle"): void {
+  const fn = (window as unknown as { HALSetState?: (s: string) => void }).HALSetState;
+  if (typeof fn === "function") {
+    try { fn(state); } catch { /* ignore */ }
+  }
+}
 
 function getCtx(): AudioContext | null {
   if (!ctx) {
@@ -42,7 +51,16 @@ export function unlockAudio(): void {
 
 export function mountSatelliteAudio(cfg: HalConfig): void {
   (window as unknown as { HALSatelliteAudio: unknown }).HALSatelliteAudio = {
+    // True from the moment a turn's TTS arrives until ITS playback ends. The
+    // reused app.js uses this to keep the orb in the speaking state while our
+    // local audio plays (the server ends the turn early — see app.js
+    // `case "state"`).
+    isPlaying(): boolean { return playing; },
     async play(url: string, _mime?: string): Promise<void> {
+      // Drive the orb to "speaking" as soon as the turn's audio is incoming, so
+      // the animation runs even before decode finishes.
+      playing = true;
+      setOrb("speaking");
       try {
         const abs = url.startsWith("http")
           ? url
@@ -51,18 +69,34 @@ export function mountSatelliteAudio(cfg: HalConfig): void {
           headers: cfg.token ? { Authorization: `Bearer ${cfg.token}` } : {},
           cache: "no-store",
         });
-        if (!res.ok) { console.warn(`[hal] tts fetch -> ${res.status}`); return; }
+        if (!res.ok) {
+          console.warn(`[hal] tts fetch -> ${res.status}`);
+          playing = false; setOrb("idle"); return;
+        }
         const data = await res.arrayBuffer();
         const c = getCtx();
-        if (!c) { console.warn("[hal] no AudioContext"); return; }
+        if (!c) {
+          console.warn("[hal] no AudioContext");
+          playing = false; setOrb("idle"); return;
+        }
         if (c.state === "suspended") await c.resume();
         const audio = await c.decodeAudioData(data);
+        // A newer turn may have superseded this one while we were fetching.
+        if (activeSrc) { try { activeSrc.onended = null; activeSrc.stop(); } catch { /* ignore */ } }
         const src = c.createBufferSource();
         src.buffer = audio;
         src.connect(c.destination);
+        src.onended = () => {
+          if (src !== activeSrc) return; // superseded
+          activeSrc = null;
+          playing = false;
+          setOrb("idle");
+        };
+        activeSrc = src;
         src.start(0);
       } catch (e) {
         console.warn("[hal] satellite audio play failed", e);
+        playing = false; setOrb("idle");
       }
     },
   };

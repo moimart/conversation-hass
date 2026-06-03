@@ -490,6 +490,19 @@
                 handleResponse(msg);
                 break;
             case "state":
+                // Satellite-only: the server ends the turn (state→idle) as soon
+                // as it has handed off the response, but this device plays HAL's
+                // TTS locally and finishes ~seconds later. Suppress that early
+                // idle so the orb keeps its speaking animation until OUR audio
+                // ends (satellite-audio.ts drives the final idle via
+                // window.HALSetState). The kiosk has no HALSatelliteAudio, so it
+                // is unaffected.
+                if (msg.state === "idle" &&
+                    window.HALSatelliteAudio &&
+                    typeof window.HALSatelliteAudio.isPlaying === "function" &&
+                    window.HALSatelliteAudio.isPlaying()) {
+                    break;
+                }
                 setState(msg.state);
                 // Photo frame dismiss rules:
                 //   listening → always dismiss (user is talking; clear
@@ -1044,6 +1057,10 @@
             }
         }
     }
+
+    // Let the satellite TTS player drive the orb directly (speaking while ITS
+    // audio plays, idle when it ends). Harmless on the kiosk (never called).
+    window.HALSetState = setState;
 
     // --- Mute Control ---
     let muted = false;
