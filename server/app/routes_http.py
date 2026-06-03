@@ -296,6 +296,91 @@ def _connected_satellite_token(state, request: Request) -> str | None:
     return None
 
 
+def _stream_fallback_upstream(state) -> tuple[str, dict] | None:
+    """Resolve the upstream MJPEG URL (+ headers) for the active live stream.
+
+    Used by the satellite stream fallback: when a phone's WebRTC can't reach
+    the camera's LAN ICE candidates (no VPN/subnet route), it falls back to
+    MJPEG proxied through this server — the single-URL path.
+      kind=ha   → HA's camera_proxy_stream (HA produces MJPEG for any camera)
+      kind=rtsp → go2rtc's stream.mjpeg for the registered stream
+    Returns None when there's no active stream or the upstream isn't configured.
+    """
+    sess = state.active_stream
+    if not sess:
+        return None
+    kind = sess.get("kind")
+    if kind == "ha":
+        ha_url = os.environ.get("HA_URL", "").rstrip("/")
+        ha_token = os.environ.get("HA_TOKEN", "")
+        entity_id = sess.get("entity_id", "")
+        if not (ha_url and ha_token and entity_id):
+            return None
+        return (
+            f"{ha_url}/api/camera_proxy_stream/{entity_id}",
+            {"Authorization": f"Bearer {ha_token}"},
+        )
+    if kind == "rtsp":
+        g = os.environ.get("GO2RTC_URL", "").rstrip("/")
+        name = sess.get("go2rtc_name", "")
+        if not (g and name):
+            return None
+        return (f"{g}/api/stream.mjpeg?src={name}", {})
+    return None
+
+
+@router.get("/api/satellite/stream.mjpeg")
+async def get_satellite_stream_mjpeg(request: Request):
+    """MJPEG fallback for the active live stream, proxied through this server.
+
+    A satellite whose WebRTC negotiation can't connect (remote phone without a
+    route to the camera/go2rtc LAN addresses) loads this in an <img> instead —
+    everything then flows through the one server URL. Token-gated like the other
+    satellite routes; accepts ?token= because <img> can't send headers."""
+    import httpx
+    from fastapi.responses import StreamingResponse
+    from .main import _get_state
+    from .pairing import extract_bearer
+    state = _get_state(request.app)
+    token = request.query_params.get("token") or extract_bearer(request)
+    if not (token and state.pairing and state.pairing.is_valid_token(token)
+            and token in state.satellite_ws):
+        return Response(status_code=401)
+    upstream = _stream_fallback_upstream(state)
+    if upstream is None:
+        return Response(status_code=404)
+    url, headers = upstream
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=None))
+    try:
+        req = client.build_request("GET", url, headers=headers)
+        resp = await client.send(req, stream=True)
+    except Exception as e:
+        await client.aclose()
+        log.warning(f"stream.mjpeg upstream connect failed: {e}")
+        return Response(status_code=502)
+    if resp.status_code != 200:
+        await resp.aclose()
+        await client.aclose()
+        return Response(status_code=502)
+
+    media_type = resp.headers.get("content-type", "multipart/x-mixed-replace")
+
+    async def gen():
+        try:
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+        except Exception:
+            pass  # phone went away / upstream ended — normal teardown
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        gen(), media_type=media_type, headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.post("/api/satellite/photo_frame/start")
 async def post_satellite_photo_start(request: Request, req: PhotoFrameStartRequest):
     """Start the requesting satellite phone's own ambient photo frame (targeted

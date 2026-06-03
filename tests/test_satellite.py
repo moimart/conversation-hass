@@ -473,7 +473,7 @@ def fake_main(monkeypatch):
 
 def _req(token=None):
     headers = {"authorization": f"Bearer {token}"} if token else {}
-    return SimpleNamespace(app=SimpleNamespace(), headers=headers)
+    return SimpleNamespace(app=SimpleNamespace(), headers=headers, query_params={})
 
 
 @pytest.mark.asyncio
@@ -494,6 +494,47 @@ async def test_satellite_tts_returns_cached_audio(fake_main):
     assert resp.status_code == 200
     assert resp.body == b"RIFF....WAVE"
     assert resp.media_type == "audio/wav"
+
+
+# --- MJPEG stream fallback proxy ---------------------------------------------
+
+def test_stream_fallback_upstream_ha(monkeypatch):
+    from server.app.routes_http import _stream_fallback_upstream
+    monkeypatch.setenv("HA_URL", "http://ha:8123")
+    monkeypatch.setenv("HA_TOKEN", "secret")
+    st = _state()
+    st.active_stream = {"kind": "ha", "entity_id": "camera.front"}
+    url, headers = _stream_fallback_upstream(st)
+    assert url == "http://ha:8123/api/camera_proxy_stream/camera.front"
+    assert headers["Authorization"] == "Bearer secret"
+
+
+def test_stream_fallback_upstream_rtsp(monkeypatch):
+    from server.app.routes_http import _stream_fallback_upstream
+    monkeypatch.setenv("GO2RTC_URL", "http://go2rtc:1984")
+    st = _state()
+    st.active_stream = {"kind": "rtsp", "go2rtc_name": "hal_x"}
+    url, headers = _stream_fallback_upstream(st)
+    assert url == "http://go2rtc:1984/api/stream.mjpeg?src=hal_x"
+    assert headers == {}
+
+
+def test_stream_fallback_upstream_no_stream():
+    from server.app.routes_http import _stream_fallback_upstream
+    st = _state()
+    assert _stream_fallback_upstream(st) is None
+
+
+@pytest.mark.asyncio
+async def test_stream_mjpeg_auth_scoping(fake_main):
+    from server.app.routes_http import get_satellite_stream_mjpeg
+    # invalid token → 401
+    assert (await get_satellite_stream_mjpeg(_req("nope"))).status_code == 401
+    # valid token but not a connected satellite → 401
+    assert (await get_satellite_stream_mjpeg(_req("tokA"))).status_code == 401
+    # connected satellite but no active stream → 404
+    fake_main.satellite_ws["tokA"] = _ws()
+    assert (await get_satellite_stream_mjpeg(_req("tokA"))).status_code == 404
 
 
 @pytest.mark.asyncio

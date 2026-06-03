@@ -782,6 +782,37 @@
     let streamPC = null;
     let streamSessionId = null;
     let streamMode = "trickle";
+    // Satellite-only WebRTC→MJPEG fallback (auto-detect): if the peer
+    // connection can't reach the camera's LAN ICE candidates within the
+    // watchdog window (remote phone without a VPN/subnet route), tear it down
+    // and load the server-proxied MJPEG instead — everything then flows
+    // through the single server URL. The kiosk never takes this path
+    // (no HAL_CONFIG, and its LAN connection always succeeds).
+    let streamFallbackTimer = null;
+    let streamFallbackImg = null;
+    function streamFallbackToMjpeg() {
+        const container = document.querySelector(".eye-container");
+        const video = document.getElementById("eye-stream");
+        if (!container || !streamSessionId || !window.HAL_CONFIG) return;
+        if (streamFallbackTimer) { clearTimeout(streamFallbackTimer); streamFallbackTimer = null; }
+        if (streamPC) { try { streamPC.close(); } catch (e) { /* ignore */ } streamPC = null; }
+        if (video) { try { video.srcObject = null; } catch (e) { /* ignore */ } }
+        if (!streamFallbackImg) {
+            const img = document.createElement("img");
+            // Same class as the <video> → inherits the in-orb sizing and the
+            // .stream-active visibility toggle; appended after it, so it
+            // renders on top of the (black, srcObject-less) video element.
+            img.className = "eye-stream";
+            img.id = "eye-stream-fallback";
+            (video && video.parentElement ? video.parentElement : container).appendChild(img);
+            streamFallbackImg = img;
+        }
+        const tok = HAL.token ? "token=" + encodeURIComponent(HAL.token) + "&" : "";
+        streamFallbackImg.src = halBase() + "/api/satellite/stream.mjpeg?" + tok
+            + "sid=" + encodeURIComponent(streamSessionId);
+        container.classList.add("camera-active", "stream-active");
+        console.log("Stream: WebRTC unreachable — falling back to server-proxied MJPEG");
+    }
     function startStream(msg) {
         const container = document.querySelector(".eye-container");
         const video = document.getElementById("eye-stream");
@@ -814,10 +845,29 @@
             }));
         };
         pc.onconnectionstatechange = () => {
+            if (pc.connectionState === "connected") {
+                if (streamFallbackTimer) { clearTimeout(streamFallbackTimer); streamFallbackTimer = null; }
+                return;
+            }
             if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-                stopStream();
+                // Satellite: a failed ICE means the camera's LAN candidates are
+                // unreachable from this network — switch to the proxied MJPEG.
+                if (window.HAL_CONFIG && pc.connectionState === "failed" && streamSessionId) {
+                    streamFallbackToMjpeg();
+                } else {
+                    stopStream();
+                }
             }
         };
+        if (window.HAL_CONFIG) {
+            if (streamFallbackTimer) clearTimeout(streamFallbackTimer);
+            streamFallbackTimer = setTimeout(() => {
+                streamFallbackTimer = null;
+                if (streamPC && streamPC.connectionState !== "connected") {
+                    streamFallbackToMjpeg();
+                }
+            }, 8000);
+        }
         container.classList.add("camera-active", "stream-active");
         const sendOffer = () => {
             if (!ws || ws.readyState !== WebSocket.OPEN || !pc.localDescription) return;
@@ -867,6 +917,14 @@
     function stopStream() {
         const container = document.querySelector(".eye-container");
         const video = document.getElementById("eye-stream");
+        if (streamFallbackTimer) {
+            clearTimeout(streamFallbackTimer);
+            streamFallbackTimer = null;
+        }
+        if (streamFallbackImg) {
+            try { streamFallbackImg.src = ""; streamFallbackImg.remove(); } catch (e) { /* ignore */ }
+            streamFallbackImg = null;
+        }
         if (streamPC) {
             try { streamPC.close(); } catch (e) { /* ignore */ }
             streamPC = null;
