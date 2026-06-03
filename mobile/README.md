@@ -7,6 +7,13 @@ household conversation, but its output (transcript, orb, reply, and HAL's
 reuses the kiosk web UI (`rpi/web`) verbatim inside a native WebView and points it
 at the AI server directly.
 
+<p align="center">
+  <img src="../docs/mobile/companion-idle.png" width="250" alt="Companion app idle — orb, clock, and the 'Message HAL…' input bar">
+  &nbsp;&nbsp;
+  <img src="../docs/mobile/companion-chat.png" width="250" alt="Companion app conversation — a typed question with HAL's spoken reply on the orb">
+</p>
+<p align="center"><sub>Idle home screen · a text turn (the transcript + HAL's reply route only to this phone, spoken in HAL's server voice)</sub></p>
+
 ## How it works
 - **Display**: `scripts/sync-web.mjs` copies `rpi/web` → `www/` at build time
   (single source, no fork). `src/boot.ts` reads stored config, injects
