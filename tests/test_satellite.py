@@ -31,6 +31,8 @@ def _state():
         go2rtc=None,
         ha_ws=None,
         active_stream=None,
+        active_visual=None,
+        active_calendar=None,
     )
 
 
@@ -326,6 +328,114 @@ async def test_stop_stream_unsubscribes_all_peers_and_fans_stop():
     subs = {c.args[0] for c in st.ha_ws.unsubscribe.await_args_list}
     assert subs == {1, 7}                    # kiosk sub + satellite peer sub
     sat.send_text.assert_awaited()           # satellite got stream_stop via fan-out
+
+
+# --- replay_visual_state (catch-up on reconnect) ----------------------------
+
+@pytest.mark.asyncio
+async def test_replay_stream_to_reconnecting_satellite():
+    from server.app.main import replay_visual_state
+    st = _state()
+    st.active_stream = {"session_id": "s1", "kind": "rtsp", "rtsp_url": "rtsp://cam/1"}
+    ws = _ws()
+    await replay_visual_state(st, ws)
+    ws.send_json.assert_awaited_once()
+    sent = ws.send_json.await_args.args[0]
+    assert sent["type"] == "stream_start" and sent["rtsp_url"] == "rtsp://cam/1"
+    assert sent["mode"] == "non-trickle"
+
+
+@pytest.mark.asyncio
+async def test_replay_visual_with_remaining_duration():
+    import time as _t
+    from server.app.main import replay_visual_state
+    st = _state()
+    st.active_visual = {
+        "msg": {"type": "show_camera", "image": "b64", "duration_s": 150},
+        "expires": _t.monotonic() + 60,   # 60s left of the original 150
+    }
+    ws = _ws()
+    await replay_visual_state(st, ws)
+    sent = ws.send_json.await_args.args[0]
+    assert sent["type"] == "show_camera"
+    assert 50 <= sent["duration_s"] <= 60   # remaining time, not the original
+
+
+@pytest.mark.asyncio
+async def test_replay_skips_and_clears_expired_visual():
+    import time as _t
+    from server.app.main import replay_visual_state
+    st = _state()
+    st.active_visual = {"msg": {"type": "show_camera"}, "expires": _t.monotonic() - 5}
+    ws = _ws()
+    await replay_visual_state(st, ws)
+    ws.send_json.assert_not_awaited()
+    assert st.active_visual is None
+
+
+@pytest.mark.asyncio
+async def test_replay_calendar_overlay():
+    import time as _t
+    from server.app.main import replay_visual_state
+    st = _state()
+    st.active_calendar = {
+        "msg": {"type": "show_calendar", "view": "month", "duration_s": 30},
+        "expires": _t.monotonic() + 20,
+    }
+    ws = _ws()
+    await replay_visual_state(st, ws)
+    sent = ws.send_json.await_args.args[0]
+    assert sent["type"] == "show_calendar"
+    assert sent["duration_s"] <= 20
+
+
+# --- calendar + proactive speak fan-out --------------------------------------
+
+@pytest.mark.asyncio
+async def test_show_calendar_fans_to_satellites(monkeypatch):
+    import server.app.main as srv_main
+    import server.app.calendar_ha as cal
+    st = _state()
+    st.runtime_config = {}
+    sat = _ws()
+    st.satellite_ws = {"tS": sat}
+    st.satellite_ws_tokens = {sat: "tS"}
+    monkeypatch.setattr(srv_main, "_record_user_activity", lambda s: None)
+    monkeypatch.setattr(srv_main, "_push_to_rpi", AsyncMock(return_value=True))
+    monkeypatch.setattr(cal, "list_calendars", AsyncMock(return_value=[]))
+    monkeypatch.setattr(cal, "fetch_calendar_events", AsyncMock(return_value=[]))
+    payload = await cal._show_calendar(st, view="month")
+    assert payload["type"] == "show_calendar"
+    sat.send_text.assert_awaited()                       # satellite got the overlay
+    assert json.loads(sat.send_text.await_args.args[0])["type"] == "show_calendar"
+    assert st.active_calendar is not None                # remembered for replay
+    # hide clears it and fans out too
+    sat.send_text.reset_mock()
+    await cal._hide_calendar(st)
+    assert st.active_calendar is None
+    assert json.loads(sat.send_text.await_args.args[0])["type"] == "hide_calendar"
+
+
+@pytest.mark.asyncio
+async def test_speak_proactively_reaches_satellites(monkeypatch):
+    import server.app.main as srv_main
+    from server.app.media import _speak_proactively
+    st = _state()
+    st.photo_frame_session = None
+    st.mqtt_bridge = None
+    st.pipeline = None
+    st.tts_engine = SimpleNamespace(synthesize=AsyncMock(return_value=b"RIFF....WAVE"))
+    sat = _ws()
+    st.satellite_ws = {"tS": sat}
+    st.satellite_ws_tokens = {sat: "tS"}
+    monkeypatch.setattr(srv_main, "_record_user_activity", lambda s: None)
+    monkeypatch.setattr(srv_main, "_dismiss_photo_frame_async", lambda s, reason: None)
+    ok = await _speak_proactively(st, "Heads up, Master")
+    assert ok is True
+    sent = [json.loads(c.args[0]) for c in sat.send_text.await_args_list]
+    types = [m["type"] for m in sent]
+    assert "response" in types and "tts_play" in types   # text + HAL's voice
+    assert st.satellite_tts["tS"]["audio"] == b"RIFF....WAVE"
 
 
 # --- cache_satellite_tts ----------------------------------------------------

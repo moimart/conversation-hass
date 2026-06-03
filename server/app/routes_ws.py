@@ -463,6 +463,13 @@ async def ui_endpoint(websocket: WebSocket):
     except Exception:
         pass
 
+    # Satellites also get the household's ACTIVE visuals replayed (live stream /
+    # snapshot / video / calendar). Mobile websockets flap (background, VPN,
+    # cellular) — without this, a force action fired during a gap is lost.
+    if is_satellite:
+        from .main import replay_visual_state
+        await replay_visual_state(state, websocket)
+
     try:
         while True:
             data = await websocket.receive_text()

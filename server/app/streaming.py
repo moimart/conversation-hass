@@ -134,7 +134,8 @@ async def _stop_active_video(state: AppState) -> None:
     no peer connection or HA subscription to clean up), so this is just a
     fire-and-forget message. Safe to call at any time.
     """
-    from .main import broadcast_to_ui
+    from .main import broadcast_to_ui, send_to_satellites
+    state.active_visual = None  # nothing left to replay to reconnecting satellites
     msg = {"type": "video_stop"}
     ws = state.audio_websocket
     if ws:
@@ -143,6 +144,7 @@ async def _stop_active_video(state: AppState) -> None:
         except Exception:
             pass
     await broadcast_to_ui(state, msg)
+    await send_to_satellites(state, msg)
 
 
 async def _negotiate_rtsp_offer(

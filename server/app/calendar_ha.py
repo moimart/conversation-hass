@@ -305,7 +305,7 @@ async def _show_calendar(
     `anchor_date` empty → today; otherwise ISO date string (see
     `_parse_anchor_date`) to show a specific day/week/month.
     """
-    from .main import _record_user_activity, _push_to_rpi, broadcast_to_ui, _VALID_CAL_VIEWS
+    from .main import _record_user_activity, _push_to_rpi, _VALID_CAL_VIEWS
     _record_user_activity(state)
     view = (view or "month").lower().strip()
     if view not in _VALID_CAL_VIEWS:
@@ -343,7 +343,13 @@ async def _show_calendar(
         "duration_s": duration_s,
     }
     await _push_to_rpi(state, payload)
-    await broadcast_to_ui(state, payload)
+    # Calendar is a household force action: web mirrors + every satellite
+    # (idle photo frames dismissed so the overlay is visible). Remember it so
+    # a satellite that (re)connects while it's up can replay it.
+    from .main import broadcast_force_action
+    await broadcast_force_action(state, payload, dismiss_photo=True)
+    import time as _time
+    state.active_calendar = {"msg": payload, "expires": _time.monotonic() + duration_s}
     log.info(
         f"calendar shown: view={view} source={source_label!r} "
         f"events={len(events)} duration={duration_s}s"
@@ -352,10 +358,11 @@ async def _show_calendar(
 
 
 async def _hide_calendar(state: AppState) -> bool:
-    from .main import _push_to_rpi, broadcast_to_ui
+    from .main import _push_to_rpi, broadcast_force_action
+    state.active_calendar = None
     msg = {"type": "hide_calendar"}
     pushed = await _push_to_rpi(state, msg)
-    await broadcast_to_ui(state, msg)
+    await broadcast_force_action(state, msg)
     log.info("calendar hidden")
     return pushed
 

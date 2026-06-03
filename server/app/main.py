@@ -103,6 +103,14 @@ class AppState:
     #   {session_id, kind: "ha"|"rtsp", entity_id|rtsp_url, safety_task,
     #    ha_sub_id?, ha_session_id?, go2rtc_name?}
     active_stream: dict | None = None
+    # Last force-pushed visual (show_camera snapshot / play_video) so a
+    # (re)connecting satellite can replay it: {"msg": <ws msg>, "expires":
+    # monotonic-deadline | None}. Mobile websockets flap (background, VPN,
+    # cellular), so without replay a phone that reconnects seconds after a
+    # force action misses it entirely.
+    active_visual: dict | None = None
+    # Active calendar overlay, same shape — replayed to satellites on connect.
+    active_calendar: dict | None = None
     # Active Push-to-Talk session (server/app/ptt.PTTSession), if any.
     # Open via ptt.start_ptt, closed via ptt.end_ptt or safety timeout.
     ptt: object | None = None
@@ -821,6 +829,56 @@ async def broadcast_force_action(state: AppState, msg: dict, *, dismiss_photo: b
         await dismiss_satellite_photo_frames(state)
     await broadcast_to_ui(state, msg)
     await send_to_satellites(state, msg)
+
+
+async def replay_visual_state(state: AppState, ws) -> None:
+    """Catch a (re)connecting satellite up on the household's active visuals.
+
+    Mobile websockets flap (backgrounding, VPN, cellular), so a force action
+    fired during a gap would otherwise be lost. On connect we re-send whatever
+    is still live: the active WebRTC stream (the phone negotiates its own peer),
+    else the last un-expired snapshot/video, plus any active calendar overlay —
+    with duration_s adjusted to the REMAINING time. Best-effort."""
+    try:
+        sess = state.active_stream
+        if sess:
+            if sess.get("kind") == "rtsp":
+                await ws.send_json({
+                    "type": "stream_start",
+                    "session_id": sess.get("session_id", ""),
+                    "rtsp_url": sess.get("rtsp_url", ""),
+                    "mode": "non-trickle",
+                })
+            elif sess.get("kind") == "ha":
+                await ws.send_json({
+                    "type": "stream_start",
+                    "session_id": sess.get("session_id", ""),
+                    "entity_id": sess.get("entity_id", ""),
+                    "mode": "trickle",
+                })
+        else:
+            vis = state.active_visual
+            if vis:
+                expires = vis.get("expires")
+                if expires is None or expires > time.monotonic():
+                    msg = dict(vis["msg"])
+                    if expires is not None and "duration_s" in msg:
+                        msg["duration_s"] = max(5, int(expires - time.monotonic()))
+                    await ws.send_json(msg)
+                else:
+                    state.active_visual = None
+        cal = state.active_calendar
+        if cal:
+            expires = cal.get("expires")
+            if expires is None or expires > time.monotonic():
+                msg = dict(cal["msg"])
+                if expires is not None and "duration_s" in msg:
+                    msg["duration_s"] = max(5, int(expires - time.monotonic()))
+                await ws.send_json(msg)
+            else:
+                state.active_calendar = None
+    except Exception as e:
+        log.debug(f"replay_visual_state failed: {e}")
 
 
 async def speak_to_satellites(state: AppState, text: str, audio_bytes: bytes | None) -> int:

@@ -235,6 +235,9 @@ async def _dispatch_show_image(
     # renders on phones regardless of network reachability); clear any idle
     # photo frame so the image is visible.
     await broadcast_force_action(state, msg, dismiss_photo=True)
+    # Remember it so a satellite that (re)connects mid-display can replay it.
+    import time as _time
+    state.active_visual = {"msg": msg, "expires": _time.monotonic() + duration_s}
     return sent
 
 
@@ -270,6 +273,13 @@ async def _dispatch_play_video(
     # web mirrors + satellites (force action — video URL fetched by each surface);
     # clear any idle photo frame so the video is visible.
     await broadcast_force_action(state, msg, dismiss_photo=True)
+    # Remember it so a satellite that (re)connects mid-playback can replay it
+    # (no duration → stays replayable until video_stop clears it).
+    import time as _time
+    state.active_visual = {
+        "msg": msg,
+        "expires": (_time.monotonic() + msg["duration_s"]) if "duration_s" in msg else None,
+    }
     return sent
 
 
@@ -474,6 +484,10 @@ async def _speak_proactively(
             except Exception:
                 pass
         await broadcast_to_ui(state, msg)
+        # Proactive announcements reach satellites too (text-only here — the
+        # spoken output was the attached audio, played on the kiosk).
+        from .main import speak_to_satellites
+        await speak_to_satellites(state, text, None)
         if state.mqtt_bridge:
             try:
                 await state.mqtt_bridge.publish_last_response(text)
@@ -497,6 +511,10 @@ async def _speak_proactively(
         except Exception:
             pass
     await broadcast_to_ui(state, msg)
+    # Proactive announcements (OpenClaw /api/openclaw/say) reach satellites:
+    # text + HAL's voice on each phone, photo frame dismissed first.
+    from .main import speak_to_satellites
+    await speak_to_satellites(state, text, audio_bytes)
     if state.mqtt_bridge:
         try:
             await state.mqtt_bridge.publish_last_response(text)
