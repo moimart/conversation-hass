@@ -35,6 +35,17 @@ html { zoom: 1 !important; }
     display: none !important;
 }
 
+/* A summoned calendar (calendar-stage, z-index 5) should own the screen. On the
+   kiosk the orb sits below it; our portrait re-anchoring makes the orb (and the
+   clock + transcript/response) position:fixed with higher z-index, so they'd
+   float ON TOP of the calendar. Hide that chrome while the calendar is up. */
+body.show-calendar #display-root .eye-container,
+body.show-calendar #display-root .clock-display,
+body.show-calendar #display-root .transcript-container,
+body.show-calendar #display-root .response-container {
+    display: none !important;
+}
+
 /* The kiosk lays the transcript + response panels out to the side of the orb
    (landscape). In portrait they fall off the right edge (x≈viewport width), so
    HAL's reply is invisible. Re-anchor them as fixed, full-width panels: the
