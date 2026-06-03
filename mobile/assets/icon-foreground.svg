@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Adaptive-icon foreground: white house outline (HA "home") containing the
+       satellite orb (ring + dot), transparent background. Sized like the full
+       icon; @capacitor/assets applies the 16.7% safe-zone inset on top. -->
+  <g fill="none" stroke="#ffffff" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M512 250 L796 468 L796 778 L228 778 L228 468 Z" stroke-width="54"/>
+    <circle cx="512" cy="604" r="120" stroke-width="42"/>
+    <circle cx="512" cy="604" r="44" fill="#ffffff" stroke="none"/>
+  </g>
+</svg>

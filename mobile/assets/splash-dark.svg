@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 1024 1024">
+  <!-- Dark-mode splash: same logo on a slightly deeper background. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#29C7FF"/>
+      <stop offset="0.55" stop-color="#18BCF2"/>
+      <stop offset="1" stop-color="#0FA0DE"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="#06080b"/>
+  <g transform="translate(512,512) scale(0.46) translate(-512,-512)">
+    <rect x="112" y="112" width="800" height="800" rx="184" fill="url(#g)"/>
+    <g fill="none" stroke="#ffffff" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M512 250 L796 468 L796 778 L228 778 L228 468 Z" stroke-width="54"/>
+      <circle cx="512" cy="604" r="120" stroke-width="42"/>
+      <circle cx="512" cy="604" r="44" fill="#ffffff" stroke="none"/>
+    </g>
+  </g>
+</svg>

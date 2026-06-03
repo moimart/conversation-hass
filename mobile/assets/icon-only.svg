@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Full-bleed app icon: HA-blue tile with a white house outline (home)
+       containing the satellite orb (ring + dot). Corners are rounded/masked by
+       each platform, so this stays a full square. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#29C7FF"/>
+      <stop offset="0.55" stop-color="#18BCF2"/>
+      <stop offset="1" stop-color="#0FA0DE"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#g)"/>
+  <g fill="none" stroke="#ffffff" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M512 250 L796 468 L796 778 L228 778 L228 468 Z" stroke-width="54"/>
+    <circle cx="512" cy="604" r="120" stroke-width="42"/>
+    <circle cx="512" cy="604" r="44" fill="#ffffff" stroke="none"/>
+  </g>
+</svg>
