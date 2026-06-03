@@ -64,6 +64,10 @@ async def wire(state, bridge) -> None:
             msg = {"type": "response", "text": text}
             await ws.send_json(msg)
             await broadcast_to_ui(state, msg)
+            # Force-speak also reaches satellites: text + HAL's voice on each
+            # phone (dismisses any idle photo frame first so the text shows).
+            from .main import speak_to_satellites
+            await speak_to_satellites(state, text, audio_bytes)
             await state.mqtt_bridge.publish_last_response(text)
             await ws.send_json({"type": "tts_start", "size": len(audio_bytes)})
             if state.pipeline:
