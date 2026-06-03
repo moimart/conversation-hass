@@ -2,35 +2,41 @@
 //
 // In satellite mode the server caches the turn's audio and sends a `tts_play`
 // message (dispatched by the reused app.js to window.HALSatelliteAudio.play).
-// We fetch the cached WAV from GET /api/satellite/tts (Bearer-authenticated) and
-// play it via a single reused <audio> element. Autoplay is unlocked on the
-// command-send tap (a user gesture) so subsequent plays don't get blocked.
+// We fetch the cached WAV from GET /api/satellite/tts (Bearer) and play it.
+//
+// Playback uses the Web Audio API rather than an <audio> element: the response
+// audio arrives AFTER an async fetch, i.e. outside the user-gesture, so a plain
+// <audio>.play() gets blocked by the WebView autoplay policy. Instead we create
+// and resume() an AudioContext on the command-send/mic tap (a real gesture),
+// which keeps programmatic playback allowed for the rest of the session.
 
 import type { HalConfig } from "../config/hal-config";
 
-let audioEl: HTMLAudioElement | null = null;
-let unlocked = false;
+let ctx: AudioContext | null = null;
 
-function el(): HTMLAudioElement {
-  if (!audioEl) {
-    audioEl = document.createElement("audio");
-    audioEl.preload = "auto";
-    audioEl.setAttribute("playsinline", "");
-    document.body.appendChild(audioEl);
+function getCtx(): AudioContext | null {
+  if (!ctx) {
+    const Ctor =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return null;
+    try { ctx = new Ctor(); } catch { return null; }
   }
-  return audioEl;
+  return ctx;
 }
 
-/** Prime autoplay on a user gesture (call from the command-send / mic tap). */
+/** Unlock audio on a user gesture (call from the command-send / mic tap). */
 export function unlockAudio(): void {
-  if (unlocked) return;
-  const a = el();
+  const c = getCtx();
+  if (!c) return;
+  if (c.state === "suspended") void c.resume();
+  // A 1-frame silent buffer started within the gesture fully unlocks playback.
   try {
-    a.muted = true;
-    void a
-      .play()
-      .then(() => { a.pause(); a.currentTime = 0; a.muted = false; unlocked = true; })
-      .catch(() => { a.muted = false; });
+    const buf = c.createBuffer(1, 1, 22050);
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    src.connect(c.destination);
+    src.start(0);
   } catch { /* ignore */ }
 }
 
@@ -46,12 +52,15 @@ export function mountSatelliteAudio(cfg: HalConfig): void {
           cache: "no-store",
         });
         if (!res.ok) { console.warn(`[hal] tts fetch -> ${res.status}`); return; }
-        const blob = await res.blob();
-        const a = el();
-        const obj = URL.createObjectURL(blob);
-        a.onended = () => URL.revokeObjectURL(obj);
-        a.src = obj;
-        await a.play();
+        const data = await res.arrayBuffer();
+        const c = getCtx();
+        if (!c) { console.warn("[hal] no AudioContext"); return; }
+        if (c.state === "suspended") await c.resume();
+        const audio = await c.decodeAudioData(data);
+        const src = c.createBufferSource();
+        src.buffer = audio;
+        src.connect(c.destination);
+        src.start(0);
       } catch (e) {
         console.warn("[hal] satellite audio play failed", e);
       }
