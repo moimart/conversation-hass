@@ -53,36 +53,34 @@ npm install
 npm run build            # sync-web + esbuild → www/
 ```
 
-### Android (this Linux machine; Android SDK at /opt/android-sdk)
+### Android
+Needs the Android SDK (via Android Studio or the command-line tools) and an
+emulator or a connected device.
 ```bash
 npx cap add android       # first time
 npm run build && npx cap sync android
-# emulator:
+# (optional) spin up an emulator from the CLI:
 sdkmanager "system-images;android-34;google_apis;x86_64"
 avdmanager create avd -n hal -k "system-images;android-34;google_apis;x86_64" -d pixel_6
 emulator -avd hal &
-npx cap run android
+npx cap run android       # builds + installs to the running emulator/device
 ```
-Onboard against the live server `http://10.20.30.185:8765`; ask HAL to pair and
-enter the code shown on the kiosk.
+First run: enter your server URL (`http://<ai-server-ip>:8765`), then ask HAL to
+pair and enter the 6-digit code shown on the kiosk.
 
-### iOS (Mac 10.20.30.194; Xcode 26.4.1)
-The Mac needs Node + CocoaPods first:
-```bash
-# install Node (nodejs.org pkg or Homebrew) and:
-sudo gem install cocoapods
-```
-Then:
+### iOS
+Needs a Mac with Xcode. The native project uses Swift Package Manager (no
+CocoaPods step).
 ```bash
 cd mobile && npm install && npm run build
 npx cap add ios            # first time
-npx cap sync ios           # runs pod install
-npx cap run ios            # or open ios/App/App.xcworkspace in Xcode
+npx cap sync ios           # resolves Swift packages + copies www/
+npx cap run ios            # or open ios/App/App.xcodeproj in Xcode
 ```
 **Info.plist** needs, for LAN cleartext + mic/speech:
 `NSAppTransportSecurity → NSAllowsLocalNetworking = YES`,
 `NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription`.
-The hosted demo uses WSS, so it needs no ATS exception.
+A hosted demo over HTTPS/WSS needs no ATS exception.
 
 ## Layout
 ```
