@@ -20,6 +20,7 @@
 - 🖼️ **Photo frame mode** — ambient full-screen image from a configurable HA `image.*` entity, white drop-shadow clock + Ken-Burns zoom, auto-crossfades when HA rotates the photo, dismisses on any kiosk action; **optional auto-activate after N minutes of inactivity**
 - 💤 **Display power (DPMS)** — actually powers the panel off (not just a black overlay), with optional idle auto-blank; wakes automatically on the next wake word / PTT / TTS / takeover. Same code path on RPi (Wayland) and x86 (Wayland or X11).
 - 🎯 **Wake word** *or* **Push-to-Talk** — your choice per situation (PTT triggerable from HA, an HTTP call, a WebSocket, or the desktop popup app)
+- 📱 **Companion app (iOS + Android)** — pair a phone as a **satellite**: talk to PAL by text or push-to-talk voice and hear replies in PAL's own server voice, while household broadcasts (spoken announcements, theme changes, live cameras/RTSP) get pushed to your screen — all sharing the kiosk's conversation, history, and memory. Capacitor app that reuses the kiosk display verbatim. See [`mobile/`](./mobile/README.md).
 - 🎵 **Multi-room audio** via an optional Music-Assistant Sendspin sidecar with PulseAudio role-ducking
 - 🔌 **Speaks every protocol your house already speaks** — REST, MQTT, WebSocket — and HA auto-discovers it as a single device with sensors, switches, selects, text inputs, and buttons
 
@@ -60,8 +61,28 @@ Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_th
 | **Push-to-Talk (PTT)**            | Bypass the wake word. Trigger via the desktop popup's hold-button, an HA dashboard button, an HTTP POST, an MQTT publish, or a persistent WebSocket. Hold-to-talk via Zigbee remote works too. See [`API.md`](./API.md#push-to-talk) + [`MQTT.md`](./MQTT.md#push-to-talk). |
 | **Typed text**                    | `POST /api/command` (or write to HA's `text.<id>_command` entity, or publish to MQTT `hal/<id>/command`) — runs the full LLM round with tools. |
 | **Verbatim announcement**         | `POST /api/speak` (or `text.<id>_speak`, or MQTT `hal/<id>/speak`) — PAL says the exact words you wrote, no LLM in the loop. |
+| **Companion app (satellite)**     | Pair an iOS/Android phone. Text or PTT voice runs in the shared conversation, but that turn's transcript, orb, reply, and voice route **only to your phone** — plus it receives household broadcasts. See [`mobile/`](./mobile/README.md). |
 | **Follow-up window**              | After a turn ends, you have ~10 s to reply without repeating the wake word.                                                          |
 | **Always-on mode**                | Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM.                                                           |
+
+---
+
+## Companion app (satellites)
+
+Pair an **iOS or Android** phone and it becomes a **satellite** — not a mirror of the kiosk. A satellite shares the same household conversation, history, and long-term memory, but anything *you* trigger on the phone (its transcript, orb state, reply text, and PAL's **server-voice TTS**) routes **only to that phone**, never the kiosk. The home display keeps doing its own thing.
+
+Phones also receive **household broadcasts** — proactive actions fired from voice, HA, or MQTT propagate to every connected satellite:
+
+- 🔊 Spoken announcements (`/api/speak`) — the text **and** PAL's voice
+- 🎨 Theme changes
+- 📸 Camera snapshots, images, and on-orb video (auto-dismiss on the same `duration_s` as the kiosk)
+- 🎥 Live streams — RTSP (via go2rtc) and HA-camera WebRTC, each phone negotiating its own peer
+
+Each phone also gets its own idle **photo-frame** screensaver, dismissed automatically when a broadcast arrives. Per-phone pairing tokens gate access, and turns from different phones stay isolated from one another.
+
+> Live video is peer-to-peer to your cameras / go2rtc on the LAN, so streams need a phone on home Wi-Fi; text, announcements, themes, and snapshots work from anywhere the server is reachable.
+
+Build & install steps (Android + iOS, Capacitor): [`mobile/README.md`](./mobile/README.md).
 
 ---
 
@@ -76,6 +97,7 @@ Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_th
 | [`openclaw-channel/hal/`](./openclaw-channel/hal/README.md) | OpenClaw channel plugin — routes voice through an OpenClaw agent with full mcporter/MCP tool access, Ollama fallback |
 | `openclaw-skill/hal/SKILL.md`             | OpenClaw skill teaching the agent how to control HAL's kiosk via mcporter                                          |
 | `desktop/`                                | Rust/GTK4 Wayland overlay for typing commands + hold-to-talk PTT from your Linux desktop                            |
+| [`mobile/`](./mobile/README.md)           | iOS + Android companion app (Capacitor) — pair a phone as a satellite for text/voice + household broadcasts          |
 
 ---
 
@@ -146,6 +168,17 @@ A lightweight Rust/GTK4 Wayland overlay that types commands and hold-to-talks PT
 cd desktop && ./install.sh
 # Hyprland keybind:  bind = SUPER, H, exec, hal-command
 ```
+
+### 6. (Optional) Companion app (iOS + Android)
+
+Pair a phone as a satellite. Build and run from `mobile/` (Capacitor):
+
+```bash
+cd mobile && npm install && npm run build
+npx cap run android      # or: npx cap run ios
+```
+
+On first launch, enter the server URL (`http://<ai-server-ip>:8765`), then ask PAL to pair and type the 6-digit code shown on the kiosk. Full build notes (emulator, iOS signing, Info.plist exceptions): [`mobile/README.md`](./mobile/README.md).
 
 ---
 
