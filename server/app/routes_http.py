@@ -437,7 +437,7 @@ async def post_speak(request: Request, req: SpeakRequest):
     Useful for announcements, notifications, or anything that should be
     vocalized exactly without going through Steve's persona.
     """
-    from .main import _get_state, broadcast_to_ui
+    from .main import _get_state, broadcast_to_ui, speak_to_satellites
     state = _get_state(request.app)
     text = (req.text or "").strip()
 
@@ -468,6 +468,8 @@ async def post_speak(request: Request, req: SpeakRequest):
     except Exception:
         pass
     await broadcast_to_ui(state, msg)
+    # Force-speak also reaches satellites: text + HAL's voice on each phone.
+    await speak_to_satellites(state, text, audio_bytes)
     if state.mqtt_bridge:
         await state.mqtt_bridge.publish_last_response(text)
 

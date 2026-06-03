@@ -440,7 +440,7 @@ async def apply_theme(state: AppState, theme: str) -> bool:
         return False
     state.current_theme = theme
     msg = {"type": "set_theme", "name": theme}
-    await broadcast_to_ui(state, msg)
+    await broadcast_force_action(state, msg)  # web mirrors + satellites
     await _push_to_rpi(state, msg)
     if state.mqtt_bridge:
         await state.mqtt_bridge.publish_theme(theme)
@@ -779,6 +779,49 @@ def cache_satellite_tts(state: AppState, token: str, audio: bytes, mime: str) ->
         "audio": audio, "mime": mime, "ts": time.monotonic(), "seq": seq,
     }
     return seq
+
+
+async def send_to_satellites(state: AppState, msg: dict) -> int:
+    """Fan a message out to every connected satellite. Returns the count that
+    received it. Used for household-wide FORCE actions (proactive pushes the
+    user/HA triggers — speak, theme, orb media), NOT per-turn command outputs
+    (those stay isolated to their origin device via send_to_device)."""
+    delivered = 0
+    for token in list(state.satellite_ws.keys()):
+        if await send_to_device(state, token, msg):
+            delivered += 1
+    return delivered
+
+
+async def broadcast_force_action(state: AppState, msg: dict) -> None:
+    """Deliver a force/proactive action to ALL display surfaces: the kiosk-
+    mirroring web UIs (broadcast_to_ui) AND every connected satellite.
+
+    This is the satellite-inclusive counterpart to broadcast_to_ui. Use it only
+    for household-wide proactive actions (theme, orb image/video); the kiosk
+    itself is reached separately via the RPi socket (_push_to_rpi / the
+    dispatcher's audio_websocket send), exactly as before."""
+    await broadcast_to_ui(state, msg)
+    await send_to_satellites(state, msg)
+
+
+async def speak_to_satellites(state: AppState, text: str, audio_bytes: bytes | None) -> int:
+    """Make every connected satellite show + speak a force-spoken line: the
+    response text (drives the orb to 'speaking') plus, when audio is available,
+    HAL's server voice via the per-device TTS cache + tts_play. Returns the
+    number of satellites that received the audio cue."""
+    spoken = 0
+    for token in list(state.satellite_ws.keys()):
+        if not await send_to_device(state, token, {"type": "response", "text": text}):
+            continue
+        if audio_bytes:
+            seq = cache_satellite_tts(state, token, audio_bytes, "audio/wav")
+            await send_to_device(state, token, {
+                "type": "tts_play", "url": "/api/satellite/tts",
+                "mime": "audio/wav", "seq": seq,
+            })
+            spoken += 1
+    return spoken
 
 
 # === Route registration ======================================================

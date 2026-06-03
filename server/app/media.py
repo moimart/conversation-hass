@@ -211,7 +211,7 @@ async def _dispatch_show_image(
     exclusion). Returns True if we got the message out — even if the kiosk
     websocket is closed (the UI broadcast is best-effort).
     """
-    from .main import _record_user_activity, _stop_active_stream, _stop_active_video, broadcast_to_ui
+    from .main import _record_user_activity, _stop_active_stream, _stop_active_video, broadcast_force_action
 
     _record_user_activity(state)
     await _stop_active_stream(state)
@@ -231,7 +231,9 @@ async def _dispatch_show_image(
             sent = True
         except Exception as e:
             log.warning(f"show_image ws send failed: {e}")
-    await broadcast_to_ui(state, msg)
+    # web mirrors + satellites (force action — image is carried inline, so it
+    # renders on phones regardless of network reachability)
+    await broadcast_force_action(state, msg)
     return sent
 
 
@@ -244,7 +246,7 @@ async def _dispatch_play_video(
     muted: bool = False,
 ) -> bool:
     """Push a play_video message to the kiosk. Clears any active stream first."""
-    from .main import _record_user_activity, _stop_active_stream, broadcast_to_ui
+    from .main import _record_user_activity, _stop_active_stream, broadcast_force_action
 
     _record_user_activity(state)
     await _stop_active_stream(state)  # mutual exclusion with WebRTC streams
@@ -264,7 +266,8 @@ async def _dispatch_play_video(
             sent = True
         except Exception as e:
             log.warning(f"play_video ws send failed: {e}")
-    await broadcast_to_ui(state, msg)
+    # web mirrors + satellites (force action — video URL fetched by each surface)
+    await broadcast_force_action(state, msg)
     return sent
 
 

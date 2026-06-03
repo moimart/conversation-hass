@@ -11,7 +11,10 @@ import pytest
 
 from server.app.main import (
     broadcast_to_ui,
+    broadcast_force_action,
     send_to_device,
+    send_to_satellites,
+    speak_to_satellites,
     _deregister_satellite,
     cache_satellite_tts,
 )
@@ -81,6 +84,72 @@ async def test_broadcast_excludes_satellites():
     await broadcast_to_ui(st, {"type": "state", "state": "speaking"})
     mirror.send_text.assert_awaited_once()      # mirror gets the global broadcast
     sat.send_text.assert_not_awaited()          # satellite is excluded
+
+
+# --- force-action fan-out (send_to_satellites / broadcast_force_action) ------
+
+@pytest.mark.asyncio
+async def test_send_to_satellites_fans_out_to_all():
+    st = _state()
+    a, b = _ws(), _ws()
+    st.satellite_ws = {"tA": a, "tB": b}
+    st.satellite_ws_tokens = {a: "tA", b: "tB"}
+    n = await send_to_satellites(st, {"type": "set_theme", "name": "sunset"})
+    assert n == 2
+    a.send_text.assert_awaited_once()
+    b.send_text.assert_awaited_once()
+    assert json.loads(a.send_text.await_args.args[0])["name"] == "sunset"
+
+
+@pytest.mark.asyncio
+async def test_broadcast_force_action_hits_mirrors_and_satellites():
+    st = _state()
+    mirror, sat = _ws(), _ws()
+    st.ui_clients = {mirror, sat}
+    st.satellite_ws = {"tS": sat}
+    st.satellite_ws_tokens = {sat: "tS"}
+    await broadcast_force_action(st, {"type": "show_camera", "image": "b64"})
+    # mirror gets it via broadcast_to_ui; satellite gets it via the fan-out
+    mirror.send_text.assert_awaited_once()
+    sat.send_text.assert_awaited_once()
+    assert json.loads(sat.send_text.await_args.args[0])["type"] == "show_camera"
+
+
+# --- speak_to_satellites ----------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_speak_to_satellites_sends_text_and_tts():
+    st = _state()
+    sat = _ws()
+    st.satellite_ws = {"tS": sat}
+    st.satellite_ws_tokens = {sat: "tS"}
+    n = await speak_to_satellites(st, "Dinner is ready", b"RIFF....WAVE")
+    assert n == 1
+    # two frames: the response text, then the tts_play cue
+    assert sat.send_text.await_count == 2
+    sent = [json.loads(c.args[0]) for c in sat.send_text.await_args_list]
+    assert sent[0] == {"type": "response", "text": "Dinner is ready"}
+    assert sent[1]["type"] == "tts_play" and sent[1]["seq"] == 1
+    # audio cached for the device's GET /api/satellite/tts fetch
+    assert st.satellite_tts["tS"]["audio"] == b"RIFF....WAVE"
+
+
+@pytest.mark.asyncio
+async def test_speak_to_satellites_text_only_without_audio():
+    st = _state()
+    sat = _ws()
+    st.satellite_ws = {"tS": sat}
+    st.satellite_ws_tokens = {sat: "tS"}
+    n = await speak_to_satellites(st, "Heads up", None)
+    assert n == 0  # no audio cue delivered
+    sat.send_text.assert_awaited_once()  # only the response text
+    assert "tS" not in st.satellite_tts
+
+
+@pytest.mark.asyncio
+async def test_speak_to_satellites_none_connected():
+    st = _state()
+    assert await speak_to_satellites(st, "nobody home", b"RIFF") == 0
 
 
 # --- cache_satellite_tts ----------------------------------------------------

@@ -197,6 +197,10 @@ def build_local_tools(state) -> LocalToolsClient:
         except Exception:
             pass
         await broadcast_to_ui(state, msg)
+        # Force-speak also reaches satellites: show the text + play HAL's voice
+        # on each connected phone (household-wide proactive announcement).
+        from .main import speak_to_satellites
+        await speak_to_satellites(state, text, audio_bytes)
         if state.mqtt_bridge:
             await state.mqtt_bridge.publish_last_response(text)
 
