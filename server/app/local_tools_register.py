@@ -424,18 +424,30 @@ def build_local_tools(state) -> LocalToolsClient:
             "safety_task": asyncio.create_task(safety_stop()),
         }
 
+        stream_start_msg = {
+            "type": "stream_start",
+            "session_id": session_id,
+            "rtsp_url": rtsp_url,
+            # go2rtc's HTTP API is non-trickle: each peer waits for ICE
+            # gathering to complete before sending its bundled offer.
+            "mode": "non-trickle",
+        }
         try:
-            await ws.send_json({
-                "type": "stream_start",
-                "session_id": session_id,
-                "rtsp_url": rtsp_url,
-                # go2rtc's HTTP API is non-trickle: kiosk waits for ICE
-                # gathering to complete before sending its bundled offer.
-                "mode": "non-trickle",
-            })
+            await ws.send_json(stream_start_msg)
         except Exception as e:
             await _stop_active_stream(state, notify_kiosk=False)
             return f"Failed to notify kiosk: {e}"
+
+        # Fan the stream out to satellites too: go2rtc serves the same registered
+        # stream to multiple WebRTC peers, and each satellite negotiates its own
+        # offer over /ws/ui (see ui_endpoint). Dismiss any idle photo frame first
+        # so the stream is visible. NOTE: satellites must be able to reach go2rtc
+        # directly for the media (LAN only — a remote phone can't).
+        from .main import send_to_satellites, dismiss_satellite_photo_frames
+        await dismiss_satellite_photo_frames(state)
+        n_sat = await send_to_satellites(state, stream_start_msg)
+        if n_sat:
+            log.info(f"stream_rtsp fanned out to {n_sat} satellite(s)")
 
         return f"Streaming RTSP for up to {duration_s} seconds — say 'stop streaming' to end early"
 

@@ -61,6 +61,10 @@ async def _stop_active_stream(state: AppState, *, notify_kiosk: bool = True) -> 
             except Exception:
                 pass
         await broadcast_to_ui(state, msg)
+        # RTSP streams are fanned out to satellites — tell them to tear down too.
+        if session.get("kind") == "rtsp":
+            from .main import send_to_satellites
+            await send_to_satellites(state, msg)
 
 
 def _ensure_go2rtc(state: AppState) -> Go2RTCClient | None:
@@ -92,8 +96,17 @@ async def _stop_active_video(state: AppState) -> None:
     await broadcast_to_ui(state, msg)
 
 
-async def _negotiate_rtsp_offer(state: AppState, session_id: str, offer_sdp: str) -> None:
-    """Hand a kiosk-side SDP offer to go2rtc and forward the answer back."""
+async def _negotiate_rtsp_offer(
+    state: AppState, session_id: str, offer_sdp: str, *, reply_ws=None,
+) -> None:
+    """Hand an SDP offer to go2rtc and forward the answer back to the peer.
+
+    go2rtc's WebRTC offer endpoint is stateless per-offer and the same
+    registered stream serves multiple peers, so this works for the kiosk AND
+    each satellite. `reply_ws` is the peer that sent the offer (the kiosk's
+    audio_websocket by default; a satellite's /ws/ui when fanning out). A
+    satellite peer that fails to negotiate is NOT a reason to tear down the
+    shared stream — only a kiosk-side failure stops it."""
     if not state.active_stream or state.active_stream.get("session_id") != session_id:
         return
     if state.active_stream.get("kind") != "rtsp":
@@ -101,10 +114,12 @@ async def _negotiate_rtsp_offer(state: AppState, session_id: str, offer_sdp: str
     name = state.active_stream.get("go2rtc_name")
     if not name or not isinstance(state.go2rtc, Go2RTCClient):
         return
+    is_satellite_peer = reply_ws is not None and reply_ws is not state.audio_websocket
     answer_sdp = await state.go2rtc.webrtc_offer(name, offer_sdp)
     if not answer_sdp:
-        log.warning(f"go2rtc returned no answer for {name!r}")
-        await _stop_active_stream(state)
+        log.warning(f"go2rtc returned no answer for {name!r} (satellite={is_satellite_peer})")
+        if not is_satellite_peer:
+            await _stop_active_stream(state)
         return
     msg = {
         "type": "webrtc_signal",
@@ -112,12 +127,12 @@ async def _negotiate_rtsp_offer(state: AppState, session_id: str, offer_sdp: str
         "kind": "answer",
         "sdp": answer_sdp,
     }
-    ws = state.audio_websocket
+    ws = reply_ws if reply_ws is not None else state.audio_websocket
     if ws:
         try:
             await ws.send_json(msg)
         except Exception as e:
-            log.debug(f"forward go2rtc answer to kiosk failed: {e}")
+            log.debug(f"forward go2rtc answer to peer failed (satellite={is_satellite_peer}): {e}")
 
 
 async def _on_ha_webrtc_event(state: AppState, session_id: str, event: dict) -> None:

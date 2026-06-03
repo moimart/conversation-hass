@@ -26,6 +26,11 @@ def _state():
         satellite_ws={},          # token -> ws
         satellite_ws_tokens={},   # ws -> token
         satellite_tts={},
+        satellite_photo_sessions={},
+        audio_websocket=None,
+        go2rtc=None,
+        ha_ws=None,
+        active_stream=None,
     )
 
 
@@ -33,6 +38,7 @@ class _WS:
     """Hashable fake websocket (identity-based) usable as a dict key / set member."""
     def __init__(self):
         self.send_text = AsyncMock()
+        self.send_json = AsyncMock()
 
 
 def _ws():
@@ -150,6 +156,88 @@ async def test_speak_to_satellites_text_only_without_audio():
 async def test_speak_to_satellites_none_connected():
     st = _state()
     assert await speak_to_satellites(st, "nobody home", b"RIFF") == 0
+
+
+# --- dismiss_satellite_photo_frames -----------------------------------------
+
+@pytest.mark.asyncio
+async def test_dismiss_satellite_photo_frames(monkeypatch):
+    from server.app import main as srv_main
+    st = _state()
+    st.satellite_photo_sessions = {"tA": object(), "tB": object()}
+    stop = AsyncMock(return_value={"status": "ok"})
+    monkeypatch.setattr("server.app.photo_frame.stop_photo_frame_for_device", stop)
+    await srv_main.dismiss_satellite_photo_frames(st)
+    assert stop.await_count == 2
+    assert {c.args[1] for c in stop.await_args_list} == {"tA", "tB"}
+
+
+@pytest.mark.asyncio
+async def test_speak_to_satellites_dismisses_photo_frame(monkeypatch):
+    from server.app import main as srv_main
+    st = _state()
+    sat = _ws()
+    st.satellite_ws = {"tS": sat}
+    st.satellite_ws_tokens = {sat: "tS"}
+    st.satellite_photo_sessions = {"tS": object()}
+    stop = AsyncMock(return_value={"status": "ok"})
+    monkeypatch.setattr("server.app.photo_frame.stop_photo_frame_for_device", stop)
+    await srv_main.speak_to_satellites(st, "Dinner", b"RIFF")
+    stop.assert_awaited_once()  # idle photo frame cleared before speaking
+
+
+# --- RTSP per-device negotiation (reply_ws) ---------------------------------
+
+def _g(answer):
+    from server.app.go2rtc import Go2RTCClient
+    g = Go2RTCClient("http://go2rtc")
+    g.webrtc_offer = AsyncMock(return_value=answer)
+    return g
+
+
+@pytest.mark.asyncio
+async def test_rtsp_negotiate_answers_satellite_peer():
+    from server.app.streaming import _negotiate_rtsp_offer
+    st = _state()
+    st.audio_websocket = _ws()           # kiosk peer
+    st.go2rtc = _g("ANSWER_SDP")
+    st.active_stream = {"session_id": "s1", "kind": "rtsp", "go2rtc_name": "hal_s1"}
+    sat = _ws()
+    await _negotiate_rtsp_offer(st, "s1", "OFFER_SDP", reply_ws=sat)
+    sat.send_json.assert_awaited_once()
+    sent = sat.send_json.await_args.args[0]
+    assert sent["kind"] == "answer" and sent["sdp"] == "ANSWER_SDP"
+    st.audio_websocket.send_json.assert_not_awaited()   # kiosk untouched
+    assert st.active_stream is not None                 # stream stays up
+
+
+@pytest.mark.asyncio
+async def test_rtsp_negotiate_satellite_failure_keeps_stream():
+    from server.app.streaming import _negotiate_rtsp_offer
+    st = _state()
+    st.audio_websocket = _ws()
+    st.go2rtc = _g(None)                 # go2rtc returns no answer
+    st.active_stream = {"session_id": "s1", "kind": "rtsp", "go2rtc_name": "hal_s1"}
+    sat = _ws()
+    await _negotiate_rtsp_offer(st, "s1", "OFFER_SDP", reply_ws=sat)
+    sat.send_json.assert_not_awaited()
+    assert st.active_stream is not None  # a satellite failure does NOT tear down the shared stream
+
+
+@pytest.mark.asyncio
+async def test_stop_active_stream_fans_stop_to_satellites():
+    from server.app.streaming import _stop_active_stream
+    st = _state()
+    st.go2rtc = _g("x"); st.go2rtc.delete_stream = AsyncMock()
+    sat = _ws()
+    st.satellite_ws = {"tS": sat}
+    st.satellite_ws_tokens = {sat: "tS"}
+    st.active_stream = {
+        "session_id": "s1", "kind": "rtsp", "go2rtc_name": "hal_s1", "safety_task": None,
+    }
+    await _stop_active_stream(st)
+    sat.send_text.assert_awaited_once()
+    assert json.loads(sat.send_text.await_args.args[0]) == {"type": "stream_stop", "session_id": "s1"}
 
 
 # --- cache_satellite_tts ----------------------------------------------------

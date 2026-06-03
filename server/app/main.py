@@ -793,14 +793,32 @@ async def send_to_satellites(state: AppState, msg: dict) -> int:
     return delivered
 
 
-async def broadcast_force_action(state: AppState, msg: dict) -> None:
+async def dismiss_satellite_photo_frames(state: AppState) -> None:
+    """Tear down every satellite's idle photo frame so an incoming force action
+    (spoken announcement, orb media, live stream) is actually visible instead of
+    hidden behind the ambient photo. Idempotent / best-effort."""
+    from .photo_frame import stop_photo_frame_for_device
+    for token in list(getattr(state, "satellite_photo_sessions", {}).keys()):
+        try:
+            await stop_photo_frame_for_device(state, token, reason="force_action")
+        except Exception as e:
+            log.debug(f"dismiss satellite photo frame failed: {e}")
+
+
+async def broadcast_force_action(state: AppState, msg: dict, *, dismiss_photo: bool = False) -> None:
     """Deliver a force/proactive action to ALL display surfaces: the kiosk-
     mirroring web UIs (broadcast_to_ui) AND every connected satellite.
 
     This is the satellite-inclusive counterpart to broadcast_to_ui. Use it only
     for household-wide proactive actions (theme, orb image/video); the kiosk
     itself is reached separately via the RPi socket (_push_to_rpi / the
-    dispatcher's audio_websocket send), exactly as before."""
+    dispatcher's audio_websocket send), exactly as before.
+
+    `dismiss_photo=True` first clears any satellite idle photo frame so visible
+    content (image/video) isn't hidden behind it; cosmetic actions like a theme
+    change leave the photo frame alone."""
+    if dismiss_photo:
+        await dismiss_satellite_photo_frames(state)
     await broadcast_to_ui(state, msg)
     await send_to_satellites(state, msg)
 
@@ -810,6 +828,8 @@ async def speak_to_satellites(state: AppState, text: str, audio_bytes: bytes | N
     response text (drives the orb to 'speaking') plus, when audio is available,
     HAL's server voice via the per-device TTS cache + tts_play. Returns the
     number of satellites that received the audio cue."""
+    # Clear any idle photo frame so the spoken text shows on the orb.
+    await dismiss_satellite_photo_frames(state)
     spoken = 0
     for token in list(state.satellite_ws.keys()):
         if not await send_to_device(state, token, {"type": "response", "text": text}):

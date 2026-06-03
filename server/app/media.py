@@ -232,8 +232,9 @@ async def _dispatch_show_image(
         except Exception as e:
             log.warning(f"show_image ws send failed: {e}")
     # web mirrors + satellites (force action — image is carried inline, so it
-    # renders on phones regardless of network reachability)
-    await broadcast_force_action(state, msg)
+    # renders on phones regardless of network reachability); clear any idle
+    # photo frame so the image is visible.
+    await broadcast_force_action(state, msg, dismiss_photo=True)
     return sent
 
 
@@ -266,8 +267,9 @@ async def _dispatch_play_video(
             sent = True
         except Exception as e:
             log.warning(f"play_video ws send failed: {e}")
-    # web mirrors + satellites (force action — video URL fetched by each surface)
-    await broadcast_force_action(state, msg)
+    # web mirrors + satellites (force action — video URL fetched by each surface);
+    # clear any idle photo frame so the video is visible.
+    await broadcast_force_action(state, msg, dismiss_photo=True)
     return sent
 
 

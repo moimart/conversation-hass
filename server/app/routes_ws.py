@@ -467,8 +467,24 @@ async def ui_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             msg = json.loads(data)
-            if msg.get("type") == "ping":
+            mtype = msg.get("type")
+            if mtype == "ping":
                 await websocket.send_json({"type": "pong"})
+            elif mtype == "webrtc_signal" and is_satellite:
+                # A satellite consuming a fanned-out live stream. Only go2rtc/RTSP
+                # streams are supported on satellites (stateless per-offer, so the
+                # same stream serves the kiosk + every phone). HA-camera streams,
+                # which use trickle ICE + per-session HA subscriptions, stay
+                # kiosk-only. We negotiate the offer with go2rtc and answer back
+                # over THIS satellite's socket.
+                if msg.get("kind") == "offer" and msg.get("sdp"):
+                    session_id = str(msg.get("session_id", ""))
+                    sess = state.active_stream
+                    if sess and sess.get("session_id") == session_id and sess.get("kind") == "rtsp":
+                        from .main import _negotiate_rtsp_offer
+                        await _negotiate_rtsp_offer(
+                            state, session_id, msg["sdp"], reply_ws=websocket,
+                        )
     except WebSocketDisconnect:
         pass
     finally:
