@@ -1,8 +1,8 @@
 {
-  "name": "hal-companion",
+  "name": "pal-companion",
   "version": "0.1.0",
   "private": true,
-  "description": "HAL companion app (iOS + Android) — mirrors the kiosk display and talks to HAL by text/voice.",
+  "description": "PAL companion app (iOS + Android) — pair a phone as a satellite for the kiosk display and talk to PAL by text/voice.",
   "type": "module",
   "scripts": {
     "sync:web": "node scripts/sync-web.mjs",

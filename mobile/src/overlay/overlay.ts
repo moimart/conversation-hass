@@ -20,7 +20,7 @@ export function mountOverlay(cfg: HalConfig): void {
   const input = document.createElement("input");
   input.className = "hal-input";
   input.type = "text";
-  input.placeholder = "Message HAL…";
+  input.placeholder = "Message PAL…";
   input.autocomplete = "off";
   input.autocapitalize = "sentences";
   input.enterKeyHint = "send";
@@ -75,14 +75,14 @@ export function mountOverlay(cfg: HalConfig): void {
       await startListening((partial) => { input.value = partial; });
     } catch (e) {
       mic.classList.remove("active");
-      input.placeholder = "Message HAL…";
+      input.placeholder = "Message PAL…";
       console.warn("[hal] mic start failed", e);
     }
   }
   async function endPtt() {
     if (!isListening()) return;
     mic.classList.remove("active");
-    input.placeholder = "Message HAL…";
+    input.placeholder = "Message PAL…";
     const final = await stopListening();
     if (final) { input.value = final; void submit(); }
   }
