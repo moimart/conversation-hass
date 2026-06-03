@@ -323,3 +323,90 @@ class TestSystemPrompt:
         )
         prompt = cm._build_system_prompt()
         assert "HAL" in prompt
+
+    def test_prompt_includes_context_summary(self, conversation):
+        conversation._context_summary = "User prefers metric units; lives in Berlin."
+        prompt = conversation._build_system_prompt()
+        assert "summarized" in prompt
+        assert "User prefers metric units; lives in Berlin." in prompt
+
+
+class TestHistoryCompaction:
+    def _mem(self):
+        mem = MagicMock()
+        mem.available = True
+        mem.remember = AsyncMock(return_value=True)
+        return mem
+
+    def _fill(self, conversation, n):
+        # n full messages alternating user/assistant
+        for i in range(n):
+            role = "user" if i % 2 == 0 else "assistant"
+            conversation.history.append({"role": role, "content": f"msg {i}"})
+
+    @pytest.mark.asyncio
+    async def test_no_compaction_under_threshold(self, conversation):
+        conversation.memory = self._mem()
+        self._fill(conversation, conversation.max_history)  # exactly at limit, not over
+        with patch.object(conversation, "_summarize_history", new_callable=AsyncMock) as s:
+            await conversation._compact_history()
+            s.assert_not_awaited()
+        assert len(conversation.history) == conversation.max_history
+        assert conversation._context_summary == ""
+
+    @pytest.mark.asyncio
+    async def test_compaction_summarizes_persists_and_trims(self, conversation):
+        mem = self._mem()
+        conversation.memory = mem
+        self._fill(conversation, conversation.max_history + 4)
+        with patch.object(conversation, "_summarize_history", new_callable=AsyncMock) as s:
+            s.return_value = "A concise summary."
+            await conversation._compact_history()
+
+        # Older slice summarized, summary stored in Shodh, tail kept verbatim.
+        assert conversation._context_summary == "A concise summary."
+        mem.remember.assert_awaited_once()
+        _, kwargs = mem.remember.call_args
+        assert kwargs.get("memory_type") == "conversation_summary"
+        assert len(conversation.history) == conversation.compact_keep
+        # The kept tail is the most-recent messages.
+        assert conversation.history[-1]["content"] == "msg " + str(conversation.max_history + 3)
+
+    @pytest.mark.asyncio
+    async def test_compaction_hard_trims_when_summary_empty(self, conversation):
+        mem = self._mem()
+        conversation.memory = mem
+        self._fill(conversation, conversation.max_history + 4)
+        with patch.object(conversation, "_summarize_history", new_callable=AsyncMock) as s:
+            s.return_value = ""  # summarizer unavailable/failed
+            await conversation._compact_history()
+        mem.remember.assert_not_awaited()
+        assert conversation._context_summary == ""
+        # Falls back to a hard trim so the prompt can't grow unbounded.
+        assert len(conversation.history) == conversation.max_history
+
+    @pytest.mark.asyncio
+    async def test_compaction_survives_no_memory(self, conversation):
+        conversation.memory = None
+        self._fill(conversation, conversation.max_history + 4)
+        with patch.object(conversation, "_summarize_history", new_callable=AsyncMock) as s:
+            s.return_value = "Summary without Shodh."
+            await conversation._compact_history()
+        assert conversation._context_summary == "Summary without Shodh."
+        assert len(conversation.history) == conversation.compact_keep
+
+    @pytest.mark.asyncio
+    async def test_summarize_history_is_tool_free(self, conversation):
+        with patch.object(conversation, "_chat_completion", new_callable=AsyncMock) as chat:
+            chat.return_value = {"message": {"content": "  note.  "}}
+            out = await conversation._summarize_history(
+                [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+            )
+        assert out == "note."
+        _, kwargs = chat.call_args
+        assert kwargs.get("with_tools") is False
+
+    @pytest.mark.asyncio
+    async def test_summarize_history_empty_input(self, conversation):
+        out = await conversation._summarize_history([{"role": "user", "content": "   "}])
+        assert out == ""

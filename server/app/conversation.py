@@ -87,6 +87,15 @@ class ConversationManager:
         # 20 turns is plenty and keeps per-round prompt eval fast.
         self.history: list[dict] = []
         self.max_history = 20
+        # Auto-compaction: once the rolling thread grows past max_history,
+        # the older turns are summarized into a durable note, persisted to
+        # Shodh long-term memory, and dropped — keeping only `compact_keep`
+        # recent messages verbatim. `_context_summary` is the running summary,
+        # injected into the system prompt so the live thread stays coherent
+        # without depending on a Shodh recall hitting the same content.
+        self.compact_keep = 6
+        self._context_summary: str = ""
+        self._compacting = False
 
         # Text buffer accumulated after wake word
         self._command_buffer: list[str] = []
@@ -143,7 +152,13 @@ class ConversationManager:
         # (mounted from host) — automatically handles DST, works on any distro,
         # no timezone name detection needed
         now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %A %Z")
-        return f"{self._system_prompt}\n\nCurrent date and time: {now}"
+        prompt = f"{self._system_prompt}\n\nCurrent date and time: {now}"
+        if self._context_summary:
+            prompt += (
+                "\n\n[Earlier in this conversation (summarized):]\n"
+                f"{self._context_summary}"
+            )
+        return prompt
 
     @property
     def always_on(self) -> bool:
@@ -333,6 +348,10 @@ class ConversationManager:
         await self._set_state("idle")
         self._turn_origin = None
 
+        # Auto-compact the rolling thread once it grows too long (off the
+        # response critical path — the user already heard the reply).
+        await self._compact_history()
+
     async def _run_openclaw(self, user_text: str):
         from .openclaw_client import OpenClawResponse
 
@@ -480,6 +499,85 @@ class ConversationManager:
         self.history.append({"role": "assistant", "content": fallback})
         return fallback
 
+    async def _compact_history(self) -> None:
+        """Auto-compaction (size-triggered).
+
+        Once the rolling thread grows past ``max_history``, summarize the older
+        turns into a durable note, fold it into the running ``_context_summary``,
+        persist that note to Shodh long-term memory, and keep only the most
+        recent ``compact_keep`` messages verbatim. The running summary rides in
+        the system prompt (see ``_build_system_prompt``) so continuity holds
+        without relying on a Shodh recall surfacing the same content.
+
+        Runs at the end of a turn, off the response critical path. If
+        summarization is unavailable it falls back to a hard trim so the prompt
+        can never grow unbounded.
+        """
+        if self._compacting or len(self.history) <= self.max_history:
+            return
+        self._compacting = True
+        try:
+            keep = max(0, self.compact_keep)
+            older = self.history[:-keep] if keep else list(self.history)
+            recent = self.history[-keep:] if keep else []
+            if not older:
+                return
+            summary = await self._summarize_history(older)
+            if not summary:
+                # Summarization failed/unavailable — hard trim as a safety net.
+                self.history = self.history[-self.max_history:]
+                log.warning("[compact] summarize unavailable — hard-trimmed history")
+                return
+            self._context_summary = summary
+            if self.memory and self.memory.available:
+                try:
+                    await self.memory.remember(summary, memory_type="conversation_summary")
+                except Exception as e:
+                    log.warning(f"[compact] memory.remember failed: {e}")
+            self.history = recent
+            log.info(
+                f"[compact] folded {len(older)} msgs into summary "
+                f"({len(summary)} chars), kept {len(recent)} verbatim"
+            )
+        except Exception as e:
+            log.error(f"[compact] error: {e}", exc_info=True)
+        finally:
+            self._compacting = False
+
+    async def _summarize_history(self, msgs: list[dict]) -> str:
+        """Summarize a slice of history into a concise third-person memory note.
+
+        Tool-free, single-shot. Folds in the prior running summary so successive
+        compactions accumulate rather than forget."""
+        convo = "\n".join(
+            f"{m.get('role', 'user')}: {m['content']}"
+            for m in msgs
+            if (m.get("content") or "").strip()
+        )
+        if not convo.strip():
+            return ""
+        prior = (
+            f"Summary of the conversation so far:\n{self._context_summary}\n\n"
+            if self._context_summary else ""
+        )
+        instructions = (
+            "Summarize the conversation below between a user and HAL (a home "
+            "assistant) into a concise third-person memory note. Capture durable "
+            "facts, preferences, decisions, and any unresolved threads; drop "
+            "pleasantries and tool mechanics. If a prior summary is given, merge "
+            "the new exchanges into it. 2-4 sentences, no preamble."
+        )
+        messages = [
+            {"role": "system", "content": "You compress conversations into durable memory notes."},
+            {"role": "user", "content": f"{instructions}\n\n{prior}New exchanges:\n{convo}"},
+        ]
+        try:
+            resp = await self._chat_completion(messages, with_tools=False)
+            return (resp.get("message", {}).get("content", "") or "").strip()
+        except Exception as e:
+            log.warning(f"[compact] summarize failed: {e}")
+            return ""
+
     async def _route_decision(self, user_text: str) -> str:
         """Ask the small router model which engine should handle this command.
 
@@ -518,6 +616,7 @@ class ConversationManager:
         self,
         messages: list[dict],
         model_override: str | None = None,
+        with_tools: bool = True,
     ) -> dict:
         """Call Ollama chat API with tool definitions.
 
@@ -540,8 +639,9 @@ class ConversationManager:
             },
         }
 
-        # Include tools if available
-        tools = self.mcp.tools_for_llm
+        # Include tools if available (skipped for utility calls like
+        # summarization that must produce plain text, never a tool call).
+        tools = self.mcp.tools_for_llm if with_tools else None
         if tools:
             payload["tools"] = tools
             log.debug(f"Sending {len(tools)} tools to Ollama")
