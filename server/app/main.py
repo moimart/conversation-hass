@@ -67,6 +67,14 @@ class AppState:
     mic_muted: bool = False  # cached from RPi
     local_tools: object | None = None  # LocalToolsClient
     pairing: object | None = None  # pairing.PairingManager (mobile device tokens)
+    # Satellite mode: a paired phone connected to /ws/ui with a valid token is a
+    # "satellite" — its turns' outputs route ONLY to it (never the kiosk), and it
+    # is excluded from the global broadcast_to_ui. The kiosk is reached via
+    # audio_websocket (the RPi), not ui_clients, so it's unaffected.
+    satellite_ws: dict = field(default_factory=dict)          # token -> WebSocket
+    satellite_ws_tokens: dict = field(default_factory=dict)   # WebSocket -> token (O(1) cleanup)
+    satellite_tts: dict = field(default_factory=dict)         # token -> {audio, mime, ts, seq}
+    satellite_photo_sessions: dict = field(default_factory=dict)  # token -> PhotoFrameSession
     current_theme: str = "dark"
     theme_day: str = "birch"
     theme_night: str = "dark"
@@ -721,15 +729,56 @@ def _get_state(app: FastAPI) -> AppState:
 
 
 async def broadcast_to_ui(state: AppState, msg: dict):
-    """Send a message to all connected UI WebSocket clients."""
+    """Send a message to all MIRROR UI clients (kiosk-mirroring web UIs).
+
+    SATELLITE clients (paired phones) are excluded — they only receive messages
+    targeted at them via send_to_device, so global/kiosk/voice turns never leak
+    onto a phone. The kiosk itself is the RPi (audio_websocket), not a ui_client.
+    """
     data = json.dumps(msg)
     dead = set()
     for ws in state.ui_clients:
+        if ws in state.satellite_ws_tokens:
+            continue  # satellites get only their own targeted messages
         try:
             await ws.send_text(data)
         except Exception:
             dead.add(ws)
     state.ui_clients.difference_update(dead)
+
+
+async def send_to_device(state: AppState, token: str, msg: dict) -> bool:
+    """Send a JSON message to ONE satellite device (by pairing token). Returns
+    False if the device isn't connected; deregisters it on send failure."""
+    ws = state.satellite_ws.get(token)
+    if ws is None:
+        return False
+    try:
+        await ws.send_text(json.dumps(msg))
+        return True
+    except Exception:
+        _deregister_satellite(state, ws)
+        return False
+
+
+def _deregister_satellite(state: AppState, ws) -> None:
+    """Drop a satellite's registry entries (idempotent). Photo-session teardown
+    is handled by the /ws/ui disconnect handler."""
+    token = state.satellite_ws_tokens.pop(ws, None)
+    if token is not None and state.satellite_ws.get(token) is ws:
+        state.satellite_ws.pop(token, None)
+
+
+def cache_satellite_tts(state: AppState, token: str, audio: bytes, mime: str) -> int:
+    """Cache a turn's TTS audio for a satellite device so it can fetch it from
+    GET /api/satellite/tts. Returns a per-device monotonically-increasing seq the
+    device can echo so a fetch for a superseded turn can be rejected."""
+    prev = state.satellite_tts.get(token) or {}
+    seq = int(prev.get("seq", 0)) + 1
+    state.satellite_tts[token] = {
+        "audio": audio, "mime": mime, "ts": time.monotonic(), "seq": seq,
+    }
+    return seq
 
 
 # === Route registration ======================================================

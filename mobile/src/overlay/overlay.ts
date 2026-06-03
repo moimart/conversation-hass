@@ -6,6 +6,7 @@
 import { clearConfig, type HalConfig } from "../config/hal-config";
 import { sendCommand } from "./command";
 import { startListening, stopListening, isListening } from "./mic";
+import { unlockAudio } from "./satellite-audio";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 
 export function mountOverlay(cfg: HalConfig): void {
@@ -51,6 +52,7 @@ export function mountOverlay(cfg: HalConfig): void {
     if (!text.trim()) return;
     input.value = "";
     void haptic();
+    unlockAudio();   // this tap is the gesture that lets HAL's TTS autoplay
     await sendCommand(cfg, text);
   }
 
@@ -66,6 +68,7 @@ export function mountOverlay(cfg: HalConfig): void {
     if (isListening()) return;
     try {
       void haptic();
+      unlockAudio();   // mic tap doubles as the autoplay-unlock gesture
       mic.classList.add("active");
       input.value = "";
       input.placeholder = "Listening…";

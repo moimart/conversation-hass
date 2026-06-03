@@ -105,10 +105,25 @@ async def audio_endpoint(websocket: WebSocket):
             log.error(f"Error sending wake chime: {e}")
 
     async def on_response(text: str, audio_bytes: bytes | None):
-        """Callback: send LLM response + TTS audio back to RPi."""
-        # If HAL is about to speak, the display must be on for the
-        # response panel + state-video crossfade to be visible.
+        """Callback: send LLM response + TTS audio back to the kiosk (RPi) — or,
+        for a satellite-origin turn, ONLY to the originating phone."""
+        from .main import send_to_device, cache_satellite_tts
         _record_user_activity(state)
+
+        origin = getattr(state.conversation, "_turn_origin", None)
+        if origin is not None:
+            # Satellite turn: response text + HAL-voice audio go ONLY to the
+            # phone. Nothing to the RPi/broadcast/MQTT, and we don't touch the
+            # RPi mic-ducking flag (set_ai_speaking) — that's a kiosk concern.
+            await send_to_device(state, origin, {"type": "response", "text": text})
+            if audio_bytes:
+                seq = cache_satellite_tts(state, origin, audio_bytes, "audio/wav")
+                await send_to_device(state, origin, {
+                    "type": "tts_play", "url": "/api/satellite/tts",
+                    "mime": "audio/wav", "seq": seq,
+                })
+            return
+
         try:
             await websocket.send_json({"type": "response", "text": text})
             await broadcast_to_ui(state, {"type": "response", "text": text})
@@ -129,7 +144,15 @@ async def audio_endpoint(websocket: WebSocket):
             log.info("AI speaking: False (error recovery)")
 
     async def on_state_change(new_state: str):
-        """Callback: broadcast state changes to RPi, UI and MQTT."""
+        """Callback: broadcast state changes to RPi, UI and MQTT — or, for a
+        satellite-origin turn, ONLY to the originating phone (so the kiosk orb
+        doesn't react to a phone command)."""
+        origin = getattr(state.conversation, "_turn_origin", None)
+        if origin is not None:
+            from .main import send_to_device
+            await send_to_device(state, origin, {"type": "state", "state": new_state})
+            return
+
         msg = {"type": "state", "state": new_state}
         try:
             await websocket.send_json(msg)
@@ -397,18 +420,32 @@ async def ui_endpoint(websocket: WebSocket):
     from .pairing import require_token_enabled
     state = _get_state(websocket.app)
 
-    # Mobile auth gate (opt-in): when HAL_REQUIRE_TOKEN is set, the read-only
-    # display feed requires a paired device token (passed as ?token=). The
-    # same-origin kiosk doesn't send one, so enforcement stays OFF by default.
-    if require_token_enabled():
-        token = websocket.query_params.get("token")
-        if not (state.pairing and state.pairing.is_valid_token(token)):
-            await websocket.close(code=4401)
-            return
+    # A /ws/ui connection presenting a VALID pairing token is a SATELLITE (a
+    # paired phone): its turns route only to it and it's excluded from the global
+    # broadcast. A tokenless connection is a mirror (web dev UI). The token is
+    # read unconditionally so classification works regardless of HAL_REQUIRE_TOKEN.
+    token = websocket.query_params.get("token")
+    is_satellite = bool(token) and state.pairing is not None and state.pairing.is_valid_token(token)
+
+    # Auth gate (opt-in): when HAL_REQUIRE_TOKEN is set, a valid token is required.
+    if require_token_enabled() and not is_satellite:
+        await websocket.close(code=4401)
+        return
 
     await websocket.accept()
     state.ui_clients.add(websocket)
-    log.info(f"UI client connected (total: {len(state.ui_clients)})")
+    if is_satellite:
+        # One live satellite per token — replace/close any prior connection.
+        old = state.satellite_ws.get(token)
+        if old is not None and old is not websocket:
+            state.satellite_ws_tokens.pop(old, None)
+            try:
+                await old.close(code=4409)
+            except Exception:
+                pass
+        state.satellite_ws[token] = websocket
+        state.satellite_ws_tokens[websocket] = token
+    log.info(f"UI client connected (satellite={is_satellite}, total: {len(state.ui_clients)})")
 
     if state.conversation:
         await websocket.send_json({
@@ -433,5 +470,21 @@ async def ui_endpoint(websocket: WebSocket):
             if msg.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:
+        pass
+    finally:
         state.ui_clients.discard(websocket)
+        # Satellite cleanup: deregister (only if this ws is still the registered
+        # one — a newer reconnect may have replaced it), drop its TTS cache, and
+        # tear down any per-device photo-frame session.
+        tok = state.satellite_ws_tokens.pop(websocket, None)
+        if tok is not None:
+            if state.satellite_ws.get(tok) is websocket:
+                state.satellite_ws.pop(tok, None)
+            state.satellite_tts.pop(tok, None)
+            if tok in state.satellite_photo_sessions:
+                try:
+                    from .photo_frame import stop_photo_frame_for_device
+                    await stop_photo_frame_for_device(state, tok, reason="disconnect")
+                except Exception as e:
+                    log.debug(f"satellite photo cleanup failed: {e}")
         log.info(f"UI client disconnected (total: {len(state.ui_clients)})")

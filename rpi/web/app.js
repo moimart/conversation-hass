@@ -651,6 +651,13 @@
             case "hide_pairing_code":
                 if (window.HALPairingOverlay) window.HALPairingOverlay.hide();
                 break;
+            case "tts_play":
+                // Satellite mode: play HAL's response audio on THIS device (the
+                // server cached it; the mobile audio module fetches + plays it).
+                // No-op on the kiosk — it has no HALSatelliteAudio global and is
+                // never sent tts_play anyway (it's a device-targeted message).
+                if (window.HALSatelliteAudio) window.HALSatelliteAudio.play(msg.url, msg.mime);
+                break;
             default:
                 console.log("Unknown message:", msg);
         }

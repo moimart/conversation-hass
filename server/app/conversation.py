@@ -92,6 +92,12 @@ class ConversationManager:
         self._command_buffer: list[str] = []
         self._wake_detected = False
         self._last_text_time = 0.0
+        # Satellite mode: origin of the in-flight turn. `_pending_origin` is set
+        # by /api/command (the device token of a connected satellite, or None for
+        # voice/kiosk/global); on_silence snapshots it into `_turn_origin` for the
+        # duration of the turn so the output callbacks can route to that device.
+        self._pending_origin: str | None = None
+        self._turn_origin: str | None = None
         # True while a Push-to-Talk session owns the audio path. Set/cleared
         # exclusively from server/app/ptt.py. The wake-word + on_silence
         # path doesn't actually need this flag (it reuses _wake_detected),
@@ -200,13 +206,19 @@ class ConversationManager:
         if not self.in_conversation or not self._command_buffer:
             return
 
-        # Combine buffered text into a single command
+        # Combine buffered text into a single command. Snapshot the turn origin
+        # at this atomic point (no await between the guard above and here, so
+        # exactly one on_silence claims a non-empty buffer). _turn_origin drives
+        # output routing for the whole turn; voice/kiosk turns leave it None.
         full_text = " ".join(self._command_buffer).strip()
         self._command_buffer.clear()
+        self._turn_origin = self._pending_origin
+        self._pending_origin = None
         self._wake_detected = False
         self._awaiting_followup = False
 
         if not full_text:
+            self._turn_origin = None
             await self._set_state("idle")
             return
 
@@ -316,7 +328,10 @@ class ConversationManager:
                 audio = await self.tts_engine.synthesize(error_msg)
                 await self.on_response(error_msg, audio)
 
+        # Final idle state routes to the turn's origin; clear origin strictly
+        # after, so the idle state-change still reaches the right device.
         await self._set_state("idle")
+        self._turn_origin = None
 
     async def _run_openclaw(self, user_text: str):
         from .openclaw_client import OpenClawResponse

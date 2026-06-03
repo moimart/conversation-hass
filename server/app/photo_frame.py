@@ -342,6 +342,114 @@ async def stop_photo_frame(state: "AppState", reason: str = "explicit") -> dict:
     return {"status": "ok", "session": False}
 
 
+# --- Per-device (satellite) photo frame ------------------------------------
+# A satellite phone gets its OWN ambient photo frame, independent of the kiosk's.
+# Same fetch + HA-rotation logic as above, but the output is TARGETED to the one
+# device (send_to_device) and the session lives in state.satellite_photo_sessions
+# keyed by the device token. The kiosk's start/stop_photo_frame are untouched.
+# (Photo-only; the looping-video mode stays a kiosk feature.) The image source is
+# shared with the kiosk, so each active device opens its own HA state_changed
+# subscription — fine for a household; a shared-source fan-out is a later
+# optimization.
+
+
+async def start_photo_frame_for_device(
+    state: "AppState", token: str, entity_id: str = "",
+) -> dict:
+    """Open (or refresh) a satellite device's photo frame, targeted to it only."""
+    from .main import send_to_device
+
+    entity = (entity_id or "").strip()
+    if not entity:
+        entity = str(state.runtime_config.get("photo_frame_entity", "") or "").strip()
+    if not entity:
+        return {"status": "not_configured", "session": False}
+    if not (entity.startswith("image.") or entity.startswith("camera.")):
+        return {"status": "invalid_entity", "session": False}
+
+    fetched = await _fetch_and_b64(entity)
+    if fetched is None:
+        return {"status": "fetch_failed", "session": False}
+    b64, mime, sha = fetched
+
+    existing: Optional[PhotoFrameSession] = state.satellite_photo_sessions.get(token)
+    if existing is not None:
+        if existing.entity_id == entity:
+            existing.last_hash = sha
+            await send_to_device(state, token, {
+                "type": "photo_frame_update", "image": b64, "mime": mime,
+                "entity_id": entity, "show_clock": _show_clock(state),
+            })
+            return {"status": "already_active", "session": True}
+        await stop_photo_frame_for_device(state, token, reason="entity_switch")
+
+    sub_id: Optional[int] = None
+    ha_client = await _ensure_ha_ws(state)
+    if ha_client is not None:
+        async def _on_event(event: dict) -> None:
+            data = (event.get("data") or {}) if isinstance(event, dict) else {}
+            if data.get("entity_id") != entity:
+                return
+            await _on_device_state_changed(state, token, entity)
+        try:
+            sub_id = await ha_client.subscribe(
+                {"type": "subscribe_events", "event_type": "state_changed"}, _on_event,
+            )
+        except Exception as e:
+            log.warning(f"Satellite photo frame: HA subscribe failed (degraded): {e}")
+            sub_id = None
+
+    state.satellite_photo_sessions[token] = PhotoFrameSession(
+        entity_id=entity, sub_id=sub_id, last_hash=sha,
+    )
+    ok = await send_to_device(state, token, {
+        "type": "show_photo_frame", "image": b64, "mime": mime,
+        "entity_id": entity, "show_clock": _show_clock(state),
+    })
+    if not ok:
+        await stop_photo_frame_for_device(state, token, reason="device_gone")
+        return {"status": "device_disconnected", "session": False}
+    log.info(f"Satellite photo frame opened: device={token[:8]} entity={entity} sub_id={sub_id}")
+    return {"status": "ok", "session": True}
+
+
+async def _on_device_state_changed(state: "AppState", token: str, entity_id: str) -> None:
+    session: Optional[PhotoFrameSession] = state.satellite_photo_sessions.get(token)
+    if session is None or session.entity_id != entity_id:
+        return
+    fetched = await _fetch_and_b64(entity_id)
+    if fetched is None:
+        return
+    b64, mime, sha = fetched
+    if sha == session.last_hash:
+        return
+    session.last_hash = sha
+    from .main import send_to_device
+    await send_to_device(state, token, {
+        "type": "photo_frame_update", "image": b64, "mime": mime,
+        "entity_id": entity_id, "show_clock": _show_clock(state),
+    })
+
+
+async def stop_photo_frame_for_device(
+    state: "AppState", token: str, reason: str = "explicit",
+) -> dict:
+    """Close a satellite device's photo frame. Idempotent."""
+    session: Optional[PhotoFrameSession] = state.satellite_photo_sessions.pop(token, None)
+    if session is None:
+        return {"status": "not_active", "session": False}
+    if session.sub_id is not None:
+        try:
+            client = await _ensure_ha_ws(state)
+            if client is not None:
+                await client.unsubscribe(session.sub_id)
+        except Exception as e:
+            log.warning(f"Satellite photo frame: HA unsubscribe failed (ignoring): {e}")
+    from .main import send_to_device
+    await send_to_device(state, token, {"type": "hide_photo_frame", "reason": reason})
+    return {"status": "ok", "session": False}
+
+
 # --- Photo-frame looping video: download + cache on the server -------------
 # The user sets a source URL in HA; the server downloads it once, caches it
 # under the writable /app/runtime mount, and serves it at

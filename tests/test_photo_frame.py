@@ -66,6 +66,7 @@ def fake_fetch(monkeypatch):
 
     fake_main._fetch_ha_image_entity = fetch
     fake_main.broadcast_to_ui = AsyncMock()
+    fake_main.send_to_device = AsyncMock(return_value=True)  # satellite path
     # _ensure_ha_ws returns state.ha_ws if present
     async def ensure_ha_ws(state):
         return getattr(state, "ha_ws", None)
@@ -391,3 +392,59 @@ def test_discovery_contains_photo_frame_entities():
         if "config_photo_frame_video_mode/config" in topic:
             assert "switch/" in topic
             assert body.get("payload_on") == "ON"
+
+
+# ---------------------------------------------------------------------------
+# Per-device (satellite) photo frame
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_device_photo_frame_targets_one_device(fake_fetch):
+    state = _state(configured_entity="image.weather_radar")
+    state.satellite_photo_sessions = {}
+    result = await photo_frame.start_photo_frame_for_device(state, "tokA")
+    assert result == {"status": "ok", "session": True}
+    assert "tokA" in state.satellite_photo_sessions
+    # show_photo_frame was sent to the device (not broadcast / not RPi)
+    types_sent = [c.args[2]["type"] for c in fake_fetch.send_to_device.await_args_list]
+    assert "show_photo_frame" in types_sent
+    assert fake_fetch.send_to_device.await_args_list[-1].args[1] == "tokA"
+    fake_fetch.broadcast_to_ui.assert_not_awaited()
+    state.audio_websocket.send_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_device_photo_frame_not_configured(fake_fetch):
+    state = _state(configured_entity="")
+    state.satellite_photo_sessions = {}
+    result = await photo_frame.start_photo_frame_for_device(state, "tokA")
+    assert result == {"status": "not_configured", "session": False}
+    assert "tokA" not in state.satellite_photo_sessions
+
+
+@pytest.mark.asyncio
+async def test_device_photo_frame_stop_clears_and_hides(fake_fetch):
+    state = _state(configured_entity="image.weather_radar")
+    state.satellite_photo_sessions = {}
+    await photo_frame.start_photo_frame_for_device(state, "tokA")
+    fake_fetch.send_to_device.reset_mock()
+    result = await photo_frame.stop_photo_frame_for_device(state, "tokA")
+    assert result == {"status": "ok", "session": False}
+    assert "tokA" not in state.satellite_photo_sessions
+    types_sent = [c.args[2]["type"] for c in fake_fetch.send_to_device.await_args_list]
+    assert types_sent == ["hide_photo_frame"]
+    # the device's HA subscription was torn down
+    assert state.ha_ws.unsubscribe.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_device_photo_frame_is_independent_of_kiosk(fake_fetch):
+    state = _state(configured_entity="image.weather_radar")
+    state.satellite_photo_sessions = {}
+    # Open the kiosk frame AND a device frame; stopping the device leaves the kiosk.
+    await photo_frame.start_photo_frame(state)
+    await photo_frame.start_photo_frame_for_device(state, "tokA")
+    assert state.photo_frame_session is not None
+    await photo_frame.stop_photo_frame_for_device(state, "tokA")
+    assert state.photo_frame_session is not None      # kiosk untouched
+    assert "tokA" not in state.satellite_photo_sessions

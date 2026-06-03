@@ -193,20 +193,28 @@ async def post_command(request: Request, req: CommandRequest):
     from .main import (
         _get_state,
         broadcast_to_ui,
+        send_to_device,
         _record_user_activity,
         _dismiss_photo_frame_async,
     )
     from .pairing import require_token_enabled, extract_bearer
     state = _get_state(request.app)
 
+    token = extract_bearer(request)
+    token_valid = bool(token) and state.pairing and state.pairing.is_valid_token(token)
+
     # Mobile auth gate (opt-in): when HAL_REQUIRE_TOKEN is set, a paired device
     # token is required. Default OFF leaves the existing LAN behaviour intact.
-    if require_token_enabled():
-        if not (state.pairing and state.pairing.is_valid_token(extract_bearer(request))):
-            return Response(
-                content='{"status":"error","message":"unauthorized"}',
-                status_code=401, media_type="application/json",
-            )
+    if require_token_enabled() and not token_valid:
+        return Response(
+            content='{"status":"error","message":"unauthorized"}',
+            status_code=401, media_type="application/json",
+        )
+
+    # Satellite origin: a command from a paired device that is CURRENTLY connected
+    # as a satellite (/ws/ui) is routed only back to that device. A valid token
+    # whose device isn't connected as a satellite falls back to global (None).
+    origin = token if (token_valid and token in state.satellite_ws) else None
 
     conversation = state.conversation
     text = req.text.strip()
@@ -218,25 +226,33 @@ async def post_command(request: Request, req: CommandRequest):
         return {"status": "error", "message": "Server not ready"}
 
     _record_user_activity(state)
-    _dismiss_photo_frame_async(state, reason="command")
+    if origin is None:
+        # Global command — dismiss the kiosk photo frame as before.
+        _dismiss_photo_frame_async(state, reason="command")
 
-    log.info(f"REST command received: '{text[:80]}'")
+    log.info(f"REST command received ({'satellite' if origin else 'global'}): '{text[:80]}'")
 
-    # Show on UI as transcription (send to both direct UI clients and RPi)
+    # Echo as a transcription. Satellite-origin → only the originating device;
+    # global → kiosk (RPi) + mirror UIs, exactly as before.
     transcription_msg = {
         "type": "transcription",
         "text": text,
         "is_partial": False,
         "speaker": "human",
     }
-    await broadcast_to_ui(state, transcription_msg)
-    if state.audio_websocket:
-        try:
-            await state.audio_websocket.send_json(transcription_msg)
-        except Exception:
-            pass
+    if origin is not None:
+        await send_to_device(state, origin, transcription_msg)
+    else:
+        await broadcast_to_ui(state, transcription_msg)
+        if state.audio_websocket:
+            try:
+                await state.audio_websocket.send_json(transcription_msg)
+            except Exception:
+                pass
 
-    # Feed directly to conversation manager (skip wake word)
+    # Feed directly to conversation manager (skip wake word). Tag the turn origin
+    # so the response/state/TTS callbacks route to the same destination.
+    conversation._pending_origin = origin
     conversation._command_buffer.append(text)
     conversation._wake_detected = True  # bypass wake word check in on_silence
 
@@ -244,6 +260,65 @@ async def post_command(request: Request, req: CommandRequest):
     asyncio.create_task(conversation.on_silence())
 
     return {"status": "ok", "message": "Command received"}
+
+
+@router.get("/api/satellite/tts")
+async def get_satellite_tts(request: Request):
+    """Return the cached TTS audio (WAV) for the requesting satellite device.
+    Token-scoped: the caller must be a paired token that is CURRENTLY connected as
+    a satellite, and only ever receives its OWN cached audio. The phone fetches
+    this after a `tts_play` message and plays it."""
+    from .main import _get_state
+    from .pairing import extract_bearer
+    state = _get_state(request.app)
+    token = extract_bearer(request)
+    if not (token and state.pairing and state.pairing.is_valid_token(token)
+            and token in state.satellite_ws):
+        return Response(status_code=401)
+    entry = state.satellite_tts.get(token)
+    if not entry or (time.monotonic() - entry.get("ts", 0.0)) > 60.0:
+        return Response(status_code=404)
+    return Response(
+        content=entry["audio"],
+        media_type=entry.get("mime", "audio/wav"),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _connected_satellite_token(state, request: Request) -> str | None:
+    """The Bearer token IF it's a paired device currently connected as a
+    satellite, else None (used to gate the satellite-only routes)."""
+    from .pairing import extract_bearer
+    token = extract_bearer(request)
+    if (token and state.pairing and state.pairing.is_valid_token(token)
+            and token in state.satellite_ws):
+        return token
+    return None
+
+
+@router.post("/api/satellite/photo_frame/start")
+async def post_satellite_photo_start(request: Request, req: PhotoFrameStartRequest):
+    """Start the requesting satellite phone's own ambient photo frame (targeted
+    to it only). The phone calls this from its idle screensaver timer."""
+    from .main import _get_state
+    from .photo_frame import start_photo_frame_for_device
+    state = _get_state(request.app)
+    token = _connected_satellite_token(state, request)
+    if token is None:
+        return Response(status_code=401)
+    return await start_photo_frame_for_device(state, token, entity_id=req.entity_id)
+
+
+@router.post("/api/satellite/photo_frame/stop")
+async def post_satellite_photo_stop(request: Request):
+    """Stop the requesting satellite phone's photo frame."""
+    from .main import _get_state
+    from .photo_frame import stop_photo_frame_for_device
+    state = _get_state(request.app)
+    token = _connected_satellite_token(state, request)
+    if token is None:
+        return Response(status_code=401)
+    return await stop_photo_frame_for_device(state, token)
 
 
 @router.post("/api/openclaw/response")
