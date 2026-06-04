@@ -299,3 +299,18 @@ async def test_chat_retries_400_with_conservative_params():
     assert "max_tokens" not in retry_body
     assert retry_body["max_completion_tokens"] == 512
     assert "temperature" not in retry_body
+
+
+@pytest.mark.asyncio
+async def test_list_models_filters_non_chat_models():
+    """Responses-API-only tiers (-pro, codex) and media/embedding models 404 on
+    /chat/completions — they must not appear in the dropdown."""
+    reg = _registry_with(Provider("openai", "https://api.openai.com/v1", "sk-1"))
+    http = MagicMock()
+    http.get = AsyncMock(return_value=_http_response(body={"data": [
+        {"id": "gpt-5.5"}, {"id": "gpt-5.5-pro"}, {"id": "whisper-1"},
+        {"id": "tts-1-hd"}, {"id": "text-embedding-3-large"}, {"id": "sora-2"},
+        {"id": "gpt-5.1-codex"}, {"id": "o3-deep-research"}, {"id": "gpt-4o"},
+    ]}))
+    models = await CloudLLMClient(reg, http).list_models()
+    assert models == ["openai/gpt-4o", "openai/gpt-5.5"]

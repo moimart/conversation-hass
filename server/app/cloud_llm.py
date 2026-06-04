@@ -225,10 +225,20 @@ class CloudLLMClient:
         self.registry = registry
         self._http = http or httpx.AsyncClient(timeout=120.0)
 
+    # Model ids that are NOT usable through /chat/completions (or useless for a
+    # voice assistant): media/embedding/moderation models, legacy completions,
+    # and the Responses-API-only tiers ("-pro", codex, deep-research) — picking
+    # one of those just 404s. Substring match, lowercase.
+    _NON_CHAT = (
+        "embedding", "tts", "whisper", "audio", "realtime", "image", "sora",
+        "moderation", "transcribe", "babbage", "davinci", "instruct",
+        "computer-use", "deep-research", "-pro", "codex", "search",
+    )
+
     async def list_models(self) -> list[str]:
-        """Merged ["provider/model-id", ...] from every provider's GET /models.
-        Per-provider failures are swallowed so one dead provider doesn't blank
-        the list."""
+        """Merged ["provider/model-id", ...] from every provider's GET /models,
+        filtered to chat-completions-capable models. Per-provider failures are
+        swallowed so one dead provider doesn't blank the list."""
         out: list[str] = []
         for p in self.registry.providers():
             try:
@@ -241,7 +251,7 @@ class CloudLLMClient:
                 data = r.json() or {}
                 for m in data.get("data") or []:
                     mid = m.get("id")
-                    if mid:
+                    if mid and not any(s in mid.lower() for s in self._NON_CHAT):
                         out.append(f"{p.name}/{mid}")
             except Exception as e:
                 # status only — never key material
