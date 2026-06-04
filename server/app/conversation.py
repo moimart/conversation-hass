@@ -674,7 +674,11 @@ class ConversationManager:
                 messages,
                 self.mcp.tools_for_llm or None,
                 temperature=0.7,
-                max_tokens=self.num_predict,
+                # Reasoning models (gpt-5 family) spend completion budget on
+                # hidden reasoning tokens — the local num_predict (512) leaves
+                # zero room for the visible answer. Give cloud real headroom;
+                # replies stay short via the system prompt.
+                max_tokens=max(4096, self.num_predict),
             )
             wall = time.monotonic() - t0
             self._last_ollama_metrics = {
