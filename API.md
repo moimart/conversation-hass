@@ -27,6 +27,9 @@ auth.
 - [Conversation](#conversation)
   - [`POST /api/command`](#post-apicommand)
   - [`POST /api/speak`](#post-apispeak)
+- [Cloud LLM override](#cloud-llm-override)
+  - [`GET /api/cloud_llm`](#get-apicloud_llm)
+  - [`POST /api/cloud_llm`](#post-apicloud_llm)
 - [Audio control](#audio-control)
   - [`POST /api/mute`](#post-apimute)
   - [`GET /api/mute`](#get-apimute)
@@ -254,6 +257,51 @@ Possible error statuses:
 curl -XPOST http://hal:8765/api/speak \
      -H 'Content-Type: application/json' \
      -d '{"text":"Front door is open."}'
+```
+
+---
+
+## Cloud LLM override
+
+Routes every turn (tool calls included) to a cloud OpenAI-compatible provider,
+skipping the router model and OpenClaw. Providers + API keys are configured
+server-side only (`server/runtime/cloud_providers.json`, hot-reloaded) — keys
+are **never accepted or returned** by these endpoints. The enabled switch
+always boots OFF after a server restart; the model choice persists.
+
+### `GET /api/cloud_llm`
+
+**Response** `200`
+
+```json
+{ "enabled": false, "model": "openai/gpt-5.5", "options": ["openai/gpt-4o", "openai/gpt-5.5", "..."] }
+```
+
+`options` is the merged `provider/model-id` list fetched live from each
+configured provider's `/models` API, filtered to chat-completions-capable
+models.
+
+### `POST /api/cloud_llm`
+
+All fields optional. Dispatches through the same callbacks as the HA MQTT
+config entities, so HA stays in sync.
+
+**Request body**
+
+```json
+{ "enabled": true, "model": "openai/gpt-5.5", "refresh": true }
+```
+
+- `enabled` — flip the override on/off
+- `model` — pick a `provider/model-id` (must be in `options`)
+- `refresh` — re-fetch the model list from all providers
+
+**Response** `200` — same shape as `GET`.
+
+```bash
+curl -XPOST http://hal:8765/api/cloud_llm \
+     -H 'Content-Type: application/json' \
+     -d '{"enabled": true, "model": "openai/gpt-5.5"}'
 ```
 
 ---

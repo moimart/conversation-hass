@@ -185,6 +185,8 @@ Each key has a `<state>` topic the bridge publishes to (retained) and a
 | `photo_frame_entity`     | `<base>/config/photo_frame_entity/{state,set}`     | text       | HA `image.*` (or `camera.*`) entity_id; empty = feature disabled |
 | `display_auto_off_seconds`| `<base>/config/display_auto_off_seconds/{state,set}` | `0`-`7200` (number) | Idle-blank timeout. `0` disables auto-off (manual control only). |
 | `photo_frame_idle_minutes`| `<base>/config/photo_frame_idle_minutes/{state,set}` | `0`-`720` (number) | Auto-activate photo frame after this many idle minutes. `0` disables. |
+| `cloud_llm_enabled`      | `<base>/config/cloud_llm_enabled/{state,set}`      | `ON`/`OFF` | Cloud Override: route every turn (tools included) to the selected cloud model, skipping the router + OpenClaw. **Never persisted — always boots OFF.** |
+| `cloud_llm_model`        | `<base>/config/cloud_llm_model/{state,set}`        | `provider/model-id` | Options fetched live from each provider in `server/runtime/cloud_providers.json` (keys never appear on MQTT). Persists across restarts. |
 
 ---
 
