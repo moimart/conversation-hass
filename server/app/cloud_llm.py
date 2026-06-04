@@ -277,11 +277,22 @@ class CloudLLMClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        r = await self._http.post(
-            f"{p.base_url}/chat/completions",
-            headers=_auth_headers(p),
-            json=payload,
-        )
+        url = f"{p.base_url}/chat/completions"
+        r = await self._http.post(url, headers=_auth_headers(p), json=payload)
+        if r.status_code == 400:
+            # Newer OpenAI models (gpt-5 / o-series) reject the legacy params:
+            # max_tokens must be max_completion_tokens, and only the default
+            # temperature is allowed. Retry once with the conservative shape
+            # (other providers/models keep working with the first attempt).
+            detail = ""
+            try:
+                detail = ((r.json().get("error") or {}).get("message") or "")[:160]
+            except Exception:
+                pass
+            log.info(f"[cloud] 400 from {p.name} ({detail}) — retrying with conservative params")
+            payload.pop("temperature", None)
+            payload["max_completion_tokens"] = payload.pop("max_tokens", max_tokens)
+            r = await self._http.post(url, headers=_auth_headers(p), json=payload)
         r.raise_for_status()
         return _from_openai_response(r.json())
 

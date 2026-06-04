@@ -280,3 +280,22 @@ async def test_chat_unknown_provider_raises():
     reg = _registry_with(Provider("openai", "https://api.openai.com/v1", "sk-1"))
     with pytest.raises(RuntimeError):
         await CloudLLMClient(reg, MagicMock()).chat("mistral/large", [], None)
+
+
+@pytest.mark.asyncio
+async def test_chat_retries_400_with_conservative_params():
+    """gpt-5/o-series reject max_tokens + non-default temperature — the client
+    retries once with max_completion_tokens and no temperature."""
+    reg = _registry_with(Provider("openai", "https://api.openai.com/v1", "sk-1"))
+    bad = _http_response(status=400, body={"error": {"message": "Unsupported parameter: 'max_tokens'"}})
+    bad.raise_for_status = MagicMock()  # not reached — retried before raising
+    good = _http_response(body={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]})
+    http = MagicMock()
+    http.post = AsyncMock(side_effect=[bad, good])
+    out = await CloudLLMClient(reg, http).chat(
+        "openai/gpt-5-mini", [{"role": "user", "content": "x"}], None, max_tokens=512)
+    assert out["message"]["content"] == "ok"
+    retry_body = http.post.call_args_list[1].kwargs["json"]
+    assert "max_tokens" not in retry_body
+    assert retry_body["max_completion_tokens"] == 512
+    assert "temperature" not in retry_body
