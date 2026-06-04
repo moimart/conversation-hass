@@ -90,10 +90,16 @@ body.show-calendar #display-root .response-container {
     overflow-y: auto !important;
     margin: 0 !important;
     z-index: 7 !important;                       /* above the orb (6) */
-    background: rgba(8, 10, 14, 0.82) !important; /* readable over the orb */
+    /* Scrim derives from the THEME background so the theme's own --text keeps
+       its designed contrast: dark themes get a dark scrim, light themes (birch)
+       a light one — a fixed dark scrim made light themes' dark text unreadable.
+       The rgba lines are fallbacks for engines without color-mix. */
+    background: rgba(8, 10, 14, 0.82) !important;
+    background: color-mix(in srgb, var(--bg) 86%, transparent) !important;
     backdrop-filter: blur(10px) !important;
     -webkit-backdrop-filter: blur(10px) !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-color: color-mix(in srgb, var(--text) 16%, transparent) !important;
     border-radius: 14px !important;
     padding: 12px 14px !important;
     -webkit-overflow-scrolling: touch;
