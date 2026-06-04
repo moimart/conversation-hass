@@ -73,6 +73,11 @@ body.show-calendar #display-root .response-container {
     overflow-y: auto !important;
     margin: 0 !important;
 }
+/* PAL's reply panel: long replies used to climb up BEHIND the orb (the orb is
+   re-anchored at z-index 6 above the kiosk's z-index-1 panel). Keep the panel
+   ON TOP of the orb instead, behind a translucent blurred scrim so the text
+   stays readable over the bright orb; clamp theme panel-sized type down to
+   phone size; and let anything longer than the cap scroll with momentum. */
 #display-root .response-container {
     position: fixed !important;
     left: 14px !important;
@@ -84,4 +89,17 @@ body.show-calendar #display-root .response-container {
     max-height: 38vh !important;
     overflow-y: auto !important;
     margin: 0 !important;
+    z-index: 7 !important;                       /* above the orb (6) */
+    background: rgba(8, 10, 14, 0.82) !important; /* readable over the orb */
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 14px !important;
+    padding: 12px 14px !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+#display-root .response-text {
+    font-size: 16px !important;
+    line-height: 1.5 !important;
 }
