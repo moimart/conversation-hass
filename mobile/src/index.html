@@ -14,7 +14,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
     <style>
-        html, body { margin: 0; height: 100%; background: #0a0c10; overflow: hidden; }
+        /* Anti-flash dark lives on <html> ONLY: body's background must stay
+           unset here so style.css's `body { background: var(--bg) }` paints the
+           THEME background (sunset purple, birch beige, …). A body background
+           here would override every theme and render them black. */
+        html, body { margin: 0; height: 100%; overflow: hidden; }
+        html { background: #0a0c10; }
     </style>
     <!-- The shell bootstraps everything: reads config, runs onboarding or
          mounts the display + overlay. It loads app.js itself once HAL_CONFIG
