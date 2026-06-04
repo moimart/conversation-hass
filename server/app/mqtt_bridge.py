@@ -269,6 +269,23 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
         extra={"options": ["left", "right"]},
         parse=_validated_lower_parse({"left", "right"}),
     ),
+    # Cloud LLM override. The switch DELIBERATELY never persists — it boots
+    # OFF after every restart so cloud spend always requires a deliberate
+    # flip. The model select's options are "provider/model-id" entries merged
+    # from every provider configured in runtime/cloud_providers.json (keys
+    # live only in that file / env — never on MQTT).
+    ConfigEntity(
+        key="cloud_llm_enabled", platform="switch", name="Cloud Override",
+        icon="mdi:cloud-sync", default=False,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        parse=lambda p: p.strip(), serialize=_switch_serialize,
+    ),
+    ConfigEntity(
+        key="cloud_llm_model", platform="select", name="Cloud Model",
+        icon="mdi:cloud-braces", options_attr="cloud_model_options",
+        options_placeholder="(no cloud models)",
+        republish_if_empty=False,
+    ),
 ]
 
 _CONFIG_BY_KEY: dict[str, ConfigEntity] = {e.key: e for e in CONFIG_ENTITIES}
@@ -341,6 +358,7 @@ class MQTTBridge:
         # placeholder so the entity still appears in HA.
         self.voice_options: list[str] = []
         self.model_options: list[str] = []
+        self.cloud_model_options: list[str] = []
         self.theme_options: list[str] = [
             "dark", "sal", "glados", "matrix", "mother", "joi", "kitt",
             "birch", "odyssey", "japandi", "forest", "sunset",

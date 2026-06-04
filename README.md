@@ -227,6 +227,31 @@ Tagged versions also published (`:0.10`, etc. — the previous stable is preserv
 | `WYOMING_TTS_VOICE`  | (server default)                     | Voice name; empty = service default                        |
 | `SYSTEM_PROMPT_FILE` | `/app/system_prompt.txt`             | LLM system prompt path inside the container                |
 
+#### Cloud LLM override (optional)
+
+A **Cloud Override** switch (HA / `POST /api/cloud_llm`) routes the entire
+tool loop to a cloud OpenAI-compatible provider — skipping the router model
+and OpenClaw. **It always boots OFF after a restart** (cloud spend requires a
+deliberate flip); the chosen model persists. Providers + API keys live ONLY in
+a hot-reloadable secrets file `server/runtime/cloud_providers.json` (gitignored
+— keys never appear on MQTT, in logs, or in API responses):
+
+```json
+{
+  "providers": [
+    { "name": "openai",    "base_url": "https://api.openai.com/v1",    "api_key": "sk-..." },
+    { "name": "anthropic", "base_url": "https://api.anthropic.com/v1", "api_key": "sk-ant-..." }
+  ]
+}
+```
+
+The HA **Cloud Model** select lists `provider/model-id` entries fetched live
+from every configured provider's `/models` API (DeepSeek, Kimi, OpenRouter —
+any OpenAI-compatible endpoint works; Anthropic goes through its OpenAI-compat
+layer). Editing the file needs **no restart** (mtime hot-reload). Env fallback:
+`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` auto-create those two profiles.
+`CLOUD_PROVIDERS_PATH` overrides the file location.
+
 ### MCP & Memory
 
 | Variable           | Default                              | Description                                       |

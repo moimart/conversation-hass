@@ -153,6 +153,14 @@ class AppState:
     openclaw_enabled: bool = False
     openclaw_gateway_url: str = ""
     openclaw_workspace: str = ""
+    # Cloud LLM override. `cloud_llm_enabled` ALWAYS boots False (never read
+    # from runtime config) — cloud spend requires a deliberate flip each
+    # restart. The chosen model persists; options are "provider/model-id"
+    # entries from runtime/cloud_providers.json (keys never leave the server).
+    cloud_llm_client: object | None = None  # cloud_llm.CloudLLMClient
+    cloud_llm_enabled: bool = False
+    cloud_llm_model: str = ""
+    cloud_model_options: list = field(default_factory=list)
     # Display orientation
     display_orientation: str = "portrait"
     orb_side: str = "left"
@@ -605,6 +613,28 @@ async def lifespan(app: FastAPI):
     state.model_options = await _fetch_ollama_tags(
         os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     )
+
+    # Cloud LLM override: restore the persisted MODEL choice but NEVER the
+    # switch (always boots OFF). Prefetch the provider/model options for the
+    # HA select — best-effort and only when a provider is actually configured,
+    # so an unconfigured install doesn't stall startup.
+    state.cloud_llm_model = str(cfg.get("cloud_llm_model", "") or "")
+    state.cloud_llm_enabled = False
+    try:
+        from .cloud_llm import ProviderRegistry, CloudLLMClient, DEFAULT_PROVIDERS_PATH
+        _reg = ProviderRegistry(os.environ.get("CLOUD_PROVIDERS_PATH", DEFAULT_PROVIDERS_PATH))
+        if _reg.providers():
+            _probe = CloudLLMClient(_reg)
+            try:
+                state.cloud_model_options = await asyncio.wait_for(
+                    _probe.list_models(), timeout=8.0
+                )
+            finally:
+                await _probe.close()
+            log.info(f"Cloud LLM: {len(state.cloud_model_options)} models from "
+                     f"{len(_reg.providers())} provider(s) (override boots OFF)")
+    except Exception as e:
+        log.warning(f"Cloud LLM model prefetch failed: {type(e).__name__}")
 
     # MCP server: expose HAL's tools to external MCP clients.
     from .mcp_server import build_mcp_server

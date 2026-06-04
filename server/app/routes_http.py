@@ -42,6 +42,15 @@ class SpeakRequest(BaseModel):
     text: str
 
 
+class CloudLLMRequest(BaseModel):
+    # All optional: set the override switch, pick a model, or refresh the
+    # provider/model list. Keys are configured server-side only
+    # (runtime/cloud_providers.json) and are NEVER accepted or returned here.
+    enabled: bool | None = None
+    model: str | None = None
+    refresh: bool = False
+
+
 @router.get("/health")
 async def health(request: Request):
     from .main import _get_state
@@ -294,6 +303,55 @@ def _connected_satellite_token(state, request: Request) -> str | None:
             and token in state.satellite_ws):
         return token
     return None
+
+
+@router.get("/api/cloud_llm")
+async def get_cloud_llm(request: Request):
+    """Cloud override status. NEVER includes provider keys or endpoints."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    return {
+        "enabled": bool(state.cloud_llm_enabled),
+        "model": state.cloud_llm_model or "",
+        "options": list(state.cloud_model_options or []),
+    }
+
+
+@router.post("/api/cloud_llm")
+async def post_cloud_llm(request: Request, req: CloudLLMRequest):
+    """Set the cloud override switch / model, or refresh the model list.
+    Dispatches through the same MQTT config callbacks so HA stays in sync
+    (mirrors the post_photo_frame_idle pattern)."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    callbacks = state.mqtt_bridge._config_callbacks if state.mqtt_bridge else {}
+    if req.model is not None:
+        cb = callbacks.get("cloud_llm_model")
+        if cb is not None:
+            await cb(req.model)
+        else:
+            state.cloud_llm_model = (req.model or "").strip()
+    if req.enabled is not None:
+        cb = callbacks.get("cloud_llm_enabled")
+        if cb is not None:
+            await cb("on" if req.enabled else "off")
+        else:
+            state.cloud_llm_enabled = bool(req.enabled)
+    if req.refresh and state.cloud_llm_client is not None:
+        try:
+            opts = await state.cloud_llm_client.list_models()
+            if opts:
+                state.cloud_model_options = opts
+                if state.mqtt_bridge:
+                    state.mqtt_bridge.cloud_model_options = list(opts)
+                    await state.mqtt_bridge.publish_discovery()
+        except Exception as e:
+            log.warning(f"cloud models refresh failed: {type(e).__name__}")
+    return {
+        "enabled": bool(state.cloud_llm_enabled),
+        "model": state.cloud_llm_model or "",
+        "options": list(state.cloud_model_options or []),
+    }
 
 
 def _stream_fallback_upstream(state) -> tuple[str, dict] | None:

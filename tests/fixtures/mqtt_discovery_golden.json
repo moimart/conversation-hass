@@ -372,6 +372,33 @@
     }
   ],
   [
+    "homeassistant/select/hal-default/config_cloud_llm_model/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/cloud_llm_model/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:cloud-braces",
+      "name": "Cloud Model",
+      "options": [
+        "(no cloud models)"
+      ],
+      "state_topic": "hal/hal-default/config/cloud_llm_model/state",
+      "unique_id": "hal-default_config_cloud_llm_model"
+    }
+  ],
+  [
     "homeassistant/select/hal-default/config_display_orientation/config",
     {
       "availability": [
@@ -1020,6 +1047,32 @@
       "payload_on": "ON",
       "state_topic": "hal/hal-default/config/auto_theme/state",
       "unique_id": "hal-default_config_auto_theme"
+    }
+  ],
+  [
+    "homeassistant/switch/hal-default/config_cloud_llm_enabled/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/cloud_llm_enabled/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:cloud-sync",
+      "name": "Cloud Override",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/cloud_llm_enabled/state",
+      "unique_id": "hal-default_config_cloud_llm_enabled"
     }
   ],
   [

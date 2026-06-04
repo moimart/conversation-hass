@@ -127,6 +127,15 @@ class ConversationManager:
         self.openclaw_client = None  # OpenClawClient | None
         self.on_openclaw_media: Callable | None = None
 
+        # Cloud LLM override (cloud_llm.CloudLLMClient | None). When set (the
+        # "Cloud Override" switch is ON and a model is chosen) the whole tool
+        # loop runs against the cloud provider — router + OpenClaw are skipped.
+        # `_force_local_turn` is the per-turn fallback flag: a cloud failure
+        # retries the turn on local Ollama WITHOUT touching the user's switch.
+        self.cloud_llm = None
+        self.cloud_llm_model: str = ""
+        self._force_local_turn = False
+
         # Callbacks
         self.on_response: Callable[[str, bytes | None], Awaitable[None]] | None = None
         self.on_wake_word: Callable[[], Awaitable[None]] | None = None
@@ -248,19 +257,44 @@ class ConversationManager:
 
         route_s = 0.0
         try:
-            # Decide engine. OpenClaw is only "live" when its client is set —
-            # the OpenClaw Enabled toggle nulls it when off, so this check also
-            # covers configured-but-disabled. The router only runs when there's
-            # genuinely a choice to make (OpenClaw live) and it's turned on.
-            use_openclaw = self.openclaw_client is not None
-            if use_openclaw and self.router_enabled and self.router_model:
-                t_route = time.monotonic()
-                decision = await self._route_decision(full_text)
-                route_s = time.monotonic() - t_route
-                use_openclaw = (decision != "ollama")
-                log.info(f"[router] {self.router_model} → {decision} in {route_s:.2f}s")
+            # Cloud override wins over everything: skip the router AND OpenClaw
+            # and run the normal tool loop with the cloud transport (the branch
+            # lives in _chat_completion). A cloud failure falls back to local
+            # Ollama for THIS turn only — never flip the user's switch.
+            cloud_handled = False
+            use_openclaw = False
+            if self.cloud_llm is not None and self.cloud_llm_model:
+                cloud_handled = True
+                try:
+                    response_text = await self._run_llm_with_tools(full_text)
+                except Exception as e:
+                    log.error(f"[cloud] {self.cloud_llm_model} failed ({e}); "
+                              f"falling back to local Ollama for this turn")
+                    # The failed attempt already appended the user msg to
+                    # history — pop it so the local retry doesn't double-append.
+                    if self.history and self.history[-1].get("role") == "user":
+                        self.history.pop()
+                    self._force_local_turn = True
+                    try:
+                        response_text = await self._run_llm_with_tools(full_text)
+                    finally:
+                        self._force_local_turn = False
+            else:
+                # Decide engine. OpenClaw is only "live" when its client is set —
+                # the OpenClaw Enabled toggle nulls it when off, so this check also
+                # covers configured-but-disabled. The router only runs when there's
+                # genuinely a choice to make (OpenClaw live) and it's turned on.
+                use_openclaw = self.openclaw_client is not None
+                if use_openclaw and self.router_enabled and self.router_model:
+                    t_route = time.monotonic()
+                    decision = await self._route_decision(full_text)
+                    route_s = time.monotonic() - t_route
+                    use_openclaw = (decision != "ollama")
+                    log.info(f"[router] {self.router_model} → {decision} in {route_s:.2f}s")
 
-            if use_openclaw:
+            if cloud_handled:
+                pass  # response_text already produced by the cloud override
+            elif use_openclaw:
                 try:
                     oc_response = await self._run_openclaw(full_text)
                     response_text = oc_response.text or ""
@@ -626,6 +660,30 @@ class ConversationManager:
         instance attribute is untouched so subsequent rounds/turns go
         back to the primary.
         """
+        # Cloud override transport: tool-loop calls go to the cloud provider.
+        # Utility calls (with_tools=False — e.g. history compaction) stay on
+        # local Ollama so background work never burns cloud tokens, and
+        # `_force_local_turn` routes the per-turn failure fallback locally.
+        # Exceptions propagate (no fake-response swallow like the Ollama path)
+        # so on_silence can retry the turn on Ollama.
+        if (self.cloud_llm is not None and self.cloud_llm_model
+                and with_tools and not self._force_local_turn):
+            t0 = time.monotonic()
+            response = await self.cloud_llm.chat(
+                self.cloud_llm_model,
+                messages,
+                self.mcp.tools_for_llm or None,
+                temperature=0.7,
+                max_tokens=self.num_predict,
+            )
+            wall = time.monotonic() - t0
+            self._last_ollama_metrics = {
+                "model": self.cloud_llm_model,
+                "gen_n": 0, "gen_tps": 0.0, "prompt_tps": 0.0,
+            }
+            log.info(f"[cloud] {self.cloud_llm_model} wall={wall:.2f}s msgs={len(messages)}")
+            return response
+
         active_model = (model_override or self.ollama_model)
         payload = {
             "model": active_model,

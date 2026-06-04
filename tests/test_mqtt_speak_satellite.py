@@ -53,6 +53,8 @@ def _state(sat_ws):
         display_orientation="portrait", orb_side="left",
         router_enabled=True, router_model="r",
         voice_options=[], model_options=[],
+        cloud_model_options=[], cloud_llm_model="", cloud_llm_enabled=False,
+        cloud_llm_client=None,
     )
 
 

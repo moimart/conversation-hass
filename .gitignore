@@ -15,3 +15,6 @@ CLAUDE.md
 .coverage
 .coverage.*
 htmlcov/
+
+# Cloud LLM provider secrets (defense-in-depth; runtime/ is already ignored)
+server/runtime/cloud_providers.json

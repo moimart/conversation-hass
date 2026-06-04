@@ -294,6 +294,93 @@ class TestChatCompletion:
             assert "trouble" in result["message"]["content"]
 
 
+class TestCloudOverride:
+    """Cloud LLM override: transport swap only — router/OpenClaw skipped,
+    per-turn local fallback, summarization stays local, switch never flipped."""
+
+    def _ollama_resp(self, content="local says hi"):
+        r = MagicMock()
+        r.status_code = 200
+        r.raise_for_status = MagicMock()
+        r.json.return_value = {"message": {"content": content}}
+        return r
+
+    def _enable_cloud(self, conversation, chat=None):
+        cloud = MagicMock()
+        cloud.chat = chat or AsyncMock(return_value={"message": {"content": "cloud says hi"}})
+        conversation.cloud_llm = cloud
+        conversation.cloud_llm_model = "openai/gpt-test"
+        return cloud
+
+    @pytest.mark.asyncio
+    async def test_chat_completion_delegates_to_cloud(self, conversation):
+        cloud = self._enable_cloud(conversation)
+        with patch.object(conversation._http, "post", new_callable=AsyncMock) as mock_post:
+            out = await conversation._chat_completion([{"role": "user", "content": "x"}])
+        assert out["message"]["content"] == "cloud says hi"
+        cloud.chat.assert_awaited_once()
+        mock_post.assert_not_awaited()                  # Ollama HTTP untouched
+        assert conversation._last_ollama_metrics["model"] == "openai/gpt-test"
+
+    @pytest.mark.asyncio
+    async def test_with_tools_false_stays_local(self, conversation):
+        cloud = self._enable_cloud(conversation)
+        with patch.object(conversation._http, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = self._ollama_resp("summary")
+            out = await conversation._chat_completion(
+                [{"role": "user", "content": "summarize"}], with_tools=False)
+        assert out["message"]["content"] == "summary"
+        cloud.chat.assert_not_awaited()                 # compaction never burns cloud tokens
+
+    @pytest.mark.asyncio
+    async def test_cloud_skips_router_and_openclaw(self, conversation):
+        self._enable_cloud(conversation)
+        conversation.openclaw_client = MagicMock()
+        conversation.router_enabled = True
+        conversation.router_model = "tiny"
+        conversation._route_decision = AsyncMock(return_value="openclaw")
+        conversation._run_openclaw = AsyncMock()
+        await conversation.process_text("hey homie do the thing")
+        await conversation.on_silence()
+        conversation._route_decision.assert_not_awaited()
+        conversation._run_openclaw.assert_not_awaited()
+        args = conversation.on_response.call_args
+        assert args[0][0] == "cloud says hi"
+
+    @pytest.mark.asyncio
+    async def test_cloud_failure_falls_back_to_local_for_the_turn(self, conversation):
+        cloud = self._enable_cloud(conversation, chat=AsyncMock(side_effect=RuntimeError("503")))
+        with patch.object(conversation._http, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = self._ollama_resp("local fallback answer")
+            await conversation.process_text("hey homie hello")
+            await conversation.on_silence()
+        args = conversation.on_response.call_args
+        assert args[0][0] == "local fallback answer"
+        assert conversation.cloud_llm is cloud           # switch NOT flipped
+        assert conversation._force_local_turn is False   # flag cleared
+        # the failed cloud attempt must not double-append the user message
+        user_msgs = [m for m in conversation.history if m["role"] == "user"]
+        assert len(user_msgs) == 1
+
+    @pytest.mark.asyncio
+    async def test_cloud_tool_loop_round_trip(self, conversation):
+        cloud = self._enable_cloud(conversation, chat=AsyncMock(side_effect=[
+            {"message": {"content": "", "_openai_tool_call_ids": ["id1"],
+                         "tool_calls": [{"function": {"name": "test_tool", "arguments": {"x": 1}}}]}},
+            {"message": {"content": "tool done, Master"}},
+        ]))
+        conversation.mcp.call_tool = AsyncMock(return_value="ok")
+        await conversation.process_text("hey homie use the tool")
+        await conversation.on_silence()
+        assert cloud.chat.await_count == 2
+        conversation.mcp.call_tool.assert_awaited_once_with("test_tool", {"x": 1})
+        # round 2 received the tool result paired after the stashed-id message
+        round2_messages = cloud.chat.await_args_list[1].args[1]
+        assert round2_messages[-1]["role"] == "tool"
+        args = conversation.on_response.call_args
+        assert args[0][0] == "tool done, Master"
+
+
 class TestSystemPrompt:
     def test_returns_system_prompt(self, conversation):
         prompt = conversation._build_system_prompt()

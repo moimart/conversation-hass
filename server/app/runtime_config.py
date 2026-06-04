@@ -44,6 +44,10 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "orb_side":                  ("ORB_SIDE", "left"),
     "router_enabled":            ("ROUTER_ENABLED", False),
     "router_model":              ("ROUTER_MODEL", ""),
+    # Cloud override: only the MODEL persists. `cloud_llm_enabled` is
+    # deliberately NOT a runtime-config key — the switch must boot OFF after
+    # every restart (no accidental cloud spend).
+    "cloud_llm_model":           ("CLOUD_LLM_MODEL", ""),
 }
 
 

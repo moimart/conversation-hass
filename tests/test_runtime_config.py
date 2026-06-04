@@ -131,3 +131,16 @@ def test_photo_frame_show_clock_coerced_from_env(tmp_path, monkeypatch):
     cfg = RuntimeConfig(str(tmp_path / "config.json"))
     values = cfg.load()
     assert values["photo_frame_show_clock"] is False
+
+
+def test_cloud_llm_model_persists_but_enabled_never_does(tmp_path):
+    # The MODEL is a runtime-config key (persists across restarts); the
+    # ENABLED switch deliberately is NOT — it must boot OFF every restart.
+    from server.app.runtime_config import DEFAULT_KEYS
+    assert "cloud_llm_model" in DEFAULT_KEYS
+    assert "cloud_llm_enabled" not in DEFAULT_KEYS
+    cfg = RuntimeConfig(str(tmp_path / "config.json"))
+    cfg.load()
+    cfg.set("cloud_llm_model", "openai/gpt-test")
+    reloaded = RuntimeConfig(str(tmp_path / "config.json")).load()
+    assert reloaded["cloud_llm_model"] == "openai/gpt-test"

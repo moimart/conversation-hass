@@ -433,6 +433,11 @@ async def wire(state, bridge) -> None:
     # Router model
     bridge._cached_config["router_enabled"] = state.router_enabled
     bridge._cached_config["router_model"] = state.router_model
+    # Cloud LLM override: options prefetched at startup; switch ALWAYS OFF at
+    # boot (never read from runtime config).
+    bridge.cloud_model_options = list(state.cloud_model_options)
+    bridge._cached_config["cloud_llm_model"] = state.cloud_llm_model
+    bridge._cached_config["cloud_llm_enabled"] = False
     async def _mqtt_calendar_show(args: dict):
         view = (args.get("view") or "month").lower()
         calendar_name = (args.get("calendar_name") or "").strip()
@@ -676,6 +681,62 @@ async def wire(state, bridge) -> None:
 
     bridge.set_config_callback("router_enabled", _cfg_router_enabled)
     bridge.set_config_callback("router_model", _cfg_router_model)
+
+    # --- Cloud LLM override -------------------------------------------------
+    # Switch state is NEVER persisted (boots OFF every restart — deliberate
+    # flip required for cloud spend). The model choice persists. Keys live
+    # only in runtime/cloud_providers.json / env — never on MQTT.
+
+    async def _refresh_cloud_models() -> None:
+        if state.cloud_llm_client is None:
+            return
+        try:
+            opts = await asyncio.wait_for(state.cloud_llm_client.list_models(), timeout=8.0)
+            if opts:
+                state.cloud_model_options = opts
+                bridge.cloud_model_options = list(opts)
+                await bridge.publish_discovery()  # re-render the select options
+        except Exception as e:
+            # keep stale options — one flaky provider shouldn't blank a
+            # working dropdown
+            log.warning(f"cloud models refresh failed: {type(e).__name__}")
+
+    async def _cfg_cloud_llm_enabled(enabled):
+        val = str(enabled).strip().lower() in ("true", "1", "yes", "on")
+        state.cloud_llm_enabled = val
+        if val:
+            if state.cloud_llm_client is None:
+                from .cloud_llm import CloudLLMClient, ProviderRegistry, DEFAULT_PROVIDERS_PATH
+                state.cloud_llm_client = CloudLLMClient(ProviderRegistry(
+                    os.environ.get("CLOUD_PROVIDERS_PATH", DEFAULT_PROVIDERS_PATH)
+                ))
+            await _refresh_cloud_models()
+            if state.conversation is not None:
+                state.conversation.cloud_llm = state.cloud_llm_client
+                state.conversation.cloud_llm_model = state.cloud_llm_model
+            log.info(f"Cloud override ENABLED (model={state.cloud_llm_model or '(none chosen)'})")
+        else:
+            if state.conversation is not None:
+                state.conversation.cloud_llm = None
+            log.info("Cloud override disabled")
+        # NOTE: deliberately no _persist() — see header comment.
+        await bridge.publish_config("cloud_llm_enabled", val)
+
+    async def _cfg_cloud_llm_model(name: str):
+        name = (name or "").strip()
+        if name.startswith("("):  # the "(no cloud models)" placeholder
+            return
+        if name and state.cloud_model_options and name not in state.cloud_model_options:
+            log.warning(f"config cloud_llm_model rejected: {name!r}")
+            return
+        state.cloud_llm_model = name
+        if state.conversation is not None:
+            state.conversation.cloud_llm_model = name
+        await _persist("cloud_llm_model", name)
+        await bridge.publish_config("cloud_llm_model", name)
+
+    bridge.set_config_callback("cloud_llm_enabled", _cfg_cloud_llm_enabled)
+    bridge.set_config_callback("cloud_llm_model", _cfg_cloud_llm_model)
 
     bridge.on_volume_set = _mqtt_volume
     bridge.on_mute_set = _mqtt_mute
