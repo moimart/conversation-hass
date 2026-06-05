@@ -7,6 +7,7 @@ whether the LLM processes the utterance as a command/question.
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Callable, Awaitable
 
@@ -37,6 +38,28 @@ single sensor value (e.g. "turn off the lamp", "what's the bedroom temperature")
 automations, media, multi-step requests, or anything ambiguous.
 Reply with exactly one word: SIMPLE or COMPLEX."""
 
+
+# Deterministic kiosk-display intents — matched BEFORE any engine (cloud,
+# router, OpenClaw, local LLM). "Show me the conversation log" must ALWAYS
+# open the view: agentic models sometimes answer such commands in prose
+# instead of calling the tool, which reads back the whole history out loud.
+# Patterns are conservative (explicit verb + the view's name) so anything
+# nuanced ("what did I ask yesterday?") still goes to the LLM.
+_DISPLAY_INTERCEPTS: list[tuple["re.Pattern[str]", str, str]] = [
+    (re.compile(r"\b(show|open|display|bring up|pull up|see)\b.{0,40}\b(conversation|chat) (log|history)\b", re.I),
+     "show_conversation_log", "Here's the conversation log."),
+    (re.compile(r"\b(hide|close|dismiss)\b.{0,40}\b(conversation|chat) (log|history)\b", re.I),
+     "hide_conversation_log", "Conversation log closed."),
+]
+
+
+def _match_display_intercept(text: str) -> tuple[str, str] | None:
+    """(tool_name, spoken_confirmation) for a deterministic display command,
+    or None to let the LLM handle the turn."""
+    for pattern, tool_name, spoken in _DISPLAY_INTERCEPTS:
+        if pattern.search(text):
+            return tool_name, spoken
+    return None
 
 
 class ConversationManager:
@@ -276,7 +299,16 @@ class ConversationManager:
             # Ollama for THIS turn only — never flip the user's switch.
             cloud_handled = False
             use_openclaw = False
-            if self.cloud_llm is not None and self.cloud_llm_model:
+            intercepted = _match_display_intercept(full_text)
+            if intercepted is not None:
+                # Deterministic display command: call the tool directly and
+                # answer with a canned confirmation — no engine involved.
+                tool_name, response_text = intercepted
+                await self.mcp.call_tool(tool_name, {})
+                self.history.append({"role": "user", "content": full_text})
+                self.history.append({"role": "assistant", "content": response_text})
+                log.info(f"[intercept] display intent → {tool_name} (no LLM)")
+            elif self.cloud_llm is not None and self.cloud_llm_model:
                 cloud_handled = True
                 try:
                     response_text = await self._run_llm_with_tools(full_text)
@@ -305,8 +337,8 @@ class ConversationManager:
                     use_openclaw = (decision != "ollama")
                     log.info(f"[router] {self.router_model} → {decision} in {route_s:.2f}s")
 
-            if cloud_handled:
-                pass  # response_text already produced by the cloud override
+            if intercepted is not None or cloud_handled:
+                pass  # response_text already produced above
             elif use_openclaw:
                 try:
                     oc_response = await self._run_openclaw(full_text)
