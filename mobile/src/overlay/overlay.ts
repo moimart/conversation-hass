@@ -55,12 +55,17 @@ export function mountOverlay(cfg: HalConfig): void {
   logBtn.setAttribute("aria-label", "Conversation log");
   logBtn.innerHTML = logIcon();
   logBtn.addEventListener("click", () => {
-    const api = (window as unknown as {
+    const getApi = () => (window as unknown as {
       HALConversationLog?: { open: () => void; close: () => void };
     }).HALConversationLog;
+    const api = getApi();
     if (api) {
       if (document.body.classList.contains("show-conversation-log")) api.close();
       else api.open();
+    } else {
+      // app.js may still be booting right after launch — try again shortly
+      // instead of silently doing nothing.
+      setTimeout(() => getApi()?.open(), 800);
     }
   });
   root.appendChild(logBtn);

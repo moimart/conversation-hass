@@ -198,15 +198,19 @@ export function mountConversationLog(root) {
         return { frag, lastKey };
     }
 
-    function setNotice(cls, text) {
+    function setNotice(cls, text, retryable = false) {
         bodyEl.innerHTML = "";
         const el = document.createElement("div");
         el.className = `clog-empty ${cls || ""}`;
         el.textContent = text;
+        if (retryable) {
+            el.style.cursor = "pointer";
+            el.addEventListener("click", () => initialLoad());
+        }
         bodyEl.appendChild(el);
     }
 
-    async function initialLoad() {
+    async function initialLoad(attempt = 0) {
         bodyEl.innerHTML = "";
         renderedRows = 0;
         oldestId = null;
@@ -217,7 +221,13 @@ export function mountConversationLog(root) {
             data = await fetchPage(null);
         } catch (e) {
             console.warn("[clog] fetch failed:", e);
-            setNotice("error", "Conversation log unavailable.");
+            // Cold-start grace: a tap right after app launch can race the
+            // network stack — retry once automatically, then tap-to-retry.
+            if (attempt < 1 && isShown()) {
+                setTimeout(() => { if (isShown()) initialLoad(attempt + 1); }, 1500);
+                return;
+            }
+            setNotice("error", "Conversation log unavailable — tap to retry.", true);
             return;
         }
         if (data.disabled) {
