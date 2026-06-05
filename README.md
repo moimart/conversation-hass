@@ -17,6 +17,7 @@
 - 👁️ **Shows itself** through a kiosk inspired by HAL-inspired AI system designs — an animated eye and 16 switchable themes, including two with looping in-orb state videos that change with PAL's mood
 - 📸 **Displays cameras, images, and videos** inside the orb (HA snapshots, live WebRTC, RTSP, HLS playlists)
 - 📅 **Pops up a calendar overlay** (month / week / day) pulled from any HA calendar, on voice or HA button
+- 📜 **Keeps a conversation log** — every request, answer, and announcement persisted forever in PostgreSQL, browsable full-screen on the kiosk (by voice or HA button) and in the companion app, with timestamps and origin labels (which phone asked, which channel announced)
 - 🖼️ **Photo frame mode** — ambient full-screen image from a configurable HA `image.*` entity, white drop-shadow clock + Ken-Burns zoom, auto-crossfades when HA rotates the photo, dismisses on any kiosk action; **optional auto-activate after N minutes of inactivity**
 - 💤 **Display power (DPMS)** — actually powers the panel off (not just a black overlay), with optional idle auto-blank; wakes automatically on the next wake word / PTT / TTS / takeover. Same code path on RPi (Wayland) and x86 (Wayland or X11).
 - 🎯 **Wake word** *or* **Push-to-Talk** — your choice per situation (PTT triggerable from HA, an HTTP call, a WebSocket, or the desktop popup app)
@@ -315,6 +316,22 @@ See [`openclaw-channel/hal/README.md`](./openclaw-channel/hal/README.md) for ful
 |------------------------------|---------|----------------------------------------------------------------------|
 | `CALENDAR_DEFAULT_SOURCE`    | (empty) | Default calendar name; empty = merge all HA calendars                |
 | `CALENDAR_DISMISS_SECONDS`   | `30`    | Default duration the overlay stays up before auto-dismissing         |
+
+### Conversation log
+
+| Variable               | Default                                              | Description                                                       |
+|------------------------|------------------------------------------------------|-------------------------------------------------------------------|
+| `POSTGRES_PASSWORD`    | (empty = log disabled)                               | Password for the bundled `postgres` service (compose-network only, no published port) |
+| `CONVERSATION_LOG_DSN` | `postgresql://hal:${POSTGRES_PASSWORD}@postgres:5432/hal` | Override to point at an external PostgreSQL instead              |
+
+Every user request, assistant answer, and announcement is stored forever
+(origin-labeled: which paired phone asked, which channel — `api` / `mqtt` /
+`openclaw` / `voice-tool` — announced). Browse it full-screen: say *"show the
+conversation log"* (kiosk, auto-dismisses after 30 s of no interaction), press
+the HA **Show Conversation Log** button, or tap the list button in the
+companion app (stays open until ✕). Scroll up to page older history in. A
+postgres outage never breaks a turn — writes are dropped with a warning and
+the connection heals itself.
 
 ### Sendspin (multi-room audio)
 

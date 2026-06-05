@@ -31,6 +31,7 @@ each, and the resulting HA entities.
   - [Display payloads](#display-payloads)
   - [Push-to-Talk](#push-to-talk)
   - [Calendar overlay](#calendar-overlay)
+  - [Conversation log](#conversation-log)
   - [Live runtime config](#live-runtime-config)
 - [Published topics (HAL → HA)](#published-topics)
 - [HA Discovery entities](#ha-discovery-entities)
@@ -64,6 +65,9 @@ hal/<device_id>/
 │
 ├── calendar/show/set                         JSON {view, calendar_name?, duration_s?}
 ├── calendar/hide/set                         bare trigger
+│
+├── conversation_log/show/set                 bare trigger
+├── conversation_log/hide/set                 bare trigger
 │
 ├── ptt/start                                 bare trigger
 ├── ptt/end                                   bare trigger
@@ -139,6 +143,17 @@ HA discovery buttons) works.
 |---|---|---|
 | `<base>/calendar/show/set` | Several forms:<br>• `month` / `week` / `day` (bare string)<br>• Calendar name (bare string)<br>• JSON `{"view": "...", "calendar_name": "...", "anchor_date": "YYYY-MM-DD", "duration_s": N}` | Show the calendar overlay. Empty/no-match `calendar_name` = merge all HA calendars. Optional `anchor_date` (ISO `YYYY-MM-DD`) anchors a specific day/week/month — omit for today. |
 | `<base>/calendar/hide/set` | (any) | Dismiss the overlay early. |
+
+### Conversation log
+
+Full-screen browsable history of every request, answer, and announcement
+(PostgreSQL-backed — see the README's *Conversation log* section). Shown on
+the kiosk + web mirrors; auto-dismisses after 30 s without interaction.
+
+| Topic | Payload | Effect |
+|---|---|---|
+| `<base>/conversation_log/show/set` | (any) | Open the conversation log view, scrolled to the newest entries. |
+| `<base>/conversation_log/hide/set` | (any) | Dismiss the view early. |
 
 ### Photo frame
 
@@ -300,6 +315,8 @@ the theme catalog / voice list / model list changes.
 | **Show Calendar — Week**     | `calendar/show/set`  payload `{"view":"week"}`  |
 | **Show Calendar — Day**      | `calendar/show/set`  payload `{"view":"day"}`   |
 | **Hide Calendar**            | `calendar/hide/set`  payload empty             |
+| **Show Conversation Log**    | `conversation_log/show/set` payload `PRESS`    |
+| **Hide Conversation Log**    | `conversation_log/hide/set` payload `PRESS`    |
 | **PTT Start**                | `ptt/start`          payload `PRESS`           |
 | **PTT End**                  | `ptt/end`            payload `PRESS`           |
 | **PTT Cancel**               | `ptt/cancel`         payload `PRESS`           |

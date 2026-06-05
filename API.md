@@ -27,6 +27,7 @@ auth.
 - [Conversation](#conversation)
   - [`POST /api/command`](#post-apicommand)
   - [`POST /api/speak`](#post-apispeak)
+  - [`GET /api/conversation/log`](#get-apiconversationlog)
 - [Cloud LLM override](#cloud-llm-override)
   - [`GET /api/cloud_llm`](#get-apicloud_llm)
   - [`POST /api/cloud_llm`](#post-apicloud_llm)
@@ -257,6 +258,48 @@ Possible error statuses:
 curl -XPOST http://hal:8765/api/speak \
      -H 'Content-Type: application/json' \
      -d '{"text":"Front door is open."}'
+```
+
+### `GET /api/conversation/log`
+
+One page of the **persistent conversation log** (PostgreSQL-backed; see the
+README's *Conversation log* section). Every user request, assistant answer,
+and announcement is stored with a timestamp and an origin label. Rows come
+back **oldest → newest** within the page.
+
+**Query parameters**
+
+| Param | Default | Notes |
+|---|---|---|
+| `limit` | `100` | Rows per page, clamped to 1–500 |
+| `before_id` | (none) | Keyset pagination: return rows with `id` **below** this — pass the oldest `id` you have to page back through history |
+
+**Response** `200`
+
+```json
+{
+  "rows": [
+    {"id": 41, "ts": "2026-06-05T07:50:32.072125+00:00", "kind": "user",
+     "text": "what time is it", "origin": "Moi's Pixel", "meta": null},
+    {"id": 42, "ts": "2026-06-05T07:50:35.901482+00:00", "kind": "assistant",
+     "text": "It is ten to eight, Master.", "origin": null, "meta": null}
+  ],
+  "has_more": true
+}
+```
+
+| Field | Notes |
+|---|---|
+| `kind` | `user` \| `assistant` \| `announcement` |
+| `origin` | `null` for kiosk voice turns; the paired device's name for satellite turns; the source channel (`api`, `mqtt`, `openclaw`, `voice-tool`) for announcements. Never the pairing token. |
+| `has_more` | `true` while older rows exist (keep paging with `before_id`) |
+
+Degraded shapes: `{"rows": [], "has_more": false, "disabled": true}` when no
+DSN is configured, and `503` `{"error": "log_unavailable", "rows": []}` while
+postgres is unreachable (the server reconnects lazily).
+
+```bash
+curl 'http://hal:8765/api/conversation/log?limit=50&before_id=1200'
 ```
 
 ---
@@ -694,6 +737,8 @@ and LLM response. Volume / mute / theme-picker UI clients can use this.
 | `video_stop`      | `{}` |
 | `show_calendar`   | See [Calendar overlay](#calendar-overlay-payload) below |
 | `hide_calendar`   | `{}` |
+| `show_conversation_log` | `{"duration_s": N?}` — open the full-screen conversation log view (the client fetches rows itself via [`GET /api/conversation/log`](#get-apiconversationlog)) |
+| `hide_conversation_log` | `{}` |
 | `ptt_active`      | `{"active": bool}` — PTT chip / orb glow on the kiosk |
 
 **Client → server**:
@@ -756,6 +801,7 @@ endpoints so the browser only has to talk to one origin.
 | `GET`  | `/` | Kiosk `index.html` |
 | `GET`  | `/style.css`, `/app.js`, `/calendar.css`, `/calendar.js`, `/fonts/...` | Kiosk static assets (image-baked) |
 | `GET`  | `/api/themes` | Proxy to AI server `/api/themes` |
+| `GET`  | `/api/conversation/log` | Proxy to AI server [`/api/conversation/log`](#get-apiconversationlog) (query string forwarded) |
 | `GET`  | `/themes/{name}/{filename}` | Proxy to AI server theme assets |
 | `GET`  | `/ws` | Kiosk WebSocket (see message table below) |
 | `POST` | `/api/snapshot` | Receives JPEG from a kiosk client, forwards to AI server `/api/snapshot` |
@@ -768,7 +814,7 @@ relays AI-server messages plus its own local sync:
 
 | `type` | Origin | Payload |
 |---|---|---|
-| `state`, `transcription`, `response`, `wake`, `set_theme`, `themes_changed`, `show_camera`, `stream_*`, `webrtc_signal`, `play_video`, `video_stop`, `show_calendar`, `hide_calendar`, `ptt_active` | relayed from AI server | as in [`/ws/ui`](#wsui) |
+| `state`, `transcription`, `response`, `wake`, `set_theme`, `themes_changed`, `show_camera`, `stream_*`, `webrtc_signal`, `play_video`, `video_stop`, `show_calendar`, `hide_calendar`, `show_conversation_log`, `hide_conversation_log`, `ptt_active` | relayed from AI server | as in [`/ws/ui`](#wsui) |
 | `mute_sync` | local | `{"muted": bool}` |
 | `volume_sync` | local | `{"level": 0.0–1.0}` |
 

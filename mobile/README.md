@@ -20,7 +20,10 @@ at the AI server directly.
   `window.HAL_CONFIG = {serverBaseUrl, wsUrl, token, pinLandscape}`, then loads
   the copied `app.js`, which connects to the server's `ws://host:8765/ws/ui` feed
   (with `?token=` → the server classifies it as a satellite) and renders
-  state/themes/photo-frame/calendar exactly like the kiosk.
+  state/themes/photo-frame/calendar/conversation-log exactly like the kiosk.
+  A list button next to the gear opens the **conversation log** (persistent
+  household history; no auto-dismiss on mobile — close with ✕). Asking PAL to
+  show it by voice from a phone opens it on that phone only.
 - **Input**: a bottom overlay bar (`src/overlay`) sends text and on-device speech
   (Capacitor speech-recognition → text) to `POST /api/command` with the device
   token. The server runs the turn in the shared conversation and routes the
