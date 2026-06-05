@@ -339,13 +339,16 @@ async def get_conversation_log(request: Request):
 
 @router.get("/api/cloud_llm")
 async def get_cloud_llm(request: Request):
-    """Cloud override status. NEVER includes provider keys or endpoints."""
+    """Cloud override status. NEVER includes provider keys or endpoints.
+    `available` tells clients whether any cloud provider is configured at all
+    (the mobile settings sheet hides its toggle when false)."""
     from .main import _get_state
     state = _get_state(request.app)
     return {
         "enabled": bool(state.cloud_llm_enabled),
         "model": state.cloud_llm_model or "",
         "options": list(state.cloud_model_options or []),
+        "available": state.cloud_llm_client is not None,
     }
 
 
@@ -383,6 +386,7 @@ async def post_cloud_llm(request: Request, req: CloudLLMRequest):
         "enabled": bool(state.cloud_llm_enabled),
         "model": state.cloud_llm_model or "",
         "options": list(state.cloud_model_options or []),
+        "available": state.cloud_llm_client is not None,
     }
 
 

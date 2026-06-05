@@ -127,6 +127,13 @@ function showSettings(cfg: HalConfig): void {
     <div class="hal-sheet">
       <div class="hal-sheet-title">Connection</div>
       <div class="hal-sheet-sub">${cfg.serverName ? cfg.serverName + " · " : ""}${cfg.serverBaseUrl}</div>
+      <div class="hal-sheet-row" id="hal-cloud-row" hidden>
+        <div class="hal-sheet-row-text">
+          <div class="hal-sheet-row-label">Cloud LLM</div>
+          <div class="hal-sheet-row-sub" id="hal-cloud-model"></div>
+        </div>
+        <button class="hal-switch" id="hal-cloud-toggle" role="switch" aria-checked="false" aria-label="Cloud LLM"></button>
+      </div>
       <button class="hal-sheet-btn danger" id="hal-repair">Re-pair / change server</button>
       <button class="hal-sheet-btn" id="hal-cancel">Cancel</button>
     </div>`;
@@ -137,6 +144,53 @@ function showSettings(cfg: HalConfig): void {
   back.querySelector("#hal-repair")!.addEventListener("click", async () => {
     await clearConfig();
     location.reload();   // boot.ts re-runs with no config → onboarding (code entry)
+  });
+  void mountCloudToggle(cfg, back);
+}
+
+// "Cloud LLM" switch (the server calls it the cloud override). Only shown when
+// the server reports a configured provider (`available`) — most installs are
+// fully local and shouldn't see a dead toggle. State lives server-side; the
+// switch reflects whatever the server answers (HA/MQTT stay in sync because
+// POST /api/cloud_llm dispatches through the same config callbacks).
+async function mountCloudToggle(cfg: HalConfig, back: HTMLElement): Promise<void> {
+  const row = back.querySelector<HTMLElement>("#hal-cloud-row");
+  const toggle = back.querySelector<HTMLButtonElement>("#hal-cloud-toggle");
+  const modelEl = back.querySelector<HTMLElement>("#hal-cloud-model");
+  if (!row || !toggle || !modelEl) return;
+  const headers = {
+    "Content-Type": "application/json",
+    ...(cfg.token ? { Authorization: `Bearer ${cfg.token}` } : {}),
+  };
+  const render = (s: { enabled: boolean; model: string }) => {
+    toggle.classList.toggle("on", s.enabled);
+    toggle.setAttribute("aria-checked", String(s.enabled));
+    modelEl.textContent = s.model || "";
+  };
+  try {
+    const res = await fetch(`${cfg.serverBaseUrl}/api/cloud_llm`, { headers });
+    if (!res.ok) return;
+    const status = await res.json();
+    if (!status.available) return;   // no provider configured — keep hidden
+    render(status);
+    row.hidden = false;
+  } catch {
+    return;   // unreachable server: settings stays connection-only
+  }
+  toggle.addEventListener("click", async () => {
+    toggle.disabled = true;
+    try {
+      const res = await fetch(`${cfg.serverBaseUrl}/api/cloud_llm`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ enabled: !toggle.classList.contains("on") }),
+      });
+      if (res.ok) render(await res.json());
+    } catch (e) {
+      console.warn("[hal] cloud llm toggle failed", e);
+    } finally {
+      toggle.disabled = false;
+    }
   });
 }
 
