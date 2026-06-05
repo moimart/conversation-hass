@@ -7,13 +7,12 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 
-/** Whether drawing under the Android status bar is safe: WebView ≥ 140 maps
- * system-bar insets into env(safe-area-inset-*); older ones report 0 (no
- * cutout = no inset), so the app chrome would collide with the OS clock /
- * battery icons — e.g. the Pixel Tablet on Android 14 ships WebView 120.
- * (140 is the same cutoff Capacitor's SystemBars plugin uses.) iOS always
- * reports safe areas, so overlay is always fine there. */
-function canOverlayStatusBar(): boolean {
+/** Android WebView ≥ 140 maps system-bar insets into env(safe-area-inset-*);
+ * older ones report 0 when there's no display cutout — e.g. the Pixel Tablet
+ * on Android 14 ships WebView 120 — so the app chrome would collide with the
+ * OS clock / battery icons. (140 is the same cutoff Capacitor's SystemBars
+ * plugin uses.) iOS/web always report safe areas correctly via env(). */
+function webViewReportsTopInset(): boolean {
   if (Capacitor.getPlatform() !== "android") return true;
   const major = parseInt(/Chrome\/(\d+)/.exec(navigator.userAgent)?.[1] ?? "0", 10);
   return major >= 140;
@@ -21,13 +20,18 @@ function canOverlayStatusBar(): boolean {
 
 export async function configurePlatform(): Promise<void> {
   try { await StatusBar.setStyle({ style: Style.Dark }); } catch { /* web */ }
-  if (canOverlayStatusBar()) {
-    try { await StatusBar.setOverlaysWebView({ overlay: true }); } catch { /* web */ }
-  } else {
-    // Classic opaque status bar: the WebView starts below it, env() = 0 is
-    // then CORRECT and all the safe-area CSS degrades cleanly.
-    try { await StatusBar.setOverlaysWebView({ overlay: false }); } catch { /* web */ }
-    try { await StatusBar.setBackgroundColor({ color: "#0a0c10" }); } catch { /* web */ }
+  // Always full-bleed: the theme background paints under the status bar.
+  try { await StatusBar.setOverlaysWebView({ overlay: true }); } catch { /* web */ }
+  if (!webViewReportsTopInset()) {
+    // env(safe-area-inset-top) is 0 here, so publish the real bar height
+    // (getInfo().height is already in dp = CSS px) as --hal-inset-top; the
+    // top-edge CSS takes max(env(...), var(--hal-inset-top)).
+    try {
+      const { height, overlays } = await StatusBar.getInfo();
+      if (overlays && height > 0) {
+        document.documentElement.style.setProperty("--hal-inset-top", `${height}px`);
+      }
+    } catch { /* web */ }
   }
   try { await KeepAwake.keepAwake(); } catch { /* web */ }
 }

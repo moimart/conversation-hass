@@ -60,7 +60,7 @@
 /* Settings / re-pair gear (top-right, subtle). */
 .hal-gear {
     position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 8px);
     right: 12px;
     z-index: 2147481500;
     width: 38px;

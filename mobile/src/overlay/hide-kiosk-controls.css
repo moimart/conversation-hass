@@ -59,7 +59,7 @@ body.show-conversation-log #display-root .response-container {
 body.show-conversation-log .clog-overlay {
     left: 8px !important;
     right: 8px !important;
-    top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 8px) !important;
     bottom: calc(78px + env(safe-area-inset-bottom)) !important;
 }
 body.show-conversation-log .clog-body { font-size: 14px !important; }
@@ -74,7 +74,7 @@ body.show-conversation-log .clog-title { font-size: 16px !important; }
    collide with the system clock at the top, and trim it so it doesn't dominate
    the phone (the kiosk clock is sized for a big panel). */
 #display-root .clock-display {
-    top: calc(env(safe-area-inset-top, 0px) + 4px) !important;
+    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 4px) !important;
     left: 18px !important;
 }
 #display-root .clock-time { font-size: 42px !important; }
@@ -84,7 +84,7 @@ body.show-conversation-log .clog-title { font-size: 16px !important; }
     position: fixed !important;
     left: 14px !important;
     right: 14px !important;
-    top: calc(env(safe-area-inset-top, 0px) + 78px) !important;
+    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 78px) !important;
     bottom: auto !important;
     width: auto !important;
     max-width: none !important;
