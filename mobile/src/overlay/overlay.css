@@ -77,6 +77,9 @@
 }
 .hal-gear:active { color: rgba(255, 255, 255, 0.9); }
 
+/* Conversation-log button — sits left of the gear. */
+.hal-log { right: 54px; }
+
 .hal-sheet-backdrop {
     position: fixed;
     inset: 0;

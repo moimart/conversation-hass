@@ -56,6 +56,7 @@ class ConversationManager:
         fallback_ollama_model: str = "",
         router_enabled: bool = False,
         router_model: str = "",
+        event_logger: Callable[..., Awaitable[None]] | None = None,
     ):
         self.wake_word = wake_word.lower().strip() if wake_word else ""
         self.ollama_host = ollama_host.rstrip("/")
@@ -71,6 +72,10 @@ class ConversationManager:
         self.memory = memory_client
         self.num_ctx = num_ctx
         self.num_predict = num_predict
+        # Conversation log sink (injected by main.py; resolves origin tokens to
+        # device names at write time). Called as
+        # event_logger(kind, text, origin_token=...). None = logging disabled.
+        self.event_logger = event_logger
 
         # Router model: a tiny, fast LLM that decides — per command — whether
         # to use the local Ollama path or the OpenClaw agent. Only consulted
@@ -249,6 +254,14 @@ class ConversationManager:
         log.info(f"[task] START processing: '{full_text}'")
         t_task_start = time.monotonic()
         await self._set_state("processing")
+        # Conversation log: record the request BEFORE the LLM runs (a crash
+        # mid-turn still records what was asked). origin_token resolves to the
+        # device name in the injected wrapper — never stored raw.
+        if self.event_logger:
+            try:
+                await self.event_logger("user", full_text, origin_token=self._turn_origin)
+            except Exception as e:
+                log.debug(f"event_logger(user) failed: {e}")
         self._suppress_final_tts = False
         self._llm_metrics_acc = {}
         self._last_ollama_metrics = {}
@@ -339,6 +352,17 @@ class ConversationManager:
             if self.on_response:
                 await self.on_response(response_text, audio_bytes)
 
+            # Conversation log: record the answer (skip empty — mirrors the
+            # no-empty-history rule; speak_verbatim turns log their spoken text
+            # as an announcement at the tool site instead).
+            if self.event_logger and response_text.strip():
+                try:
+                    await self.event_logger(
+                        "assistant", response_text, origin_token=self._turn_origin
+                    )
+                except Exception as e:
+                    log.debug(f"event_logger(assistant) failed: {e}")
+
             # If the LLM asked a question, stay in conversation for a follow-up
             if response_text.rstrip().endswith("?"):
                 self._awaiting_followup = True
@@ -376,6 +400,13 @@ class ConversationManager:
             if self.on_response:
                 audio = await self.tts_engine.synthesize(error_msg)
                 await self.on_response(error_msg, audio)
+            if self.event_logger:  # the apology is what was actually spoken
+                try:
+                    await self.event_logger(
+                        "assistant", error_msg, origin_token=self._turn_origin
+                    )
+                except Exception as le:
+                    log.debug(f"event_logger(error) failed: {le}")
 
         # Final idle state routes to the turn's origin; clear origin strictly
         # after, so the idle state-change still reaches the right device.

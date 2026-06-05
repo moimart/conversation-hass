@@ -1,0 +1,188 @@
+/* Conversation log overlay — full-screen scrollable history. Mirrors the
+   calendar's 3D stage (rotates in from the LEFT so the two views feel
+   distinct) and derives every color from the active theme's variables. */
+
+/* === The 3D wrapper (calendar.css pattern, mirrored) ==================== */
+
+.clog-stage {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 5;
+    transform-origin: 0% 50%;
+    transform: perspective(1800px) rotateY(-90deg);
+    transition: transform 700ms cubic-bezier(.7, .05, .25, 1);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    pointer-events: none;
+    will-change: transform;
+    contain: layout paint;
+}
+
+body.show-conversation-log .clog-stage {
+    transform: perspective(1800px) rotateY(0deg);
+    pointer-events: auto;
+}
+
+/* === The card =========================================================== */
+
+.clog-overlay {
+    position: absolute;
+    left: 4vw;
+    right: 4vw;
+    top: 4vh;
+    bottom: 4vh;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--text);
+    box-shadow:
+        0 0 0 1px rgba(var(--accent-rgb), 0.15),
+        0 30px 80px rgba(0, 0, 0, 0.55),
+        inset 0 0 60px rgba(var(--accent-rgb), 0.04);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.clog-header {
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 22px 14px;
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+}
+
+.clog-source {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    color: var(--text-dim);
+}
+
+.clog-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 20px;
+    font-weight: 400;
+    margin-top: 2px;
+}
+
+.clog-close {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+.clog-close:active { background: rgba(var(--accent-rgb), 0.15); }
+
+.clog-countdown-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: rgba(var(--accent-rgb), 0.7);
+    transform-origin: 0 50%;
+    transform: scaleX(1);
+    box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5);
+}
+
+/* === The scroll body ==================================================== */
+
+.clog-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 14px 22px 18px;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+}
+
+.clog-day-sep {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 18px 0 10px;
+}
+.clog-day-sep::before,
+.clog-day-sep::after {
+    content: "";
+    display: inline-block;
+    vertical-align: middle;
+    width: 18%;
+    height: 1px;
+    background: var(--border);
+    margin: 0 10px;
+}
+
+.clog-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 5px 0;
+}
+
+.clog-time {
+    flex: 0 0 auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    min-width: 42px;
+}
+
+.clog-origin {
+    flex: 0 0 auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 1px 8px;
+    white-space: nowrap;
+}
+
+.clog-text {
+    flex: 1 1 auto;
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+
+/* kind styling */
+.clog-row.user .clog-text {
+    color: rgb(var(--accent-rgb));
+    font-weight: 500;
+}
+.clog-row.assistant .clog-text {
+    color: var(--text);
+}
+.clog-row.announcement .clog-text {
+    color: var(--text-dim);
+    font-style: italic;
+}
+
+.clog-empty {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 36px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+}
+.clog-empty.error { color: #ff7b7b; }
+
+/* Phone-specific sizing lives in the mobile shell's stylesheet
+   (mobile/src/overlay/hide-kiosk-controls.css) — the kiosk's CSS viewport can
+   be narrow too, so a media query here would mis-fire on the panel. */

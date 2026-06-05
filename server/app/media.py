@@ -493,6 +493,8 @@ async def _speak_proactively(
                 await state.mqtt_bridge.publish_last_response(text)
             except Exception:
                 pass
+        if getattr(state, "conversation_event_logger", None):
+            await state.conversation_event_logger("announcement", text, source="openclaw")
         return True
 
     ws = state.audio_websocket
@@ -520,6 +522,8 @@ async def _speak_proactively(
             await state.mqtt_bridge.publish_last_response(text)
         except Exception:
             pass
+    if getattr(state, "conversation_event_logger", None):
+        await state.conversation_event_logger("announcement", text, source="openclaw")
 
     if ws and audio_bytes:
         try:

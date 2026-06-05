@@ -203,6 +203,11 @@ def build_local_tools(state) -> LocalToolsClient:
         await speak_to_satellites(state, text, audio_bytes)
         if state.mqtt_bridge:
             await state.mqtt_bridge.publish_last_response(text)
+        if state.conversation_event_logger:
+            await state.conversation_event_logger(
+                "announcement", text, source="voice-tool",
+                meta={"via": "speak_verbatim"},
+            )
 
         # Push audio to RPi using the same protocol as on_response
         try:
@@ -607,6 +612,61 @@ def build_local_tools(state) -> LocalToolsClient:
         "Dismiss the calendar overlay if it is currently shown on the kiosk. Use when the user says 'hide the calendar', 'close the calendar', 'go back to the orb', etc.",
         {"type": "object", "properties": {}},
         hide_calendar_tool,
+    )
+
+    async def _conversation_log_targets(msg: dict) -> str:
+        """Route a conversation-log show/hide to the right surface: a turn
+        asked FROM a phone opens it on that phone only; otherwise it opens on
+        the kiosk (+ web mirrors, NOT satellites — phones use their button)."""
+        from .main import broadcast_to_ui, send_to_device, _push_to_rpi
+        origin = getattr(state.conversation, "_turn_origin", None) if state.conversation else None
+        if origin:
+            ok = await send_to_device(state, origin, msg)
+            return "phone" if ok else "none"
+        await _push_to_rpi(state, msg)
+        await broadcast_to_ui(state, msg)
+        return "kiosk"
+
+    async def show_conversation_log_tool(args: dict) -> str:
+        duration_s = args.get("duration_s")
+        try:
+            duration_s = max(5, min(600, int(duration_s))) if duration_s is not None else 30
+        except (TypeError, ValueError):
+            duration_s = 30
+        where = await _conversation_log_targets({
+            "type": "show_conversation_log",
+            "duration_s": duration_s,
+        })
+        return f"Conversation log shown on the {where}"
+
+    tools.register(
+        "show_conversation_log",
+        (
+            "Display the full-screen conversation log — the timestamped history "
+            "of everything the user asked, your answers, and announcements. Use "
+            "when the user says 'show the conversation log', 'show the chat "
+            "history', 'what did we talk about', 'show past conversations', etc. "
+            "On the kiosk it auto-dismisses after duration_s (default 30s) of no "
+            "interaction."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "duration_s": {"type": "integer", "minimum": 5, "maximum": 600, "description": "Kiosk auto-dismiss after this many idle seconds (default 30)"},
+            },
+        },
+        show_conversation_log_tool,
+    )
+
+    async def hide_conversation_log_tool(_args: dict) -> str:
+        await _conversation_log_targets({"type": "hide_conversation_log"})
+        return "Conversation log hidden"
+
+    tools.register(
+        "hide_conversation_log",
+        "Dismiss the conversation log overlay. Use when the user says 'hide the log', 'close the conversation log', 'close the history', etc.",
+        {"type": "object", "properties": {}},
+        hide_conversation_log_tool,
     )
 
     async def show_photo_frame_tool(args: dict) -> str:

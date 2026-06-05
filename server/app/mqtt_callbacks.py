@@ -69,6 +69,8 @@ async def wire(state, bridge) -> None:
             from .main import speak_to_satellites
             await speak_to_satellites(state, text, audio_bytes)
             await state.mqtt_bridge.publish_last_response(text)
+            if state.conversation_event_logger:
+                await state.conversation_event_logger("announcement", text, source="mqtt")
             await ws.send_json({"type": "tts_start", "size": len(audio_bytes)})
             if state.pipeline:
                 state.pipeline.set_ai_speaking(True)
@@ -458,6 +460,18 @@ async def wire(state, bridge) -> None:
     async def _mqtt_calendar_hide():
         await _hide_calendar(state)
 
+    async def _mqtt_conversation_log_show():
+        # HA button → kiosk + web mirrors (phones open theirs via the app
+        # button; satellites are deliberately NOT force-opened from here).
+        msg = {"type": "show_conversation_log", "duration_s": 30}
+        await _push_to_rpi(state, msg)
+        await broadcast_to_ui(state, msg)
+
+    async def _mqtt_conversation_log_hide():
+        msg = {"type": "hide_conversation_log"}
+        await _push_to_rpi(state, msg)
+        await broadcast_to_ui(state, msg)
+
     async def _mqtt_photo_frame_show(args: dict):
         from .photo_frame import start_photo_frame
         entity_id = (args.get("entity_id") or "").strip()
@@ -757,6 +771,8 @@ async def wire(state, bridge) -> None:
     bridge.set_config_callback("auto_theme", _cfg_auto_theme)
     bridge.on_calendar_show = _mqtt_calendar_show
     bridge.on_calendar_hide = _mqtt_calendar_hide
+    bridge.on_conversation_log_show = _mqtt_conversation_log_show
+    bridge.on_conversation_log_hide = _mqtt_conversation_log_hide
     bridge.on_photo_frame_show = _mqtt_photo_frame_show
     bridge.on_photo_frame_hide = _mqtt_photo_frame_hide
     bridge.set_config_callback("photo_frame_entity", _cfg_photo_frame_entity)

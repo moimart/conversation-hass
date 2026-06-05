@@ -43,6 +43,9 @@ services:
       - ORB_SIDE=${ORB_SIDE:-left}
       - ROUTER_ENABLED=${ROUTER_ENABLED:-false}
       - ROUTER_MODEL=${ROUTER_MODEL:-}
+      # Persistent conversation log. Empty password disables the feature
+      # cleanly (the server degrades to warn+drop).
+      - CONVERSATION_LOG_DSN=${CONVERSATION_LOG_DSN:-postgresql://hal:${POSTGRES_PASSWORD:-}@postgres:5432/hal}
     volumes:
       - ./server/app:/app/app:ro
       - ./server/system_prompt.txt:/app/system_prompt.txt:ro
@@ -56,9 +59,14 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - shodh-memory
-      - go2rtc
-      - stt-service
+      shodh-memory:
+        condition: service_started
+      go2rtc:
+        condition: service_started
+      stt-service:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   stt-service:
     image: ghcr.io/moimart/conversation-hass/hal-stt-service:latest
@@ -102,7 +110,27 @@ services:
     volumes:
       - shodh-data:/data
 
+  # Persistent conversation log. Internal-only: NO published ports — the
+  # ai-server reaches it at postgres:5432 on the compose network.
+  postgres:
+    image: postgres:16-alpine
+    container_name: hal-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=hal
+      - POSTGRES_USER=hal
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-hal-dev-password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hal -d hal"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   huggingface-cache:
   shodh-data:
   go2rtc-data:
+  postgres-data:

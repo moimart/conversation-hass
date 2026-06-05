@@ -305,6 +305,38 @@ def _connected_satellite_token(state, request: Request) -> str | None:
     return None
 
 
+@router.get("/api/conversation/log")
+async def get_conversation_log(request: Request):
+    """One page of the persistent conversation log, oldest→newest.
+
+    Keyset pagination: ?limit=100 (clamp 1..500) and ?before_id=N for older
+    pages (the view scrolls up to load history). LAN-open like /api/command —
+    the kiosk has no token; satellites send their Bearer anyway."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    clog = state.conversation_log
+    if clog is None or not clog.enabled:
+        return {"rows": [], "has_more": False, "disabled": True}
+    try:
+        limit = int(request.query_params.get("limit", "100"))
+    except ValueError:
+        limit = 100
+    before_raw = request.query_params.get("before_id")
+    try:
+        before_id = int(before_raw) if before_raw else None
+    except ValueError:
+        before_id = None
+    try:
+        return await clog.fetch(limit=limit, before_id=before_id)
+    except Exception as e:
+        log.warning(f"conversation log fetch failed: {type(e).__name__}: {e}")
+        return Response(
+            content='{"error": "log_unavailable", "rows": []}',
+            media_type="application/json",
+            status_code=503,
+        )
+
+
 @router.get("/api/cloud_llm")
 async def get_cloud_llm(request: Request):
     """Cloud override status. NEVER includes provider keys or endpoints."""
@@ -615,6 +647,8 @@ async def post_speak(request: Request, req: SpeakRequest):
     await speak_to_satellites(state, text, audio_bytes)
     if state.mqtt_bridge:
         await state.mqtt_bridge.publish_last_response(text)
+    if state.conversation_event_logger:
+        await state.conversation_event_logger("announcement", text, source="api")
 
     # Stream audio to RPi
     try:

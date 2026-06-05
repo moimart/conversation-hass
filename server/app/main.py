@@ -161,6 +161,10 @@ class AppState:
     cloud_llm_enabled: bool = False
     cloud_llm_model: str = ""
     cloud_model_options: list = field(default_factory=list)
+    # Persistent conversation log (conversation_log.ConversationLog) + the
+    # injected event-logger wrapper (resolves satellite tokens → device names).
+    conversation_log: object | None = None
+    conversation_event_logger: object | None = None
     # Display orientation
     display_orientation: str = "portrait"
     orb_side: str = "left"
@@ -506,6 +510,25 @@ async def lifespan(app: FastAPI):
     from .pairing import PairingManager, require_token_enabled
     state.pairing = PairingManager()
     log.info(f"Pairing ready (token enforcement: {'ON' if require_token_enabled() else 'OFF'})")
+
+    # Persistent conversation log (postgres). connect() is backgrounded with
+    # retry/backoff — a slow or absent postgres never blocks startup, and
+    # writes degrade to warn+drop until it comes up.
+    from .conversation_log import ConversationLog
+    state.conversation_log = ConversationLog(os.environ.get("CONVERSATION_LOG_DSN", ""))
+    asyncio.create_task(state.conversation_log.connect())
+
+    async def _conversation_event_logger(kind: str, text: str, origin_token: str | None = None,
+                                         source: str | None = None, meta: dict | None = None):
+        """Injected into ConversationManager + the announcement sites. Resolves
+        a satellite origin TOKEN to its non-secret device_name at write time —
+        the raw token must never reach the log."""
+        origin = source
+        if origin is None and origin_token and state.pairing is not None:
+            origin = state.pairing.device_name(origin_token)
+        await state.conversation_log.log(kind, text, origin=origin, meta=meta)
+
+    state.conversation_event_logger = _conversation_event_logger
     state.theme_day = cfg.get("theme_day", "birch")
     state.theme_night = cfg.get("theme_night", "dark")
     state.auto_theme = bool(cfg.get("auto_theme", True))
@@ -595,6 +618,7 @@ async def lifespan(app: FastAPI):
         fallback_ollama_model=str(cfg.get("fallback_ollama_model", "") or ""),
         router_enabled=bool(cfg.get("router_enabled", False)),
         router_model=str(cfg.get("router_model", "") or ""),
+        event_logger=_conversation_event_logger,
     )
 
     # Apply tts_voice from runtime config (overrides whatever the engine

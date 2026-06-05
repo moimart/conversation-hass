@@ -136,6 +136,15 @@ class PairingManager:
     def is_valid_token(self, token: str | None) -> bool:
         return bool(token) and token in self._tokens
 
+    def device_name(self, token: str | None) -> str | None:
+        """Human-readable name of the paired device for a token, or None.
+        Used wherever a device must be identified WITHOUT exposing the secret
+        token (e.g. the conversation log's origin column)."""
+        if not token:
+            return None
+        entry = self._tokens.get(token)
+        return entry.get("device_name") if entry else None
+
     def revoke(self, token: str) -> bool:
         if token in self._tokens:
             del self._tokens[token]

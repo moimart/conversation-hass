@@ -305,6 +305,30 @@
         return calendarLoading;
     }
 
+    // --- Conversation log overlay (lazy-loaded on first show) ---
+    let conversationLogController = null;
+    let conversationLogLoading = null;
+    async function getConversationLog() {
+        if (conversationLogController) return conversationLogController;
+        if (!conversationLogLoading) {
+            conversationLogLoading = import("./conversation_log.js").then((mod) => {
+                const root = document.getElementById("conversation-log-root");
+                conversationLogController = mod.mountConversationLog(root);
+                return conversationLogController;
+            }).catch((e) => {
+                console.error("[clog] module load failed:", e);
+                conversationLogLoading = null;
+                throw e;
+            });
+        }
+        return conversationLogLoading;
+    }
+    // Mobile companion opens the view locally (log button in the input bar).
+    window.HALConversationLog = {
+        open: () => getConversationLog().then((c) => c.show({ duration_s: 0 })),
+        close: () => { if (conversationLogController) conversationLogController.dismiss("close"); },
+    };
+
     // Wrap any orb-takeover handler so the calendar dismisses first.
     // Returns a Promise that resolves once the takeover handler has been
     // invoked (after the cube has rotated back, if it was up).
@@ -613,6 +637,19 @@
             case "hide_calendar":
                 if (calendarController) {
                     calendarController.dismiss("explicit").catch(() => {});
+                }
+                break;
+            case "show_conversation_log":
+                withPhotoFramePreempt(() => withCalendarPreempt(() => {
+                    getConversationLog().then((clog) => {
+                        if (clog.isShown()) clog.update(msg);
+                        else clog.show(msg);
+                    }).catch((e) => console.error("[clog] show failed:", e));
+                }));
+                break;
+            case "hide_conversation_log":
+                if (conversationLogController) {
+                    conversationLogController.dismiss("explicit").catch(() => {});
                 }
                 break;
             case "ptt_active":

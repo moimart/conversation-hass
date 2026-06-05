@@ -6,6 +6,7 @@
     <title>PAL</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="calendar.css">
+    <link rel="stylesheet" href="conversation_log.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
 </head>
@@ -136,6 +137,12 @@
          feel without changing the orb's containing block. -->
     <div class="calendar-stage" id="calendar-root" aria-hidden="true">
       <!-- Populated by calendar.js on first show_calendar -->
+    </div>
+
+    <!-- Conversation log — full-screen scrollable history. Rotates in from
+         the left (mirror of the calendar stage). -->
+    <div class="clog-stage" id="conversation-log-root" aria-hidden="true">
+      <!-- Populated by conversation_log.js on first show_conversation_log -->
     </div>
 
     <!-- Photo frame — full-screen ambient image with white clock overlay.

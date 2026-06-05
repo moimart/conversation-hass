@@ -55,6 +55,7 @@ def _state(sat_ws):
         voice_options=[], model_options=[],
         cloud_model_options=[], cloud_llm_model="", cloud_llm_enabled=False,
         cloud_llm_client=None,
+        conversation_log=None, conversation_event_logger=None,
     )
 
 

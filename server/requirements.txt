@@ -14,3 +14,4 @@ qrcode[pil]==8.0
 # STT (faster-whisper, nemo_toolkit[asr]) moved to stt-service/. The main
 # server uses STT_ENGINE=remote (RemoteTranscriber) and only keeps the local
 # audio front-end: silero-vad (VAD) + resemblyzer (speaker/echo) + librosa.
+asyncpg>=0.30

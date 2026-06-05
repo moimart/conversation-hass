@@ -46,6 +46,25 @@ body.show-calendar #display-root .response-container {
     display: none !important;
 }
 
+/* Same for the conversation log overlay (clog-stage, z-index 5). */
+body.show-conversation-log #display-root .eye-container,
+body.show-conversation-log #display-root .clock-display,
+body.show-conversation-log #display-root .transcript-container,
+body.show-conversation-log #display-root .response-container {
+    display: none !important;
+}
+
+/* Phone-sized conversation log card: clear the device safe areas and leave
+   room for the input bar at the bottom (you can keep chatting while reading). */
+body.show-conversation-log .clog-overlay {
+    left: 8px !important;
+    right: 8px !important;
+    top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+    bottom: calc(78px + env(safe-area-inset-bottom)) !important;
+}
+body.show-conversation-log .clog-body { font-size: 14px !important; }
+body.show-conversation-log .clog-title { font-size: 16px !important; }
+
 /* The kiosk lays the transcript + response panels out to the side of the orb
    (landscape). In portrait they fall off the right edge (x≈viewport width), so
    HAL's reply is invisible. Re-anchor them as fixed, full-width panels: the

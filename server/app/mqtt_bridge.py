@@ -338,6 +338,9 @@ class MQTTBridge:
         # {"view": "month"|"week"|"day", "calendar_name"?: str, "duration_s"?: int}.
         self.on_calendar_show: Callable[[dict], Awaitable[None]] | None = None
         self.on_calendar_hide: Callable[[], Awaitable[None]] | None = None
+        # Conversation log overlay (bare-trigger buttons).
+        self.on_conversation_log_show: Callable[[], Awaitable[None]] | None = None
+        self.on_conversation_log_hide: Callable[[], Awaitable[None]] | None = None
         # Push-to-Talk callbacks. Bare-trigger topics (payload ignored):
         # `start` opens a PTT session, `end` closes it (runs the LLM),
         # `cancel` closes it AND discards the captured audio.
@@ -735,6 +738,31 @@ class MQTTBridge:
                 "device": device,
             },
         ))
+        # Conversation log overlay (show + hide).
+        configs.append((
+            f"{DISCOVERY_PREFIX}/button/{self.device_id}/show_conversation_log/config",
+            {
+                "name": "Show Conversation Log",
+                "unique_id": f"{self.device_id}_show_conversation_log",
+                "command_topic": f"{self.base}/conversation_log/show/set",
+                "payload_press": "",
+                "icon": "mdi:message-text-clock",
+                "availability": avail,
+                "device": device,
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/button/{self.device_id}/hide_conversation_log/config",
+            {
+                "name": "Hide Conversation Log",
+                "unique_id": f"{self.device_id}_hide_conversation_log",
+                "command_topic": f"{self.base}/conversation_log/hide/set",
+                "payload_press": "",
+                "icon": "mdi:message-off-outline",
+                "availability": avail,
+                "device": device,
+            },
+        ))
         # Display power: a top-level switch (not in Configuration) so it's
         # one tap from the device card, plus a Configuration-section
         # number for the idle-blank timeout.
@@ -896,6 +924,8 @@ class MQTTBridge:
                         )
                     await client.subscribe(f"{self.base}/calendar/show/set")
                     await client.subscribe(f"{self.base}/calendar/hide/set")
+                    await client.subscribe(f"{self.base}/conversation_log/show/set")
+                    await client.subscribe(f"{self.base}/conversation_log/hide/set")
                     await client.subscribe(f"{self.base}/ptt/start")
                     await client.subscribe(f"{self.base}/ptt/end")
                     await client.subscribe(f"{self.base}/ptt/cancel")
@@ -1036,6 +1066,14 @@ class MQTTBridge:
             elif topic == f"{self.base}/calendar/hide/set":
                 if self.on_calendar_hide:
                     await self.on_calendar_hide()
+
+            elif topic == f"{self.base}/conversation_log/show/set":
+                if self.on_conversation_log_show:
+                    await self.on_conversation_log_show()
+
+            elif topic == f"{self.base}/conversation_log/hide/set":
+                if self.on_conversation_log_hide:
+                    await self.on_conversation_log_hide()
 
 
 
