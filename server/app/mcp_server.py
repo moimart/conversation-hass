@@ -101,6 +101,14 @@ def build_mcp_server(state: "AppState") -> FastMCP:
     async def hide_calendar() -> str:
         return await _call("hide_calendar", {})
 
+    @mcp.tool(name="show_conversation_log", description="Open the full-screen conversation log view (the persistent history of requests, answers, and announcements) on the kiosk display.")
+    async def show_conversation_log() -> str:
+        return await _call("show_conversation_log", {})
+
+    @mcp.tool(name="hide_conversation_log", description="Dismiss the conversation log view.")
+    async def hide_conversation_log() -> str:
+        return await _call("hide_conversation_log", {})
+
     @mcp.tool(name="show_photo_frame", description="Open the photo frame on the kiosk (full-screen ambient image with clock).")
     async def show_photo_frame(entity_id: str = "") -> str:
         return await _call("show_photo_frame", {"entity_id": entity_id})
