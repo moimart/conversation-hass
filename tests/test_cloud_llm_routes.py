@@ -11,7 +11,12 @@ import pytest
 
 
 @pytest.fixture
-def fake_main(monkeypatch):
+def fake_main(monkeypatch, tmp_path):
+    # Deterministic "no provider" baseline: nonexistent providers file and no
+    # env-var fallback keys (a dev machine may have OPENAI_API_KEY exported).
+    monkeypatch.setenv("CLOUD_PROVIDERS_PATH", str(tmp_path / "none.json"))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     st = SimpleNamespace(
         cloud_llm_enabled=False,
         cloud_llm_model="",
@@ -49,6 +54,21 @@ async def test_get_available_with_provider(fake_main):
         "options": [],
         "available": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_available_from_registry_before_first_enable(fake_main, monkeypatch, tmp_path):
+    """The client is created lazily on first enable — a configured providers
+    file alone must already report available, or the mobile toggle would stay
+    hidden until someone flips the switch elsewhere first."""
+    from server.app.routes_http import get_cloud_llm
+    p = tmp_path / "cloud_providers.json"
+    p.write_text('{"providers": [{"name": "openai", '
+                 '"base_url": "https://api.openai.com/v1", "api_key": "sk-test"}]}')
+    monkeypatch.setenv("CLOUD_PROVIDERS_PATH", str(p))
+    out = await get_cloud_llm(_req())
+    assert out["available"] is True
+    assert out["enabled"] is False   # availability ≠ enabled
 
 
 @pytest.mark.asyncio

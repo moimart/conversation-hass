@@ -337,6 +337,20 @@ async def get_conversation_log(request: Request):
         )
 
 
+def _cloud_llm_available(state) -> bool:
+    """A cloud provider is configured (file or env). The client itself is
+    created lazily on first enable, so check the registry — it hot-reloads
+    cloud_providers.json by mtime, making this cheap and always current."""
+    if state.cloud_llm_client is not None:
+        return True
+    try:
+        from .cloud_llm import ProviderRegistry, DEFAULT_PROVIDERS_PATH
+        path = os.environ.get("CLOUD_PROVIDERS_PATH", DEFAULT_PROVIDERS_PATH)
+        return bool(ProviderRegistry(path).providers())
+    except Exception:
+        return False
+
+
 @router.get("/api/cloud_llm")
 async def get_cloud_llm(request: Request):
     """Cloud override status. NEVER includes provider keys or endpoints.
@@ -348,7 +362,7 @@ async def get_cloud_llm(request: Request):
         "enabled": bool(state.cloud_llm_enabled),
         "model": state.cloud_llm_model or "",
         "options": list(state.cloud_model_options or []),
-        "available": state.cloud_llm_client is not None,
+        "available": _cloud_llm_available(state),
     }
 
 
@@ -386,7 +400,7 @@ async def post_cloud_llm(request: Request, req: CloudLLMRequest):
         "enabled": bool(state.cloud_llm_enabled),
         "model": state.cloud_llm_model or "",
         "options": list(state.cloud_model_options or []),
-        "available": state.cloud_llm_client is not None,
+        "available": _cloud_llm_available(state),
     }
 
 
