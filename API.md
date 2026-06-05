@@ -317,12 +317,14 @@ always boots OFF after a server restart; the model choice persists.
 **Response** `200`
 
 ```json
-{ "enabled": false, "model": "openai/gpt-5.5", "options": ["openai/gpt-4o", "openai/gpt-5.5", "..."] }
+{ "enabled": false, "model": "openai/gpt-5.5", "options": ["openai/gpt-4o", "openai/gpt-5.5", "..."], "available": true }
 ```
 
 `options` is the merged `provider/model-id` list fetched live from each
 configured provider's `/models` API, filtered to chat-completions-capable
-models.
+models. `available` is `true` when at least one cloud provider is configured
+(file or env) — the companion app's settings sheet shows its **Cloud LLM**
+toggle only then. The response never includes keys or endpoints.
 
 ### `POST /api/cloud_llm`
 
