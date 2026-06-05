@@ -495,6 +495,7 @@ class AudioManager:
             "show_camera", "stream_start", "stream_stop", "webrtc_signal",
             "play_video", "video_stop", "themes_changed",
             "show_calendar", "hide_calendar",
+            "show_conversation_log", "hide_conversation_log",
             "ptt_active",
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
             "show_photo_frame_video", "set_photo_frame_clock",
@@ -999,6 +1000,7 @@ class AudioManager:
         app.router.add_post("/api/music/state", self._set_music_state)
         # Theme plug-in passthrough: list + per-theme assets forward to the AI server.
         app.router.add_get("/api/themes", self._proxy_to_ai_server)
+        app.router.add_get("/api/conversation/log", self._proxy_to_ai_server)
         app.router.add_get(r"/themes/{name}/{filename}", self._proxy_to_ai_server)
         # Looping photo-frame video lives in a writable dir (the /app/web
         # tree is mounted read-only). Register BEFORE the "/" catch-all
