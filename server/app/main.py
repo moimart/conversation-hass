@@ -979,12 +979,16 @@ async def speak_to_satellites(state: AppState, text: str, audio_bytes: bytes | N
 
 
 async def announce_everywhere(state: AppState, text: str,
-                              log_source: str | None = None) -> None:
+                              log_source: str | None = None,
+                              alarm: bool = False) -> None:
     """Speak `text` on EVERY device — kiosk speaker + all satellites — and
     mirror it to web UIs, the MQTT last_response sensor, and (when log_source
     is given) the conversation log. Needs no active turn; used for proactive
-    events like finished timers. Best-effort throughout: a missing kiosk or
-    TTS failure must never crash the caller."""
+    events like finished timers. With alarm=True a kitchen-timer beep pattern
+    is prepended to the audio server-side (alarm.prepend_alarm), so every
+    device hears it with no client changes — and even a TTS failure still
+    produces the alarm sound. Best-effort throughout: a missing kiosk or TTS
+    failure must never crash the caller."""
     text = (text or "").strip()
     if not text:
         return
@@ -994,6 +998,12 @@ async def announce_everywhere(state: AppState, text: str,
             audio_bytes = await state.tts_engine.synthesize(text)
         except Exception as e:
             log.error(f"announce TTS failed: {e}")
+    if alarm:
+        try:
+            from .alarm import prepend_alarm
+            audio_bytes = prepend_alarm(audio_bytes)
+        except Exception as e:
+            log.warning(f"announce alarm prepend failed: {e}")
     msg = {"type": "response", "text": text}
     ws = state.audio_websocket
     if ws:

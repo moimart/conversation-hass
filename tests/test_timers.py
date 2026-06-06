@@ -177,6 +177,7 @@ async def test_fire_announces_everywhere_with_template(fake_main):
     args, kwargs = fake_main.announce_everywhere.await_args
     assert args[1] == "¡Timer 1 ha terminado!"
     assert kwargs.get("log_source") == "timer"
+    assert kwargs.get("alarm") is True      # beep pattern precedes the speech
     assert mgr.count() == 0
 
 

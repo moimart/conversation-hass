@@ -231,7 +231,7 @@ class TimerManager:
                                            "timer_id": timer.id})
         await self._rearm_next(timer.origin_token)
         from .main import announce_everywhere
-        await announce_everywhere(self._state, text, log_source="timer")
+        await announce_everywhere(self._state, text, log_source="timer", alarm=True)
         await self._publish_sensor()
         log.info(f"timer fired: {timer.name}")
         # No HA call needed: the mirrored entity finishes on its own clock.

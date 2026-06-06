@@ -344,7 +344,9 @@ the connection heals itself.
 Both are live runtime config (HA text entities) — the env vars only seed the
 first boot. Say *"set a timer for 5 minutes"* (kiosk or phone): the device that
 asked shows the final 10 seconds as a countdown inside the orb, and every
-device speaks the announcement. Timers mirror onto pre-created HA helpers
+device plays a kitchen-timer alarm followed by the spoken announcement (the
+beep pattern is prepended to the TTS audio server-side, so even a TTS outage
+still makes noise). Timers mirror onto pre-created HA helpers
 `timer.pal_timer_1`–`timer.pal_timer_5` (live remaining time in dashboards,
 `timer.finished` for automations) — PAL is the source of truth, so cancelling
 the HA entity does **not** stop the timer; cancel by voice ("cancel timer 2",
