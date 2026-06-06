@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import time
+from dataclasses import dataclass
 from typing import Callable, Awaitable
 
 import httpx
@@ -39,78 +40,113 @@ automations, media, multi-step requests, or anything ambiguous.
 Reply with exactly one word: SIMPLE or COMPLEX."""
 
 
-# Deterministic kiosk-display intents — matched BEFORE any engine (cloud,
-# router, OpenClaw, local LLM). "Show me the conversation log" must ALWAYS
-# open the view: agentic models sometimes answer such commands in prose
-# instead of calling the tool, which reads back the whole history out loud.
-# Patterns are conservative (explicit verb + the view's name) so anything
-# nuanced ("what did I ask yesterday?") still goes to the LLM.
-_DISPLAY_INTERCEPTS: list[tuple["re.Pattern[str]", str, str]] = [
-    (re.compile(r"\b(show|open|display|bring up|pull up|see)\b.{0,40}\b(conversation|chat) (log|history)\b", re.I),
-     "show_conversation_log", "Here's the conversation log."),
-    (re.compile(r"\b(hide|close|dismiss)\b.{0,40}\b(conversation|chat) (log|history)\b", re.I),
-     "hide_conversation_log", "Conversation log closed."),
-]
+# Intent hints — the AI-in-the-loop replacement for the old deterministic
+# intercepts. A cheap pattern match recognises tool-shaped commands ("show
+# the conversation log", "set a timer for 5 minutes") but instead of
+# BYPASSING the LLM it (a) appends a steering note to the engine input so
+# the model calls the right tool itself, and (b) arms a post-turn GUARD:
+# if the engine finished without invoking the expected tool (agentic models
+# occasionally answer such commands in prose), the tool is executed directly
+# and its result replaces the spoken reply. The model keeps its agency —
+# it can fold in context, name things, ask follow-ups — while the outcome
+# stays guaranteed.
+
+@dataclass
+class IntentHint:
+    tool: str                       # local tool the engine is expected to call
+    sentence: str                   # steering note appended to the engine input
+    guard_args: dict | None         # args for the guard's direct call; None = hint only
 
 
-def _match_display_intercept(text: str) -> tuple[str, str] | None:
-    """(tool_name, spoken_confirmation) for a deterministic display command,
-    or None to let the LLM handle the turn."""
-    for pattern, tool_name, spoken in _DISPLAY_INTERCEPTS:
-        if pattern.search(text):
-            return tool_name, spoken
-    return None
-
-
-# Arg-carrying intercepts: each handler parses the utterance and returns
-# (tool_name, args, spoken_confirmation) — spoken=None means "speak the tool's
-# return value" (used by timers, whose names are assigned by the tool).
-# Cancel patterns are checked BEFORE start patterns so "stop the 10 minute
-# timer" never creates one.
-
-_TIMER_CANCEL_RE = re.compile(r"\b(cancel|stop|clear|delete|remove)\b.{0,30}\btimers?\b", re.I)
-_TIMER_START_RE = re.compile(
-    r"(?:\b(?:set|start|create|begin|put)\b.{0,30}\btimer\b"     # "set a timer for 5 minutes"
-    r"|\btimer\b.{0,12}\bfor\b"                                  # "timer for 5 minutes"
-    r"|\b\d+\s*(?:hours?|hrs?|minutes?|mins?|seconds?|secs?)\b.{0,16}\btimer\b)",  # "10 minute timer"
-    re.I,
-)
-
-
-def _timer_cancel_handler(match: "re.Match[str]", text: str):
-    num = re.search(r"\btimer\s*(?:number\s*)?(\d+)\b", text, re.I)
-    name = num.group(1) if num else ""
-    return "cancel_timer", {"name": name}, None
-
-
-def _timer_start_handler(match: "re.Match[str]", text: str):
+def _timer_start_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
     from .timers import parse_duration_seconds
     secs = parse_duration_seconds(text)
     if secs is None:
-        return None  # "set a timer" with no duration → let the LLM ask
-    return "start_timer", {"duration_s": secs}, None
+        # No parseable duration — steer the model, but nothing to guard.
+        return IntentHint(
+            tool="start_timer",
+            sentence=("The user wants a countdown timer but gave no clear "
+                      "duration. Ask for the duration, or call the "
+                      "`start_timer` tool once you know it."),
+            guard_args=None,
+        )
+    return IntentHint(
+        tool="start_timer",
+        sentence=(f"This is a device command: call the `start_timer` tool NOW "
+                  f"with duration_s={secs}. Reply only with a one-line "
+                  f"confirmation — never answer in prose without calling it."),
+        guard_args={"duration_s": secs},
+    )
 
 
-_ARG_INTERCEPTS: list = [
-    (_TIMER_CANCEL_RE, _timer_cancel_handler),
-    (_TIMER_START_RE, _timer_start_handler),
+def _timer_cancel_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
+    num = re.search(r"\btimer\s*(?:number\s*)?(\d+)\b", text, re.I)
+    name = num.group(1) if num else ""
+    which = f"name='{name}'" if name else "name='' (cancels all)"
+    return IntentHint(
+        tool="cancel_timer",
+        sentence=(f"This is a device command: call the `cancel_timer` tool NOW "
+                  f"with {which}. Reply only with a one-line confirmation."),
+        guard_args={"name": name},
+    )
+
+
+def _show_log_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
+    return IntentHint(
+        tool="show_conversation_log",
+        sentence=("This is a device command: call the `show_conversation_log` "
+                  "tool NOW to open the view. Reply only with a one-line "
+                  "confirmation — do NOT recite or summarize the history."),
+        guard_args={},
+    )
+
+
+def _hide_log_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
+    return IntentHint(
+        tool="hide_conversation_log",
+        sentence=("This is a device command: call the `hide_conversation_log` "
+                  "tool NOW. Reply only with a one-line confirmation."),
+        guard_args={},
+    )
+
+
+# Order matters: cancel before start so "stop the 10 minute timer" never
+# creates one. Patterns stay conservative — anything nuanced falls through
+# with no hint and the model handles the turn unaided.
+_INTENT_HINTS: list = [
+    (re.compile(r"\b(show|open|display|bring up|pull up|see)\b.{0,40}\b(conversation|chat) (log|history)\b", re.I),
+     _show_log_intent),
+    (re.compile(r"\b(hide|close|dismiss)\b.{0,40}\b(conversation|chat) (log|history)\b", re.I),
+     _hide_log_intent),
+    (re.compile(r"\b(cancel|stop|clear|delete|remove)\b.{0,30}\btimers?\b", re.I),
+     _timer_cancel_intent),
+    (re.compile(
+        r"(?:\b(?:set|start|create|begin|put)\b.{0,30}\btimer\b"
+        r"|\btimer\b.{0,12}\bfor\b"
+        r"|\b\d+\s*(?:hours?|hrs?|minutes?|mins?|seconds?|secs?)\b.{0,16}\btimer\b)", re.I),
+     _timer_start_intent),
 ]
 
 
-def _match_intercept(text: str) -> tuple[str, dict, str | None] | None:
-    """Combined deterministic intercept: (tool_name, args, spoken) — spoken
-    None means use the tool's return value as the response. None = no match,
-    the turn goes to the normal LLM engines."""
-    m = _match_display_intercept(text)
-    if m is not None:
-        return m[0], {}, m[1]
-    for pattern, handler in _ARG_INTERCEPTS:
-        mt = pattern.search(text)
-        if mt:
-            r = handler(mt, text)
-            if r is not None:
-                return r
+def _match_intent_hint(text: str) -> IntentHint | None:
+    """The IntentHint for a recognised tool-shaped command, or None to run
+    the turn unaided."""
+    for pattern, builder in _INTENT_HINTS:
+        m = pattern.search(text)
+        if m:
+            hint = builder(m, text)
+            if hint is not None:
+                return hint
     return None
+
+
+def _with_hint(user_text: str, hint: IntentHint | None) -> str:
+    """Engine input for the turn: the user's words plus the steering note.
+    History always stores the CLEAN text — the note is per-turn steering,
+    not part of the conversation."""
+    if hint is None:
+        return user_text
+    return f"{user_text}\n\n[system note for the assistant: {hint.sentence}]"
 
 
 class ConversationManager:
@@ -144,6 +180,10 @@ class ConversationManager:
         self.mcp = mcp_client
         self.tts_engine = tts_engine
         self.memory = memory_client
+        # Intent-guard probe: injected by main.py as a closure over the
+        # LocalToolsClient's call log — `probe(tool_name, since_monotonic)`
+        # answers "did the engine actually invoke this tool during the turn?"
+        self.tool_call_probe: Callable[[str, float], bool] | None = None
         self.num_ctx = num_ctx
         self.num_predict = num_predict
         # Conversation log sink (injected by main.py; resolves origin tokens to
@@ -350,21 +390,19 @@ class ConversationManager:
             # Ollama for THIS turn only — never flip the user's switch.
             cloud_handled = False
             use_openclaw = False
-            intercepted = _match_intercept(full_text)
-            if intercepted is not None:
-                # Deterministic command: call the tool directly — no engine
-                # involved. spoken=None means the tool's return value IS the
-                # response (e.g. timers, where the tool assigns the name).
-                tool_name, tool_args, spoken = intercepted
-                tool_result = await self.mcp.call_tool(tool_name, tool_args)
-                response_text = spoken if spoken is not None else str(tool_result or "Done.")
-                self.history.append({"role": "user", "content": full_text})
-                self.history.append({"role": "assistant", "content": response_text})
-                log.info(f"[intercept] intent → {tool_name} (no LLM)")
-            elif self.cloud_llm is not None and self.cloud_llm_model:
+            # Intent hint: recognised tool-shaped commands get a steering
+            # note appended to the ENGINE input (history keeps the clean
+            # text) and arm the post-turn guard below. The LLM stays in the
+            # loop for every turn.
+            intent = _match_intent_hint(full_text)
+            t_intent = time.monotonic()
+            if intent is not None:
+                log.info(f"[intent] hinting {intent.tool} "
+                         f"(guard={'armed' if intent.guard_args is not None else 'off'})")
+            if self.cloud_llm is not None and self.cloud_llm_model:
                 cloud_handled = True
                 try:
-                    response_text = await self._run_llm_with_tools(full_text)
+                    response_text = await self._run_llm_with_tools(full_text, intent=intent)
                 except Exception as e:
                     log.error(f"[cloud] {self.cloud_llm_model} failed ({e}); "
                               f"falling back to local Ollama for this turn")
@@ -374,7 +412,7 @@ class ConversationManager:
                         self.history.pop()
                     self._force_local_turn = True
                     try:
-                        response_text = await self._run_llm_with_tools(full_text)
+                        response_text = await self._run_llm_with_tools(full_text, intent=intent)
                     finally:
                         self._force_local_turn = False
             else:
@@ -390,11 +428,11 @@ class ConversationManager:
                     use_openclaw = (decision != "ollama")
                     log.info(f"[router] {self.router_model} → {decision} in {route_s:.2f}s")
 
-            if intercepted is not None or cloud_handled:
+            if cloud_handled:
                 pass  # response_text already produced above
             elif use_openclaw:
                 try:
-                    oc_response = await self._run_openclaw(full_text)
+                    oc_response = await self._run_openclaw(full_text, intent=intent)
                     response_text = oc_response.text or ""
                     if self.on_openclaw_media and oc_response.media_urls:
                         audio_media_played = await self.on_openclaw_media(oc_response)
@@ -405,10 +443,32 @@ class ConversationManager:
                             log.info("Audio media played — suppressing text TTS")
                 except Exception as e:
                     log.error(f"OpenClaw failed ({e}), falling back to Ollama")
-                    response_text = await self._run_llm_with_tools(full_text)
+                    response_text = await self._run_llm_with_tools(full_text, intent=intent)
             else:
-                response_text = await self._run_llm_with_tools(full_text)
+                response_text = await self._run_llm_with_tools(full_text, intent=intent)
             t_after_llm = time.monotonic()
+
+            # Intent guard: the hint asked the engine to call a specific
+            # tool — verify it actually did (the probe watches the local
+            # tools' single dispatch point). If the model answered in prose
+            # instead, execute the tool now and speak ITS result; the prose
+            # is exactly the artifact the user must not hear.
+            if intent is not None and intent.guard_args is not None:
+                called = False
+                if self.tool_call_probe is not None:
+                    try:
+                        called = bool(self.tool_call_probe(intent.tool, t_intent))
+                    except Exception as e:
+                        log.debug(f"tool_call_probe failed: {e}")
+                if not called:
+                    log.warning(f"[intent-guard] engine skipped {intent.tool} — "
+                                f"executing it directly")
+                    result = await self.mcp.call_tool(intent.tool, intent.guard_args)
+                    response_text = str(result or "Done.")
+                    if self.history and self.history[-1].get("role") == "assistant":
+                        self.history[-1] = {"role": "assistant", "content": response_text}
+                    else:
+                        self.history.append({"role": "assistant", "content": response_text})
 
             # Store conversation exchange in long-term memory
             if self.memory and self.memory.available:
@@ -502,7 +562,7 @@ class ConversationManager:
         # response critical path — the user already heard the reply).
         await self._compact_history()
 
-    async def _run_openclaw(self, user_text: str):
+    async def _run_openclaw(self, user_text: str, intent: IntentHint | None = None):
         from .openclaw_client import OpenClawResponse
 
         self.history.append({"role": "user", "content": user_text})
@@ -510,7 +570,8 @@ class ConversationManager:
             self.history = self.history[-self.max_history:]
 
         t0 = time.monotonic()
-        response: OpenClawResponse = await self.openclaw_client.send_message(user_text)
+        response: OpenClawResponse = await self.openclaw_client.send_message(
+            _with_hint(user_text, intent))
         elapsed = time.monotonic() - t0
 
         if response.text:
@@ -526,12 +587,14 @@ class ConversationManager:
         log.info(f"OpenClaw responded in {elapsed:.2f}s: {len(response.text)} chars")
         return response
 
-    async def _run_llm_with_tools(self, user_text: str) -> str:
+    async def _run_llm_with_tools(self, user_text: str,
+                                  intent: IntentHint | None = None) -> str:
         """
         Send user text to Ollama with MCP tools available.
 
         Implements a tool-calling loop: the LLM can call tools, receive results,
-        and then generate a final text response.
+        and then generate a final text response. An IntentHint's steering note
+        is appended to THIS turn's model input only — history stays clean.
         """
         self.history.append({"role": "user", "content": user_text})
         if len(self.history) > self.max_history:
@@ -553,6 +616,10 @@ class ConversationManager:
                 system_prompt = system_prompt + "\n\n" + memory_block
 
         messages = [{"role": "system", "content": system_prompt}] + self.history
+        if intent is not None:
+            # Swap in the hinted variant of the just-appended user message
+            # (new dict — the history entry itself must stay clean).
+            messages[-1] = {"role": "user", "content": _with_hint(user_text, intent)}
 
         # Tool-calling loop (max 8 rounds to prevent infinite loops)
         t_llm_total = 0.0

@@ -637,6 +637,11 @@ async def lifespan(app: FastAPI):
         router_model=str(cfg.get("router_model", "") or ""),
         event_logger=_conversation_event_logger,
     )
+    # Intent-guard probe: lets the conversation verify that a hinted tool was
+    # actually invoked during the turn (LocalToolsClient.call_tool is the
+    # single dispatch point for both the local tool loop and OpenClaw's MCP
+    # path, so its call log sees every engine).
+    state.conversation.tool_call_probe = state.local_tools.called_since
 
     # Apply tts_voice from runtime config (overrides whatever the engine
     # was initialized with from env).

@@ -7,6 +7,7 @@ MCPClient so it can be registered with MultiMCPClient.
 """
 
 import logging
+import time
 from typing import Any, Awaitable, Callable
 
 log = logging.getLogger("hal.local_tools")
@@ -18,6 +19,12 @@ class LocalToolsClient:
     def __init__(self):
         # tool_name -> (schema_dict, async handler)
         self._tools: dict[str, tuple[dict, Callable[[dict], Awaitable[str]]]] = {}
+        # tool_name -> monotonic timestamp of the most recent invocation.
+        # Every engine path funnels through call_tool (the local tool loop
+        # dispatches here via MultiMCPClient, OpenClaw via the MCP server's
+        # _call), so the conversation intent-guard can verify that a hinted
+        # tool actually ran during the turn.
+        self._last_called: dict[str, float] = {}
 
     def register(self, name: str, description: str, parameters: dict, handler: Callable[[dict], Awaitable[str]]):
         """Register a tool. parameters is a JSON schema (object type)."""
@@ -57,12 +64,17 @@ class LocalToolsClient:
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> str:
         if name not in self._tools:
             return f"Error: Unknown local tool '{name}'"
+        self._last_called[name] = time.monotonic()
         _, handler = self._tools[name]
         try:
             return await handler(arguments or {})
         except Exception as e:
             log.error(f"Local tool '{name}' failed: {e}")
             return f"Error calling {name}: {e}"
+
+    def called_since(self, name: str, since_monotonic: float) -> bool:
+        """Whether `name` was invoked after the given time.monotonic() mark."""
+        return self._last_called.get(name, 0.0) > since_monotonic
 
     async def disconnect(self):
         # Nothing to clean up
