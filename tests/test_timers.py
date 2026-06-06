@@ -220,8 +220,8 @@ async def test_ha_mirror_start_and_cancel(fake_main):
     call = st.mcp_client.call_tool.await_args_list[0]
     assert call.args[0] == "ha_call_service"
     assert call.args[1]["service"] == "start"
-    assert call.args[1]["target"]["entity_id"] == "timer.pal_timer_1"
-    assert call.args[1]["service_data"]["duration"] == "0:01:30"
+    assert call.args[1]["entity_id"] == "timer.pal_timer_1"
+    assert call.args[1]["data"]["duration"] == "0:01:30"
     await mgr.cancel(t.id)
     await asyncio.sleep(0.05)
     services = [c.args[1]["service"] for c in st.mcp_client.call_tool.await_args_list]
@@ -237,7 +237,7 @@ async def test_resync_pool_cancels_all_slots(fake_main):
     )
     mgr = TimerManager(st)
     await mgr.resync_pool_on_startup()
-    entities = [c.args[1]["target"]["entity_id"]
+    entities = [c.args[1]["entity_id"]
                 for c in st.mcp_client.call_tool.await_args_list]
     assert entities == [f"timer.pal_timer_{i}" for i in range(1, 6)]
     assert all(c.args[1]["service"] == "cancel"

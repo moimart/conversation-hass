@@ -317,10 +317,9 @@ class TimerManager:
         mcp = getattr(self._state, "mcp_client", None)
         if mcp is None or "ha_call_service" not in getattr(mcp, "tool_names", []):
             return
-        args: dict = {"domain": "timer", "service": service,
-                      "target": {"entity_id": entity_id}}
+        args: dict = {"domain": "timer", "service": service, "entity_id": entity_id}
         if duration is not None:
-            args["service_data"] = {"duration": _hms(duration)}
+            args["data"] = {"duration": _hms(duration)}
         try:
             await asyncio.wait_for(mcp.call_tool("ha_call_service", args), timeout=5.0)
         except Exception as e:
