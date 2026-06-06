@@ -142,11 +142,16 @@ body.show-conversation-log .clog-stage {
     min-width: 42px;
 }
 
+/* Inline at the END of the message text (a leading chip column squeezes the
+   text into a ragged narrow column on rows that have an origin). */
 .clog-origin {
-    flex: 0 0 auto;
+    display: inline-block;
+    margin-left: 8px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
     letter-spacing: 0.06em;
+    font-style: normal;
+    font-weight: 400;
     color: var(--text-dim);
     border: 1px solid var(--border);
     border-radius: 999px;

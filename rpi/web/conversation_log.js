@@ -161,15 +161,17 @@ export function mountConversationLog(root) {
         time.textContent = row.ts ? rowTime(row.ts) : "";
         if (row.ts) time.title = row.ts;
         el.appendChild(time);
-        if (row.origin) {
-            const chip = document.createElement("span");
-            chip.className = "clog-origin";
-            chip.textContent = row.origin;
-            el.appendChild(chip);
-        }
         const text = document.createElement("span");
         text.className = "clog-text";
         text.textContent = row.text;
+        if (row.origin) {
+            // Origin chip rides INLINE at the end of the message — a leading
+            // chip column squeezes the text and makes mixed rows look ragged.
+            const chip = document.createElement("span");
+            chip.className = "clog-origin";
+            chip.textContent = row.origin;
+            text.appendChild(chip);
+        }
         el.appendChild(text);
         return el;
     }
