@@ -238,7 +238,59 @@ async def _dispatch_show_image(
     # Remember it so a satellite that (re)connects mid-display can replay it.
     import time as _time
     state.active_visual = {"msg": msg, "expires": _time.monotonic() + duration_s}
+    # Conversation log: persist a thumbnail of what was shown (kind='image',
+    # origin = the entity/source label). Fire-and-forget — the PIL downscale
+    # runs in a thread and a failure must never affect the display.
+    asyncio.create_task(_log_orb_image(state, image_b64, mime, entity_id))
     return sent
+
+
+_LOG_THUMB_MAX = 512        # px, longest edge of the stored thumbnail
+
+
+def _make_thumbnail(image_bytes: bytes) -> tuple[bytes, str] | None:
+    """Downscale to a JPEG thumbnail (≤ _LOG_THUMB_MAX px on the longest
+    edge) so forever-retention stays cheap. Returns None when the bytes
+    aren't a decodable image."""
+    try:
+        from io import BytesIO
+        from PIL import Image
+        img = Image.open(BytesIO(image_bytes))
+        img.thumbnail((_LOG_THUMB_MAX, _LOG_THUMB_MAX))
+        if img.mode not in ("RGB", "L"):
+            # JPEG can't carry alpha — flatten onto white (QR codes etc.).
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            img = img.convert("RGBA")
+            background.paste(img, mask=img.split()[-1])
+            img = background
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=80)
+        return out.getvalue(), "image/jpeg"
+    except Exception as e:
+        log.debug(f"log thumbnail failed: {type(e).__name__}: {e}")
+        return None
+
+
+async def _log_orb_image(state, image_b64: str, mime: str, entity_id: str) -> None:
+    """Append an image entry to the persistent conversation log."""
+    clog = getattr(state, "conversation_log", None)
+    if clog is None or not getattr(clog, "enabled", False):
+        return
+    try:
+        raw = base64.b64decode(image_b64)
+        thumb = await asyncio.to_thread(_make_thumbnail, raw)
+        if thumb is None:
+            return
+        await clog.log(
+            "image",
+            "Image shown on the orb",
+            origin=entity_id or None,
+            meta={"source_mime": mime, "bytes": len(raw)},
+            image=thumb[0],
+            image_mime=thumb[1],
+        )
+    except Exception as e:
+        log.debug(f"orb image log failed: {type(e).__name__}: {e}")
 
 
 async def _dispatch_play_video(

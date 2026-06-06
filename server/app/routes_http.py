@@ -351,6 +351,32 @@ def _cloud_llm_available(state) -> bool:
         return False
 
 
+@router.get("/api/conversation/log/image")
+async def get_conversation_log_image(request: Request):
+    """The stored thumbnail for one image row (?id=N). The page payloads only
+    carry `has_image` — the view loads bytes lazily through this, so a page of
+    100 rows never ships megabytes."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    clog = state.conversation_log
+    if clog is None or not clog.enabled:
+        return Response(status_code=404)
+    try:
+        row_id = int(request.query_params.get("id", ""))
+    except ValueError:
+        return Response(status_code=400)
+    try:
+        found = await clog.fetch_image(row_id)
+    except Exception as e:
+        log.warning(f"conversation log image fetch failed: {type(e).__name__}: {e}")
+        return Response(status_code=503)
+    if found is None:
+        return Response(status_code=404)
+    image, mime = found
+    return Response(content=image, media_type=mime,
+                    headers={"Cache-Control": "max-age=86400, immutable"})
+
+
 @router.get("/api/cloud_llm")
 async def get_cloud_llm(request: Request):
     """Cloud override status. NEVER includes provider keys or endpoints.

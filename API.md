@@ -290,9 +290,10 @@ back **oldest → newest** within the page.
 
 | Field | Notes |
 |---|---|
-| `kind` | `user` \| `assistant` \| `announcement` |
+| `kind` | `user` \| `assistant` \| `announcement` \| `image` (a static image shown on the orb; `origin` = its entity/source label) |
 | `origin` | `null` for kiosk voice turns; the paired device's name for satellite turns; the source channel (`api`, `mqtt`, `openclaw`, `voice-tool`) for announcements. Never the pairing token. |
 | `has_more` | `true` while older rows exist (keep paging with `before_id`) |
+| `has_image` | `true` on `kind: "image"` rows (orb images) — fetch the thumbnail lazily via `GET /api/conversation/log/image?id=<row id>` (returns the stored JPEG; page payloads never carry bytes) |
 
 Degraded shapes: `{"rows": [], "has_more": false, "disabled": true}` when no
 DSN is configured, and `503` `{"error": "log_unavailable", "rows": []}` while
@@ -807,6 +808,7 @@ endpoints so the browser only has to talk to one origin.
 | `GET`  | `/style.css`, `/app.js`, `/calendar.css`, `/calendar.js`, `/fonts/...` | Kiosk static assets (image-baked) |
 | `GET`  | `/api/themes` | Proxy to AI server `/api/themes` |
 | `GET`  | `/api/conversation/log` | Proxy to AI server [`/api/conversation/log`](#get-apiconversationlog) (query string forwarded) |
+| `GET`  | `/api/conversation/log/image` | Proxy to the log's thumbnail route (`?id=N`) |
 | `GET`  | `/themes/{name}/{filename}` | Proxy to AI server theme assets |
 | `GET`  | `/ws` | Kiosk WebSocket (see message table below) |
 | `POST` | `/api/snapshot` | Receives JPEG from a kiosk client, forwards to AI server `/api/snapshot` |

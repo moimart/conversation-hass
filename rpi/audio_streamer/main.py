@@ -1002,6 +1002,7 @@ class AudioManager:
         # Theme plug-in passthrough: list + per-theme assets forward to the AI server.
         app.router.add_get("/api/themes", self._proxy_to_ai_server)
         app.router.add_get("/api/conversation/log", self._proxy_to_ai_server)
+        app.router.add_get("/api/conversation/log/image", self._proxy_to_ai_server)
         app.router.add_get(r"/themes/{name}/{filename}", self._proxy_to_ai_server)
         # Looping photo-frame video lives in a writable dir (the /app/web
         # tree is mounted read-only). Register BEFORE the "/" catch-all

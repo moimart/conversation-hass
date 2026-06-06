@@ -163,7 +163,18 @@ export function mountConversationLog(root) {
         el.appendChild(time);
         const text = document.createElement("span");
         text.className = "clog-text";
-        text.textContent = row.text;
+        if (row.kind === "image" && row.has_image) {
+            // Orb images render as a small lazy-loaded thumbnail — the page
+            // payload only says has_image; bytes come from the image route.
+            const img = document.createElement("img");
+            img.className = "clog-img";
+            img.loading = "lazy";
+            img.alt = row.text || "Image shown on the orb";
+            img.src = `${base()}/api/conversation/log/image?id=${row.id}`;
+            text.appendChild(img);
+        } else {
+            text.textContent = row.text;
+        }
         if (row.origin) {
             // Origin chip rides INLINE at the end of the message — a leading
             // chip column squeezes the text and makes mixed rows look ragged.

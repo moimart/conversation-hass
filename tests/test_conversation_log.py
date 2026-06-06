@@ -17,12 +17,14 @@ from server.app.conversation_log import ConversationLog
 # --- fakes -------------------------------------------------------------------
 
 class _FakeConn:
-    def __init__(self, fetch_rows=None, fail=False):
+    def __init__(self, fetch_rows=None, fail=False, fetchrow_result=None):
         self.execute = AsyncMock()
         self.fetch = AsyncMock(return_value=fetch_rows or [])
+        self.fetchrow = AsyncMock(return_value=fetchrow_result)
         if fail:
             self.execute.side_effect = RuntimeError("db down")
             self.fetch.side_effect = RuntimeError("db down")
+            self.fetchrow.side_effect = RuntimeError("db down")
 
 
 class _FakePool:
@@ -40,11 +42,12 @@ class _FakePool:
         return _Ctx()
 
 
-def _row(id, kind="user", text="hi", origin=None, meta=None):
+def _row(id, kind="user", text="hi", origin=None, meta=None, has_image=False):
     return {
         "id": id,
         "ts": datetime(2026, 6, 5, 10, 0, id % 60, tzinfo=timezone.utc),
         "kind": kind, "text": text, "origin": origin, "meta": meta,
+        "has_image": has_image,
     }
 
 
@@ -64,7 +67,7 @@ async def test_log_inserts_row():
         await cl.log("user", "turn on the lights", origin="iPhone Air")
     args = conn.execute.await_args_list[-1].args
     assert "INSERT INTO conversation_log" in args[0]
-    assert args[1:] == ("user", "turn on the lights", "iPhone Air", None)
+    assert args[1:] == ("user", "turn on the lights", "iPhone Air", None, None, None)
 
 
 @pytest.mark.asyncio

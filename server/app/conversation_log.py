@@ -35,15 +35,27 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversation_log (
     id     BIGSERIAL    PRIMARY KEY,
     ts     TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    kind   TEXT         NOT NULL CHECK (kind IN ('user','assistant','announcement')),
+    kind   TEXT         NOT NULL,
     text   TEXT         NOT NULL,
     origin TEXT,
     meta   JSONB
 );
 CREATE INDEX IF NOT EXISTS conversation_log_id_desc ON conversation_log (id DESC);
+
+-- Schema evolution happens HERE: idempotent statements run on EVERY connect
+-- (there is no migration framework). v2 (June 2026) adds orb images to the
+-- log: a downscaled thumbnail per shown image, kind='image'. v1 installs had
+-- the kind CHECK inline on the column — postgres auto-named it
+-- conversation_log_kind_check, so the drop/add pair below both migrates v1
+-- and is a cheap no-op revalidation on an already-current table.
+ALTER TABLE conversation_log ADD COLUMN IF NOT EXISTS image BYTEA;
+ALTER TABLE conversation_log ADD COLUMN IF NOT EXISTS image_mime TEXT;
+ALTER TABLE conversation_log DROP CONSTRAINT IF EXISTS conversation_log_kind_check;
+ALTER TABLE conversation_log ADD CONSTRAINT conversation_log_kind_check
+    CHECK (kind IN ('user','assistant','announcement','image'));
 """
 
-VALID_KINDS = ("user", "assistant", "announcement")
+VALID_KINDS = ("user", "assistant", "announcement", "image")
 
 
 class ConversationLog:
@@ -105,8 +117,13 @@ class ConversationLog:
         text: str,
         origin: str | None = None,
         meta: dict | None = None,
+        image: bytes | None = None,
+        image_mime: str | None = None,
     ) -> None:
-        """Append one entry. NEVER raises — a DB hiccup must not break a turn."""
+        """Append one entry. NEVER raises — a DB hiccup must not break a turn.
+        `image` stores a (caller-downscaled) thumbnail for kind='image' rows;
+        pages never ship the bytes — the view loads them lazily via
+        fetch_image()."""
         try:
             text = (text or "").strip()
             if not text or kind not in VALID_KINDS:
@@ -116,10 +133,11 @@ class ConversationLog:
                 return
             async with self._pool.acquire() as conn:
                 await conn.execute(
-                    "INSERT INTO conversation_log (kind, text, origin, meta) "
-                    "VALUES ($1, $2, $3, $4)",
+                    "INSERT INTO conversation_log (kind, text, origin, meta, image, image_mime) "
+                    "VALUES ($1, $2, $3, $4, $5, $6)",
                     kind, text, origin,
                     json.dumps(meta) if meta is not None else None,
+                    image, image_mime,
                 )
         except Exception as e:
             log.warning(f"conversation_log: write failed ({type(e).__name__}: {e}) — entry dropped")
@@ -138,7 +156,8 @@ class ConversationLog:
             raise RuntimeError("conversation log database unavailable")
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT id, ts, kind, text, origin, meta FROM conversation_log "
+                "SELECT id, ts, kind, text, origin, meta, "
+                "(image IS NOT NULL) AS has_image FROM conversation_log "
                 "WHERE ($1::bigint IS NULL OR id < $1) "
                 "ORDER BY id DESC LIMIT $2",
                 before_id, limit,
@@ -158,8 +177,25 @@ class ConversationLog:
                 "text": r["text"],
                 "origin": r["origin"],
                 "meta": meta,
+                "has_image": bool(r["has_image"]),
             })
         return {"rows": out, "has_more": len(rows) == limit}
+
+    async def fetch_image(self, row_id: int) -> tuple[bytes, str] | None:
+        """The stored thumbnail (bytes, mime) for one row, or None. Raises on
+        DB failure (the HTTP layer maps it to 503), like fetch()."""
+        if not self.enabled:
+            return None
+        if self._pool is None and not await self._try_connect():
+            raise RuntimeError("conversation log database unavailable")
+        async with self._pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT image, image_mime FROM conversation_log WHERE id = $1",
+                int(row_id),
+            )
+        if r is None or r["image"] is None:
+            return None
+        return bytes(r["image"]), r["image_mime"] or "image/jpeg"
 
     async def close(self) -> None:
         pool, self._pool = self._pool, None
