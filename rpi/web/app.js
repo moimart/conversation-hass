@@ -329,6 +329,25 @@
         close: () => { if (conversationLogController) conversationLogController.dismiss("close"); },
     };
 
+    // --- Timer countdown overlay (lazy-loaded on first timer_countdown) ---
+    let timerOverlayController = null;
+    let timerOverlayLoading = null;
+    async function getTimerOverlay() {
+        if (timerOverlayController) return timerOverlayController;
+        if (!timerOverlayLoading) {
+            timerOverlayLoading = import("./timer_overlay.js").then((mod) => {
+                const root = document.getElementById("timer-countdown-root");
+                timerOverlayController = mod.mountTimerOverlay(root);
+                return timerOverlayController;
+            }).catch((e) => {
+                console.error("[timer] module load failed:", e);
+                timerOverlayLoading = null;
+                throw e;
+            });
+        }
+        return timerOverlayLoading;
+    }
+
     // Wrap any orb-takeover handler so the calendar dismisses first.
     // Returns a Promise that resolves once the takeover handler has been
     // invoked (after the cube has rotated back, if it was up).
@@ -650,6 +669,24 @@
             case "hide_conversation_log":
                 if (conversationLogController) {
                     conversationLogController.dismiss("explicit").catch(() => {});
+                }
+                break;
+            case "timer_countdown":
+                // The countdown renders inside the orb — clear any photo
+                // frame first so the orb is actually visible, and dismiss
+                // the calendar / conversation-log overlays that cover it.
+                withPhotoFramePreempt(() => withCalendarPreempt(() => {
+                    if (conversationLogController && conversationLogController.isShown()) {
+                        conversationLogController.dismiss("preempt").catch(() => {});
+                    }
+                    getTimerOverlay().then((t) => t.show(msg))
+                        .catch((e) => console.error("[timer] show failed:", e));
+                }));
+                break;
+            case "timer_countdown_cancel":
+            case "timer_countdown_dismiss":
+                if (timerOverlayController) {
+                    timerOverlayController.dismiss(msg.timer_id);
                 }
                 break;
             case "ptt_active":

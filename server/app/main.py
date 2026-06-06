@@ -165,6 +165,11 @@ class AppState:
     # injected event-logger wrapper (resolves satellite tokens → device names).
     conversation_log: object | None = None
     conversation_event_logger: object | None = None
+    # Voice timers (timers.TimerManager) + the runtime templates that name
+    # timers and word the finish announcement (HA-editable text config).
+    timer_manager: object | None = None
+    timer_name_template: str = "Timer {n}"
+    timer_announce_template: str = "{name} is ready."
     # Display orientation
     display_orientation: str = "portrait"
     orb_side: str = "left"
@@ -569,6 +574,18 @@ async def lifespan(app: FastAPI):
         else:
             log.warning("No MCP servers configured")
 
+    # Voice timers: templates from runtime config (HA-editable), manager
+    # created after the MCP client so the HA mirror + startup resync can call
+    # timer.start/cancel. In-memory: timers do NOT survive a restart, so the
+    # resync cancels any ghost pool entities left running in HA.
+    from .timers import TimerManager
+    state.timer_name_template = str(cfg.get("timer_name_template", "Timer {n}") or "Timer {n}")
+    state.timer_announce_template = str(
+        cfg.get("timer_announce_template", "{name} is ready.") or "{name} is ready."
+    )
+    state.timer_manager = TimerManager(state)
+    asyncio.create_task(state.timer_manager.resync_pool_on_startup())
+
     # Register local tools (theme, volume, mute, sun-time helpers)
     state.local_tools = build_local_tools(state)
     state.mcp_client.register_client("hal-local", state.local_tools)
@@ -954,6 +971,55 @@ async def speak_to_satellites(state: AppState, text: str, audio_bytes: bytes | N
             })
             spoken += 1
     return spoken
+
+
+async def announce_everywhere(state: AppState, text: str,
+                              log_source: str | None = None) -> None:
+    """Speak `text` on EVERY device — kiosk speaker + all satellites — and
+    mirror it to web UIs, the MQTT last_response sensor, and (when log_source
+    is given) the conversation log. Needs no active turn; used for proactive
+    events like finished timers. Best-effort throughout: a missing kiosk or
+    TTS failure must never crash the caller."""
+    text = (text or "").strip()
+    if not text:
+        return
+    audio_bytes = None
+    if state.tts_engine:
+        try:
+            audio_bytes = await state.tts_engine.synthesize(text)
+        except Exception as e:
+            log.error(f"announce TTS failed: {e}")
+    msg = {"type": "response", "text": text}
+    ws = state.audio_websocket
+    if ws:
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            pass
+    await broadcast_to_ui(state, msg)
+    await speak_to_satellites(state, text, audio_bytes)
+    if ws and audio_bytes:
+        try:
+            await ws.send_json({"type": "tts_start", "size": len(audio_bytes)})
+            if state.pipeline:
+                state.pipeline.set_ai_speaking(True)
+            for i in range(0, len(audio_bytes), 8192):
+                await ws.send_bytes(audio_bytes[i:i + 8192])
+            await ws.send_json({"type": "tts_end"})
+        except Exception as e:
+            log.error(f"announce kiosk audio failed: {e}")
+            if state.pipeline:
+                state.pipeline.set_ai_speaking(False)
+    if state.mqtt_bridge:
+        try:
+            await state.mqtt_bridge.publish_last_response(text)
+        except Exception:
+            pass
+    if log_source and state.conversation_event_logger:
+        try:
+            await state.conversation_event_logger("announcement", text, source=log_source)
+        except Exception:
+            pass
 
 
 # === Route registration ======================================================

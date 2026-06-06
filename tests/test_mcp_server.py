@@ -24,6 +24,7 @@ def test_exposes_kiosk_display_tools():
         "show_calendar", "hide_calendar",
         "show_conversation_log", "hide_conversation_log",
         "show_photo_frame", "hide_photo_frame",
+        "start_timer", "cancel_timer", "list_timers",
     } <= names
 
 

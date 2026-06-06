@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="calendar.css">
     <link rel="stylesheet" href="conversation_log.css">
+    <link rel="stylesheet" href="timer_overlay.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
 </head>
@@ -50,6 +51,10 @@
             <div class="eye-state-video-layer" hidden></div>
             <video class="eye-stream" id="eye-stream" autoplay muted playsinline></video>
             <div class="eye-scan-line"></div>
+            <!-- Voice-timer countdown: the last 10 seconds tick here, inside
+                 the orb cavity. Populated by timer_overlay.js on first
+                 timer_countdown (only the originating device receives it). -->
+            <div class="timer-countdown-layer" id="timer-countdown-root" hidden></div>
         </div>
 
         <!-- Status indicator -->

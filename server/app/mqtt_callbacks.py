@@ -391,6 +391,12 @@ async def wire(state, bridge) -> None:
     bridge._cached_config["calendar_default_source"] = str(
         state.runtime_config.get("calendar_default_source", "") or ""
     )
+    bridge._cached_config["timer_name_template"] = str(
+        state.runtime_config.get("timer_name_template", "Timer {n}") or "Timer {n}"
+    )
+    bridge._cached_config["timer_announce_template"] = str(
+        state.runtime_config.get("timer_announce_template", "{name} is ready.") or "{name} is ready."
+    )
     bridge._cached_config["calendar_dismiss_seconds"] = int(
         state.runtime_config.get("calendar_dismiss_seconds", 30) or 30
     )
@@ -544,6 +550,18 @@ async def wire(state, bridge) -> None:
         value = (value or "").strip()
         await _persist("calendar_default_source", value)
         await bridge.publish_config("calendar_default_source", value)
+
+    async def _cfg_timer_name_template(value: str):
+        value = (value or "").strip() or "Timer {n}"
+        state.timer_name_template = value
+        await _persist("timer_name_template", value)
+        await bridge.publish_config("timer_name_template", value)
+
+    async def _cfg_timer_announce_template(value: str):
+        value = (value or "").strip() or "{name} is ready."
+        state.timer_announce_template = value
+        await _persist("timer_announce_template", value)
+        await bridge.publish_config("timer_announce_template", value)
 
     async def _cfg_calendar_dismiss_seconds(seconds: int):
         try:
@@ -781,6 +799,8 @@ async def wire(state, bridge) -> None:
     bridge.set_config_callback("photo_frame_show_clock", _cfg_photo_frame_show_clock)
     bridge.set_config_callback("calendar_default_source", _cfg_calendar_default_source)
     bridge.set_config_callback("calendar_dismiss_seconds", _cfg_calendar_dismiss_seconds)
+    bridge.set_config_callback("timer_name_template", _cfg_timer_name_template)
+    bridge.set_config_callback("timer_announce_template", _cfg_timer_announce_template)
     bridge.set_config_callback("start_muted", _cfg_start_muted)
     bridge.on_display_set = _mqtt_display_set
     bridge.set_config_callback("display_auto_off_seconds", _cfg_display_auto_off_seconds)

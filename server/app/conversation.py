@@ -62,6 +62,57 @@ def _match_display_intercept(text: str) -> tuple[str, str] | None:
     return None
 
 
+# Arg-carrying intercepts: each handler parses the utterance and returns
+# (tool_name, args, spoken_confirmation) — spoken=None means "speak the tool's
+# return value" (used by timers, whose names are assigned by the tool).
+# Cancel patterns are checked BEFORE start patterns so "stop the 10 minute
+# timer" never creates one.
+
+_TIMER_CANCEL_RE = re.compile(r"\b(cancel|stop|clear|delete|remove)\b.{0,30}\btimers?\b", re.I)
+_TIMER_START_RE = re.compile(
+    r"(?:\b(?:set|start|create|begin|put)\b.{0,30}\btimer\b"     # "set a timer for 5 minutes"
+    r"|\btimer\b.{0,12}\bfor\b"                                  # "timer for 5 minutes"
+    r"|\b\d+\s*(?:hours?|hrs?|minutes?|mins?|seconds?|secs?)\b.{0,16}\btimer\b)",  # "10 minute timer"
+    re.I,
+)
+
+
+def _timer_cancel_handler(match: "re.Match[str]", text: str):
+    num = re.search(r"\btimer\s*(?:number\s*)?(\d+)\b", text, re.I)
+    name = num.group(1) if num else ""
+    return "cancel_timer", {"name": name}, None
+
+
+def _timer_start_handler(match: "re.Match[str]", text: str):
+    from .timers import parse_duration_seconds
+    secs = parse_duration_seconds(text)
+    if secs is None:
+        return None  # "set a timer" with no duration → let the LLM ask
+    return "start_timer", {"duration_s": secs}, None
+
+
+_ARG_INTERCEPTS: list = [
+    (_TIMER_CANCEL_RE, _timer_cancel_handler),
+    (_TIMER_START_RE, _timer_start_handler),
+]
+
+
+def _match_intercept(text: str) -> tuple[str, dict, str | None] | None:
+    """Combined deterministic intercept: (tool_name, args, spoken) — spoken
+    None means use the tool's return value as the response. None = no match,
+    the turn goes to the normal LLM engines."""
+    m = _match_display_intercept(text)
+    if m is not None:
+        return m[0], {}, m[1]
+    for pattern, handler in _ARG_INTERCEPTS:
+        mt = pattern.search(text)
+        if mt:
+            r = handler(mt, text)
+            if r is not None:
+                return r
+    return None
+
+
 class ConversationManager:
     """Manages the conversation state machine and LLM interactions via MCP."""
 
@@ -299,15 +350,17 @@ class ConversationManager:
             # Ollama for THIS turn only — never flip the user's switch.
             cloud_handled = False
             use_openclaw = False
-            intercepted = _match_display_intercept(full_text)
+            intercepted = _match_intercept(full_text)
             if intercepted is not None:
-                # Deterministic display command: call the tool directly and
-                # answer with a canned confirmation — no engine involved.
-                tool_name, response_text = intercepted
-                await self.mcp.call_tool(tool_name, {})
+                # Deterministic command: call the tool directly — no engine
+                # involved. spoken=None means the tool's return value IS the
+                # response (e.g. timers, where the tool assigns the name).
+                tool_name, tool_args, spoken = intercepted
+                tool_result = await self.mcp.call_tool(tool_name, tool_args)
+                response_text = spoken if spoken is not None else str(tool_result or "Done.")
                 self.history.append({"role": "user", "content": full_text})
                 self.history.append({"role": "assistant", "content": response_text})
-                log.info(f"[intercept] display intent → {tool_name} (no LLM)")
+                log.info(f"[intercept] intent → {tool_name} (no LLM)")
             elif self.cloud_llm is not None and self.cloud_llm_model:
                 cloud_handled = True
                 try:

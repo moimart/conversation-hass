@@ -48,6 +48,10 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     # deliberately NOT a runtime-config key — the switch must boot OFF after
     # every restart (no accidental cloud spend).
     "cloud_llm_model":           ("CLOUD_LLM_MODEL", ""),
+    # Voice timers: naming + announcement wording (any language; {n} is the
+    # timer number, {name} the rendered timer name).
+    "timer_name_template":       ("TIMER_NAME_TEMPLATE", "Timer {n}"),
+    "timer_announce_template":   ("TIMER_ANNOUNCE_TEMPLATE", "{name} is ready."),
 }
 
 

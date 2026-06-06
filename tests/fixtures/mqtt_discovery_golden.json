@@ -722,6 +722,29 @@
     }
   ],
   [
+    "homeassistant/sensor/hal-default/active_timers/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "icon": "mdi:timer-sand",
+      "json_attributes_topic": "hal/hal-default/active_timers/attrs",
+      "name": "Active Timers",
+      "state_topic": "hal/hal-default/active_timers",
+      "unique_id": "hal-default_active_timers"
+    }
+  ],
+  [
     "homeassistant/sensor/hal-default/conversation_engine/config",
     {
       "availability": [
@@ -1446,6 +1469,56 @@
       "name": "Photo Frame Video URL",
       "state_topic": "hal/hal-default/config/photo_frame_video_url/state",
       "unique_id": "hal-default_config_photo_frame_video_url"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/config_timer_announce_template/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/timer_announce_template/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:timer-check-outline",
+      "mode": "text",
+      "name": "Timer Announce Template",
+      "state_topic": "hal/hal-default/config/timer_announce_template/state",
+      "unique_id": "hal-default_config_timer_announce_template"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/config_timer_name_template/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/timer_name_template/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:timer-cog-outline",
+      "mode": "text",
+      "name": "Timer Name Template",
+      "state_topic": "hal/hal-default/config/timer_name_template/state",
+      "unique_id": "hal-default_config_timer_name_template"
     }
   ],
   [

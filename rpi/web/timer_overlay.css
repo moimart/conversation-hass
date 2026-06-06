@@ -1,0 +1,53 @@
+/* Timer countdown — the final 10 seconds of a voice timer, rendered as a big
+   ticking number inside the orb cavity. Shown only on the device that created
+   the timer (body.show-timer-countdown is toggled by timer_overlay.js). */
+
+.timer-countdown-layer {
+    position: absolute;
+    inset: 29px;                /* same cavity as .eye-bezel-inner */
+    border-radius: 50%;
+    z-index: 12;                /* above state videos / camera takeover */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2%;
+    background: radial-gradient(circle at 50% 40%,
+        rgba(0, 0, 0, 0.55) 0%,
+        rgba(0, 0, 0, 0.82) 80%);
+    backdrop-filter: blur(2px);
+}
+.timer-countdown-layer[hidden] { display: none; }
+
+.timer-countdown-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: clamp(64px, 22vmin, 240px);
+    font-weight: 300;
+    line-height: 1;
+    color: #fff;
+    text-shadow: 0 0 28px rgba(var(--accent-rgb, 255, 140, 60), 0.55);
+}
+.timer-countdown-number.tick {
+    animation: timer-tick-pulse 0.4s ease-out;
+}
+@keyframes timer-tick-pulse {
+    0%   { transform: scale(1.12); opacity: 0.85; }
+    100% { transform: scale(1.0);  opacity: 1; }
+}
+
+.timer-countdown-name {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: clamp(13px, 2.6vmin, 26px);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* Full-screen feel: clear the room around the orb while counting down. */
+body.show-timer-countdown .transcript-container,
+body.show-timer-countdown .response-container,
+body.show-timer-countdown .status-bar {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: opacity 0.3s ease;
+}

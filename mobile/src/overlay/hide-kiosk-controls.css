@@ -54,6 +54,14 @@ body.show-conversation-log #display-root .response-container {
     display: none !important;
 }
 
+/* Timer countdown: the number renders INSIDE the orb, so the orb stays —
+   only the surrounding chrome clears out for the full-screen feel. */
+body.show-timer-countdown #display-root .clock-display,
+body.show-timer-countdown #display-root .transcript-container,
+body.show-timer-countdown #display-root .response-container {
+    display: none !important;
+}
+
 /* Phone-sized conversation log card: clear the device safe areas and leave
    room for the input bar at the bottom (you can keep chatting while reading). */
 body.show-conversation-log .clog-overlay {

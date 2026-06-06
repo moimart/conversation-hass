@@ -496,6 +496,7 @@ class AudioManager:
             "play_video", "video_stop", "themes_changed",
             "show_calendar", "hide_calendar",
             "show_conversation_log", "hide_conversation_log",
+            "timer_countdown", "timer_countdown_cancel", "timer_countdown_dismiss",
             "ptt_active",
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
             "show_photo_frame_video", "set_photo_frame_clock",

@@ -18,6 +18,7 @@
 - 📸 **Displays cameras, images, and videos** inside the orb (HA snapshots, live WebRTC, RTSP, HLS playlists)
 - 📅 **Pops up a calendar overlay** (month / week / day) pulled from any HA calendar, on voice or HA button
 - 📜 **Keeps a conversation log** — every request, answer, and announcement persisted forever in PostgreSQL, browsable full-screen on the kiosk (by voice or HA button) and in the companion app, with timestamps and origin labels (which phone asked, which channel announced)
+- ⏲️ **Voice timers** — "set a timer for 5 minutes" from the kiosk or any phone; auto-named (Timer 1, Timer 2, …, templates configurable in any language), the asking device shows the last 10 seconds as a big countdown inside the orb, and **every** device announces when it's done. Mirrored to HA `timer.*` helpers for dashboards/automations, with an Active Timers MQTT sensor
 - 🖼️ **Photo frame mode** — ambient full-screen image from a configurable HA `image.*` entity, white drop-shadow clock + Ken-Burns zoom, auto-crossfades when HA rotates the photo, dismisses on any kiosk action; **optional auto-activate after N minutes of inactivity**
 - 💤 **Display power (DPMS)** — actually powers the panel off (not just a black overlay), with optional idle auto-blank; wakes automatically on the next wake word / PTT / TTS / takeover. Same code path on RPi (Wayland) and x86 (Wayland or X11).
 - 🎯 **Wake word** *or* **Push-to-Talk** — your choice per situation (PTT triggerable from HA, an HTTP call, a WebSocket, or the desktop popup app)
@@ -332,6 +333,22 @@ the HA **Show Conversation Log** button, or tap the list button in the
 companion app (stays open until ✕). Scroll up to page older history in. A
 postgres outage never breaks a turn — writes are dropped with a warning and
 the connection heals itself.
+
+### Voice timers
+
+| Variable                  | Default            | Description                                                  |
+|---------------------------|--------------------|--------------------------------------------------------------|
+| `TIMER_NAME_TEMPLATE`     | `Timer {n}`        | How timers are named (`{n}` = number) — any language          |
+| `TIMER_ANNOUNCE_TEMPLATE` | `{name} is ready.` | What PAL says when a timer finishes (`{name}` = timer name)  |
+
+Both are live runtime config (HA text entities) — the env vars only seed the
+first boot. Say *"set a timer for 5 minutes"* (kiosk or phone): the device that
+asked shows the final 10 seconds as a countdown inside the orb, and every
+device speaks the announcement. Timers mirror onto pre-created HA helpers
+`timer.pal_timer_1`–`timer.pal_timer_5` (live remaining time in dashboards,
+`timer.finished` for automations) — PAL is the source of truth, so cancelling
+the HA entity does **not** stop the timer; cancel by voice ("cancel timer 2",
+"cancel all timers"). Active timers don't survive an AI-server restart.
 
 ### Sendspin (multi-room audio)
 

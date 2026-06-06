@@ -82,7 +82,9 @@ hal/<device_id>/
     ├── auto_theme/{state,set}                ON|OFF
     ├── start_muted/{state,set}               ON|OFF
     ├── calendar_default_source/{state,set}
-    └── calendar_dismiss_seconds/{state,set}  5-600
+    ├── calendar_dismiss_seconds/{state,set}  5-600
+    ├── timer_name_template/{state,set}
+    └── timer_announce_template/{state,set}
 ```
 
 ---
@@ -257,6 +259,7 @@ the theme catalog / voice list / model list changes.
 |-------------------------------|--------------------------|------------------------------------------------|
 | **State**                     | `state`                  | `idle/listening/processing/speaking`           |
 | **Last Response**             | `last_response`          | text (≤ 250 chars); full text in attributes    |
+| **Active Timers**             | `active_timers`          | count of running voice timers; per-timer `{name, remaining_s, ends_at}` in attributes |
 | **Last Task Duration**        | `task_metrics.task_total_s` | seconds, diagnostic                          |
 | **Last LLM Duration**         | `task_metrics.llm_total_s`  | seconds, diagnostic                          |
 | **Last Tools Duration**       | `task_metrics.tools_total_s` | seconds, diagnostic                         |
@@ -306,6 +309,8 @@ the theme catalog / voice list / model list changes.
 | **Show Camera**              | `camera.*` / `image.*` entity_id |
 | **Wake Word**                | Config |
 | **Calendar Default Source**  | Config |
+| **Timer Name Template**      | Config; `{n}` = timer number (any language) |
+| **Timer Announce Template**  | Config; `{name}` = timer name |
 
 ### Button
 

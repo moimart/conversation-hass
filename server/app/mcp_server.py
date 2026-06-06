@@ -109,6 +109,18 @@ def build_mcp_server(state: "AppState") -> FastMCP:
     async def hide_conversation_log() -> str:
         return await _call("hide_conversation_log", {})
 
+    @mcp.tool(name="start_timer", description="Start a countdown timer (kitchen-timer style). Pass duration_s as total seconds (e.g. '5 minutes' -> 300). Auto-named Timer 1, Timer 2, ...; every device announces when it finishes.")
+    async def start_timer(duration_s: int) -> str:
+        return await _call("start_timer", {"duration_s": duration_s})
+
+    @mcp.tool(name="cancel_timer", description="Cancel a running timer by name ('Timer 2') or number ('2'); empty name cancels all timers.")
+    async def cancel_timer(name: str = "") -> str:
+        return await _call("cancel_timer", {"name": name})
+
+    @mcp.tool(name="list_timers", description="List active timers and how much time each has left.")
+    async def list_timers() -> str:
+        return await _call("list_timers", {})
+
     @mcp.tool(name="show_photo_frame", description="Open the photo frame on the kiosk (full-screen ambient image with clock).")
     async def show_photo_frame(entity_id: str = "") -> str:
         return await _call("show_photo_frame", {"entity_id": entity_id})

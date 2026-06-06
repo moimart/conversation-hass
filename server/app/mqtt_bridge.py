@@ -196,6 +196,18 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
         serialize=_clamped_int_serialize(5, 600, 30),
     ),
     ConfigEntity(
+        key="timer_name_template", platform="text",
+        name="Timer Name Template", icon="mdi:timer-cog-outline",
+        default="Timer {n}",
+        extra={"mode": "text"}, serialize=lambda v: v or "Timer {n}",
+    ),
+    ConfigEntity(
+        key="timer_announce_template", platform="text",
+        name="Timer Announce Template", icon="mdi:timer-check-outline",
+        default="{name} is ready.",
+        extra={"mode": "text"}, serialize=lambda v: v or "{name} is ready.",
+    ),
+    ConfigEntity(
         key="start_muted", platform="switch", name="Start Muted",
         icon="mdi:microphone-off", default=False,
         extra={"payload_on": "ON", "payload_off": "OFF"},
@@ -379,6 +391,7 @@ class MQTTBridge:
         self._cached_theme: str = "dark"
         self._cached_last_response: str = ""
         self._cached_task_metrics: dict | None = None
+        self._cached_active_timers: tuple[int, list] = (0, [])
         # Live config caches for republish-on-reconnect — one dict keyed by
         # ConfigEntity.key, seeded from each entity's declared default.
         # (Callers seed real values via self._cached_config["<key>"] = ...)
@@ -477,6 +490,21 @@ class MQTTBridge:
                 "state_topic": f"{self.base}/last_response",
                 "json_attributes_topic": f"{self.base}/last_response/attrs",
                 "icon": "mdi:message-text",
+                "availability": avail,
+                "device": device,
+            },
+        ))
+
+        # Active timers — count of running voice timers; attributes carry the
+        # per-timer details (name, remaining_s, ends_at) for HA templates.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/sensor/{self.device_id}/active_timers/config",
+            {
+                "name": "Active Timers",
+                "unique_id": f"{self.device_id}_active_timers",
+                "state_topic": f"{self.base}/active_timers",
+                "json_attributes_topic": f"{self.base}/active_timers/attrs",
+                "icon": "mdi:timer-sand",
                 "availability": avail,
                 "device": device,
             },
@@ -888,6 +916,8 @@ class MQTTBridge:
                     # appears in HA even before HAL has spoken. Empty string
                     # is fine — HA shows it as blank rather than "unknown".
                     await self.publish_last_response(self._cached_last_response)
+                    # Seed the timer count so the sensor shows 0, not "unknown".
+                    await self.publish_active_timers(*self._cached_active_timers)
                     if self._cached_task_metrics:
                         await self.publish_task_metrics(self._cached_task_metrics)
                     # Live runtime-config — publish the cached values so
@@ -1199,6 +1229,15 @@ class MQTTBridge:
     async def publish_theme(self, theme: str):
         self._cached_theme = theme
         await self._safe_publish(f"{self.base}/theme/state", theme)
+
+    async def publish_active_timers(self, count: int, timers: list[dict]):
+        """Publish the voice-timer count (sensor state) + per-timer details
+        (JSON attributes: name, remaining_s, ends_at). Retained so HA shows
+        the right count straight after a reconnect."""
+        self._cached_active_timers = (count, timers)
+        await self._safe_publish(f"{self.base}/active_timers", str(count))
+        await self._safe_publish(f"{self.base}/active_timers/attrs",
+                                 json.dumps({"timers": timers}))
 
     async def publish_task_metrics(self, metrics: dict):
         """Publish the per-task timing breakdown for the diagnostic sensors.

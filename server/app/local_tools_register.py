@@ -669,6 +669,87 @@ def build_local_tools(state) -> LocalToolsClient:
         hide_conversation_log_tool,
     )
 
+    # --- Voice timers --------------------------------------------------------
+
+    async def start_timer_tool(args: dict) -> str:
+        from .timers import spoken_duration
+        try:
+            duration_s = int(args.get("duration_s", 0))
+        except (TypeError, ValueError):
+            return "I need a duration in seconds to start a timer."
+        if duration_s < 1:
+            return "I need a duration in seconds to start a timer."
+        if state.timer_manager is None:
+            return "Timers are not available right now."
+        # The origin token is only valid DURING the turn — capture it now so
+        # the countdown minutes later still routes to the asking device.
+        origin = getattr(state.conversation, "_turn_origin", None) if state.conversation else None
+        timer = await state.timer_manager.create(duration_s, origin)
+        return f"{timer.name} set for {spoken_duration(timer.duration_s)}."
+
+    tools.register(
+        "start_timer",
+        (
+            "Start a countdown timer (kitchen-timer style). Convert the user's "
+            "phrasing to total seconds in duration_s (e.g. '5 minutes' -> 300, "
+            "'1 hour 10 minutes' -> 4200). Timers are auto-named Timer 1, "
+            "Timer 2, ... The originating device shows a 10-second countdown at "
+            "the end, and every device announces when it finishes."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "duration_s": {"type": "integer", "minimum": 1, "maximum": 86400,
+                               "description": "Total timer length in seconds"},
+            },
+            "required": ["duration_s"],
+        },
+        start_timer_tool,
+    )
+
+    async def cancel_timer_tool(args: dict) -> str:
+        if state.timer_manager is None:
+            return "Timers are not available right now."
+        name = (args.get("name") or "").strip()
+        if not name:
+            n = await state.timer_manager.cancel_all()
+            return f"Cancelled {n} timer{'s' if n != 1 else ''}." if n else "No active timers."
+        if await state.timer_manager.cancel_by_name(name):
+            return f"Timer {name} cancelled." if name.isdigit() else f"{name} cancelled."
+        return f"No active timer matching {name!r}."
+
+    tools.register(
+        "cancel_timer",
+        (
+            "Cancel a running timer. Pass name as the timer's name ('Timer 2') "
+            "or just its number ('2'); omit name entirely to cancel ALL timers."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Timer name or number; empty = cancel all"},
+            },
+        },
+        cancel_timer_tool,
+    )
+
+    async def list_timers_tool(_args: dict) -> str:
+        from .timers import spoken_duration
+        if state.timer_manager is None:
+            return "Timers are not available right now."
+        active = state.timer_manager.list_active()
+        if not active:
+            return "No active timers."
+        parts = [f"{t.name} with {spoken_duration(t.remaining_s())} left" for t in active]
+        return "Active timers: " + "; ".join(parts) + "."
+
+    tools.register(
+        "list_timers",
+        "List the active timers and how much time each has left. Use for 'how many timers', 'how long is left on the timer', etc.",
+        {"type": "object", "properties": {}},
+        list_timers_tool,
+    )
+
     async def show_photo_frame_tool(args: dict) -> str:
         from .photo_frame import start_photo_frame
         entity_id = (args.get("entity_id") or "").strip()

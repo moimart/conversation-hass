@@ -741,6 +741,9 @@ and LLM response. Volume / mute / theme-picker UI clients can use this.
 | `hide_calendar`   | `{}` |
 | `show_conversation_log` | `{"duration_s": N?}` — open the full-screen conversation log view (the client fetches rows itself via [`GET /api/conversation/log`](#get-apiconversationlog)) |
 | `hide_conversation_log` | `{}` |
+| `timer_countdown` | `{"timer_id": "...", "name": "Timer 1", "ends_at_epoch_ms": N, "remaining_s": N}` — show the last-10s countdown inside the orb (sent ONLY to the device that created the timer; the client ticks locally from `ends_at_epoch_ms`) |
+| `timer_countdown_cancel` | `{"timer_id": "..."}` — tear the countdown down early (timer cancelled) |
+| `timer_countdown_dismiss` | `{"timer_id": "..."}` — safety dismiss at fire (the client also self-dismisses at 0) |
 | `ptt_active`      | `{"active": bool}` — PTT chip / orb glow on the kiosk |
 
 **Client → server**:
@@ -816,7 +819,7 @@ relays AI-server messages plus its own local sync:
 
 | `type` | Origin | Payload |
 |---|---|---|
-| `state`, `transcription`, `response`, `wake`, `set_theme`, `themes_changed`, `show_camera`, `stream_*`, `webrtc_signal`, `play_video`, `video_stop`, `show_calendar`, `hide_calendar`, `show_conversation_log`, `hide_conversation_log`, `ptt_active` | relayed from AI server | as in [`/ws/ui`](#wsui) |
+| `state`, `transcription`, `response`, `wake`, `set_theme`, `themes_changed`, `show_camera`, `stream_*`, `webrtc_signal`, `play_video`, `video_stop`, `show_calendar`, `hide_calendar`, `show_conversation_log`, `hide_conversation_log`, `timer_countdown`, `timer_countdown_cancel`, `timer_countdown_dismiss`, `ptt_active` | relayed from AI server | as in [`/ws/ui`](#wsui) |
 | `mute_sync` | local | `{"muted": bool}` |
 | `volume_sync` | local | `{"level": 0.0–1.0}` |
 
