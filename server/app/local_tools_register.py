@@ -816,18 +816,20 @@ def build_local_tools(state) -> LocalToolsClient:
         spoken = " ".join(code)  # read digits individually for TTS clarity
         return (
             f"Pairing started. The code is {spoken}. It's shown on the screen — "
-            f"enter it in the HAL app's pairing screen within about {ttl} seconds."
+            f"enter it in the PAL app on your device within about {ttl} seconds."
         )
 
     tools.register(
         "pair_phone",
         (
-            "Start pairing the HAL companion phone app. Generates a one-time "
-            "6-digit code, displays it full-screen on the kiosk, and returns it "
-            "so you can read it aloud. Use when the user says 'pair my phone', "
-            "'pair the app', 'connect my phone to HAL', 'set up the mobile app', "
-            "etc. The code expires in about two minutes; the user types it into "
-            "the app's pairing screen. Read the digits clearly, one by one."
+            "Start pairing the PAL companion app on a phone or tablet. Generates "
+            "a one-time 6-digit code, displays it full-screen on the kiosk, and "
+            "returns it so you can read it aloud. Use when the user says 'pair my "
+            "phone', 'pair my device', 'pair the app', 'connect my tablet to "
+            "PAL', 'set up the mobile app', etc. The code expires in about two "
+            "minutes; the user types it into the app's pairing screen. Refer to "
+            "it as their 'device' (it may be a phone or a tablet). Read the "
+            "digits clearly, one by one."
         ),
         {"type": "object", "properties": {}},
         pair_phone_tool,

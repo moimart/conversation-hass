@@ -7,9 +7,10 @@ import { checkServer, redeemCode } from "./pairing";
 
 function deviceName(): string {
   const ua = navigator.userAgent;
-  if (/iPhone|iPad/.test(ua)) return "iPhone";
-  if (/Android/.test(ua)) return "Android phone";
-  return "mobile";
+  if (/iPad/.test(ua)) return "iPad";
+  if (/iPhone/.test(ua)) return "iPhone";
+  if (/Android/.test(ua)) return "Android device";   // covers phones AND tablets
+  return "device";
 }
 
 export function runOnboarding(): Promise<HalConfig> {
@@ -50,8 +51,8 @@ export function runOnboarding(): Promise<HalConfig> {
 
     const stepCode = () => {
       card.innerHTML = `
-        <h1 class="hal-ob-title">Pair your phone</h1>
-        <p class="hal-ob-sub">On your PAL display, ask to pair a phone, then enter the 6-digit code shown.</p>
+        <h1 class="hal-ob-title">Pair your device</h1>
+        <p class="hal-ob-sub">On your PAL display, ask to pair a device, then enter the 6-digit code shown.</p>
         <input class="hal-ob-input hal-ob-code" id="ob-code" type="text" inputmode="numeric"
                maxlength="6" autocomplete="one-time-code" placeholder="------" />
         <div class="hal-ob-err" id="ob-err"></div>

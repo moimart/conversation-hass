@@ -126,7 +126,7 @@ class PairingManager:
         del self._codes[code]                       # single-use
         token = secrets.token_urlsafe(32)
         self._tokens[token] = {
-            "device_name": (device_name or "mobile")[:64],
+            "device_name": (device_name or "device")[:64],
             "created_at": time.time(),
         }
         self._save()
@@ -186,7 +186,7 @@ router = APIRouter()
 
 class RedeemRequest(BaseModel):
     code: str
-    device_name: str = "mobile"
+    device_name: str = "device"
 
 
 def _json_error(payload: dict, status: int) -> Response:

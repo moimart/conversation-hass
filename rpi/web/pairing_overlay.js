@@ -43,7 +43,7 @@
         card.className = "hal-pair-card";
         var title = doc.createElement("div");
         title.className = "hal-pair-title";
-        title.textContent = "Pair your phone";
+        title.textContent = "Pair your device";
         codeEl = doc.createElement("div");
         codeEl.className = "hal-pair-code";
         codeEl.textContent = "------";
