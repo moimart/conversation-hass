@@ -411,9 +411,9 @@ token even on the LAN. You can flip the whole server to token-required with
   therefore requires physical access to the display — it can only happen at
   home, never remotely.
 - Tokens are persisted server-side (`runtime/pairing_tokens.json`) and, on the
-  phone, in app-sandboxed storage. **Known hardening gap:** the phone keeps the
-  token in Capacitor Preferences, not the iOS Keychain / Android Keystore yet —
-  on the roadmap. Treat a paired phone as a house key.
+  phone, in the **iOS Keychain / Android Keystore**-backed secure store (not
+  plaintext Preferences); the non-secret config lives in Preferences. Still,
+  treat a paired phone as a house key.
 - **Revoke a lost/compromised device** with the LAN-only routes
   `GET /api/pair/devices` (lists names + token *prefixes*, never full tokens)
   and `POST /api/pair/revoke` (`{"device_name": "..."}` or `{"token": "..."}`).
