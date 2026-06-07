@@ -861,9 +861,10 @@ in addition to the `Authorization: Bearer` header and is redacted from logs.
 | `WS`   | `/ws/ui` | ✓ (`?token=`) | **valid token required** — no public mirror mode |
 
 Explicitly NOT proxied (LAN-only): `/api/pair/request`, `/api/pair/redeem`
-(pairing is local-only), `/api/speak`, `/api/display`, `/api/volume`,
-`/api/mute`, `/api/ptt/*`, `/api/snapshot*`, `/api/photo_frame/*` (kiosk),
-`/mcp`, all MQTT. Config: `AI_SERVER_URL`, `GATEWAY_PORT` (8766),
+(pairing is local-only), `/api/pair/devices`, `/api/pair/revoke` (device admin
+stays home-side), `/api/speak`, `/api/display`, `/api/volume`, `/api/mute`,
+`/api/ptt/*`, `/api/snapshot*`, `/api/photo_frame/*` (kiosk), `/mcp`, all MQTT.
+Config: `AI_SERVER_URL`, `GATEWAY_PORT` (8766),
 `AUTH_CACHE_TTL` (30s), `RATE_LIMIT_RPM` (240), `TRUST_CF_IP`. Expose via
 Cloudflare Tunnel / reverse proxy / Tailscale Funnel; `HAL_GATEWAY_URL` on the
 AI server is handed to the app at pairing for away-from-home failover.

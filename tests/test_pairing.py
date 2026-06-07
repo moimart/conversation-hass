@@ -158,6 +158,47 @@ async def test_pair_redeem_invalid_is_400(pmod, fake_main):
     assert json.loads(resp.body)["error"] == "invalid_or_expired"
 
 
+def test_revoke_by_device_name(pmod):
+    mgr = pmod.PairingManager()
+    for nm in ("iPhone", "iPhone", "Pixel"):
+        code, _ = mgr.create_code()
+        mgr.redeem(code, nm)
+    assert mgr.revoke_by_device_name("iphone") == 2     # case-insensitive, both
+    assert mgr.revoke_by_device_name("iphone") == 0     # already gone
+    assert len(mgr.list_devices()) == 1                 # Pixel remains
+
+
+def test_list_devices_never_exposes_full_token(pmod):
+    mgr = pmod.PairingManager()
+    code, _ = mgr.create_code()
+    token = mgr.redeem(code, "Pixel")
+    devs = mgr.list_devices()
+    assert len(devs) == 1
+    d = devs[0]
+    assert d["device_name"] == "Pixel"
+    assert d["token_prefix"] == token[:6]
+    assert token not in str(d)                          # full token never leaks
+
+
+@pytest.mark.asyncio
+async def test_pair_devices_and_revoke_routes(pmod, fake_main):
+    code, _ = fake_main.state.pairing.create_code()
+    token = fake_main.state.pairing.redeem(code, "iPhone")
+    req = SimpleNamespace(app=SimpleNamespace())
+
+    listed = await pmod.pair_devices(req)
+    assert listed["devices"][0]["device_name"] == "iPhone"
+    assert token not in str(listed)                     # full secret never leaks
+    assert listed["devices"][0]["token_prefix"] == token[:6]
+
+    out = await pmod.pair_revoke(req, pmod.RevokeRequest(device_name="iPhone"))
+    assert out == {"revoked": 1}
+    assert fake_main.state.pairing.is_valid_token(token) is False
+
+    bad = await pmod.pair_revoke(req, pmod.RevokeRequest())
+    assert bad.status_code == 400
+
+
 @pytest.mark.asyncio
 async def test_pair_status_valid_and_invalid(pmod, fake_main):
     code, _ = fake_main.state.pairing.create_code()

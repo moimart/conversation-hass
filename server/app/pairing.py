@@ -152,6 +152,33 @@ class PairingManager:
             return True
         return False
 
+    def revoke_by_device_name(self, device_name: str) -> int:
+        """Revoke every token whose device_name matches (case-insensitive).
+        Returns the count removed. Lets an admin deauthorize a phone by its
+        friendly name without ever handling the secret token."""
+        name = (device_name or "").strip().lower()
+        if not name:
+            return 0
+        victims = [t for t, e in self._tokens.items()
+                   if (e.get("device_name") or "").strip().lower() == name]
+        for t in victims:
+            del self._tokens[t]
+        if victims:
+            self._save()
+        return len(victims)
+
+    def list_devices(self) -> list[dict]:
+        """Paired devices for the admin UI — device_name + created_at + a short
+        token PREFIX for disambiguation. NEVER the full token."""
+        out = []
+        for token, entry in self._tokens.items():
+            out.append({
+                "device_name": entry.get("device_name"),
+                "created_at": entry.get("created_at"),
+                "token_prefix": token[:6],
+            })
+        return sorted(out, key=lambda d: d.get("created_at") or 0)
+
 
 # === Routes ===================================================================
 router = APIRouter()
@@ -234,3 +261,37 @@ async def pair_status(request: Request):
     if state.pairing.is_valid_token(extract_bearer(request)):
         return {"valid": True}
     return _json_error({"valid": False}, 401)
+
+
+class RevokeRequest(BaseModel):
+    device_name: str | None = None
+    token: str | None = None
+
+
+@router.get("/api/pair/devices")
+async def pair_devices(request: Request):
+    """List paired devices (name + created_at + token PREFIX, never the full
+    token). LAN-only admin route — the satellite gateway does NOT proxy
+    /api/pair/devices or /api/pair/revoke, so device management stays home-side
+    exactly like pairing itself."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    return {"devices": state.pairing.list_devices()}
+
+
+@router.post("/api/pair/revoke")
+async def pair_revoke(request: Request, req: RevokeRequest):
+    """Deauthorize a paired device — by friendly `device_name` (revokes every
+    token for that name) or by exact `token`. LAN-only (not gateway-proxied);
+    this is the 'lost phone' kill switch. A revoked token stops working
+    immediately on the server and within the gateway's auth-cache TTL (~30s)
+    on the remote path."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    if req.token:
+        ok = state.pairing.revoke(req.token.strip())
+        return {"revoked": 1 if ok else 0}
+    if req.device_name:
+        n = state.pairing.revoke_by_device_name(req.device_name)
+        return {"revoked": n}
+    return _json_error({"error": "device_name or token required"}, 400)

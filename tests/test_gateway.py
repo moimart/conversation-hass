@@ -117,6 +117,8 @@ def _auth(token=GOOD):
 @pytest.mark.parametrize("method,path", [
     ("POST", "/api/pair/redeem"),          # pairing mint — must NOT be reachable
     ("POST", "/api/pair/request"),
+    ("POST", "/api/pair/revoke"),          # device kill switch — LAN-only
+    ("GET",  "/api/pair/devices"),         # device list — LAN-only
     ("POST", "/api/speak"),                # announce
     ("POST", "/api/display"),
     ("POST", "/api/volume"),
