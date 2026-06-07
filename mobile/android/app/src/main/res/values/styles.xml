@@ -13,6 +13,15 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Dark window background so the status/navigation-bar strip the
+             WebView doesn't cover stays dark in BOTH light and dark system
+             modes. Without this, DayNight paints it white in light mode (the
+             white-letterbox bug on the Pixel Tablet). windowBackground is the
+             one that actually applies on targetSdk 35+ (edge-to-edge); the
+             *Color items are defensive for older targets. -->
+        <item name="android:windowBackground">@color/palWindowBg</item>
+        <item name="android:statusBarColor">@color/palWindowBg</item>
+        <item name="android:navigationBarColor">@color/palWindowBg</item>
     </style>
 
 

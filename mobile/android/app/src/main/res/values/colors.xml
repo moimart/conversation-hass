@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Anti-flash dark, matching the web shell's `html { background: #0a0c10 }`
+         and the splash. Used as the window background so the status-bar strip
+         the WebView doesn't cover is never white (DayNight light mode). -->
+    <color name="palWindowBg">#0a0c10</color>
+</resources>
