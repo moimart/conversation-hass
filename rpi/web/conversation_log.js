@@ -85,7 +85,11 @@ export function mountConversationLog(root) {
             lightboxEl.addEventListener("click", (e) => {
                 if (e.target === lightboxEl) closeLightbox();
             });
-            root.appendChild(lightboxEl);
+            // Append to <body>, NOT root: the log's .clog-stage uses a
+            // transform (rotate-in), which creates a stacking context that
+            // would trap the lightbox below the input bar's gear button (the
+            // gear then stole the ✕ tap). On <body> its z-index wins globally.
+            document.body.appendChild(lightboxEl);
         }
         const big = lightboxEl.querySelector(".clog-lightbox-img");
         big.src = src;
