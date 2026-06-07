@@ -12,6 +12,7 @@
     "ios": "npm run build && cap sync ios && cap run ios"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "^8.0.0",
     "@capacitor-community/keep-awake": "^8.0.0",
     "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor-community/text-to-speech": "^8.0.0",

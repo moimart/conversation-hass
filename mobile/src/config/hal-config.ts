@@ -1,13 +1,42 @@
 // Persisted connection config for the companion app.
 //
-// Stored via @capacitor/preferences (app-sandboxed). NOTE: the device token is
-// a bearer credential — a hardening follow-up is to move `token` into Keychain/
-// Keystore via a secure-storage plugin; Preferences is used in v1 so the first
-// build has no extra native plugin to reconcile.
+// Split storage by sensitivity: the device TOKEN (a bearer credential = a house
+// key) lives in the iOS Keychain / Android Keystore-backed secure store; the
+// rest of the config (server URLs, names) is non-secret and stays in
+// app-sandboxed Preferences. Existing installs that kept the token inline in
+// the Preferences blob are migrated to secure storage on first load.
 
 import { Preferences } from "@capacitor/preferences";
+import { SecureStorage } from "@aparajita/capacitor-secure-storage";
+import { Capacitor } from "@capacitor/core";
 
 const KEY = "hal.config.v1";
+const TOKEN_KEY = "hal.device.token";
+
+// --- token secure store (Keychain/Keystore on native; Preferences on web) ----
+// On web/dev there's no native secure enclave; fall back to Preferences so the
+// browser build keeps working. Native builds always hit the real secure store.
+const _isWeb = Capacitor.getPlatform() === "web";
+
+async function tokenGet(): Promise<string | null> {
+  if (_isWeb) return (await Preferences.get({ key: TOKEN_KEY })).value ?? null;
+  try {
+    const v = await SecureStorage.get(TOKEN_KEY);
+    return typeof v === "string" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+async function tokenSet(token: string): Promise<void> {
+  if (_isWeb) { await Preferences.set({ key: TOKEN_KEY, value: token }); return; }
+  await SecureStorage.set(TOKEN_KEY, token);
+}
+
+async function tokenClear(): Promise<void> {
+  if (_isWeb) { await Preferences.remove({ key: TOKEN_KEY }); return; }
+  try { await SecureStorage.remove(TOKEN_KEY); } catch { /* already absent */ }
+}
 
 export interface HalConfig {
   /** http(s)://host:8765 — the HOME (LAN/Tailscale) base for /api/* and /themes/* */
@@ -67,21 +96,36 @@ async function probeHealth(base: string, timeoutMs: number): Promise<boolean> {
 export async function loadConfig(): Promise<HalConfig | null> {
   const { value } = await Preferences.get({ key: KEY });
   if (!value) return null;
+  let stored: Partial<HalConfig> & { token?: string };
   try {
-    const c = JSON.parse(value) as HalConfig;
-    if (c && c.serverBaseUrl && c.wsUrl) return c;
+    stored = JSON.parse(value);
   } catch {
-    /* ignore corrupt config */
+    return null;   // corrupt config
   }
-  return null;
+  if (!stored || !stored.serverBaseUrl || !stored.wsUrl) return null;
+
+  let token = await tokenGet();
+  // Migration: older installs kept the token inline in the Preferences blob.
+  // Move it into secure storage and strip it from the plaintext blob.
+  if (!token && stored.token) {
+    token = stored.token;
+    await tokenSet(token);
+    const { token: _dropped, ...rest } = stored;
+    await Preferences.set({ key: KEY, value: JSON.stringify(rest) });
+  }
+  return { ...(stored as HalConfig), token: token ?? "" };
 }
 
 export async function saveConfig(cfg: HalConfig): Promise<void> {
-  await Preferences.set({ key: KEY, value: JSON.stringify(cfg) });
+  const { token, ...rest } = cfg;
+  await Preferences.set({ key: KEY, value: JSON.stringify(rest) });
+  if (token) await tokenSet(token);
+  else await tokenClear();
 }
 
 export async function clearConfig(): Promise<void> {
   await Preferences.remove({ key: KEY });
+  await tokenClear();
 }
 
 /** Inject config for the reused display scripts (read by rpi/web/app.js).
