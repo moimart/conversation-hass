@@ -837,6 +837,39 @@ relays AI-server messages plus its own local sync:
 
 ---
 
+## Satellite gateway (port 8766)
+
+`hal-gateway` is an optional internet-exposable reverse proxy that lets paired
+phones reach PAL without a VPN, while the AI server stays LAN-only. It serves a
+**default-deny allowlist** — only the routes below exist; everything else is
+`404`. Token-gated routes are validated at the edge against the server's own
+`GET /api/pair/status` (30s positive cache). `?token=` (WS + MJPEG) is accepted
+in addition to the `Authorization: Bearer` header and is redacted from logs.
+
+| Method | Path | Token | Notes |
+|---|---|---|---|
+| `GET`  | `/health` | — | public |
+| `GET`  | `/api/themes` | — | public display catalog |
+| `GET`  | `/themes/{name}/{file}` | — | public theme assets |
+| `GET`  | `/api/pair/status` | ✓ | also the edge auth validator |
+| `POST` | `/api/command` | ✓ | talk to PAL |
+| `GET`  | `/api/satellite/tts` | ✓ | server-voice audio |
+| `GET`  | `/api/satellite/stream.mjpeg` | ✓ (`?token=`) | remote camera fallback |
+| `POST` | `/api/satellite/photo_frame/{start,stop}` | ✓ | phone screensaver |
+| `GET`  | `/api/conversation/log` (+ `/image`) | ✓ | history view |
+| `GET` `POST` | `/api/cloud_llm` | ✓ | settings (toggle allowed) |
+| `WS`   | `/ws/ui` | ✓ (`?token=`) | **valid token required** — no public mirror mode |
+
+Explicitly NOT proxied (LAN-only): `/api/pair/request`, `/api/pair/redeem`
+(pairing is local-only), `/api/speak`, `/api/display`, `/api/volume`,
+`/api/mute`, `/api/ptt/*`, `/api/snapshot*`, `/api/photo_frame/*` (kiosk),
+`/mcp`, all MQTT. Config: `AI_SERVER_URL`, `GATEWAY_PORT` (8766),
+`AUTH_CACHE_TTL` (30s), `RATE_LIMIT_RPM` (240), `TRUST_CF_IP`. Expose via
+Cloudflare Tunnel / reverse proxy / Tailscale Funnel; `HAL_GATEWAY_URL` on the
+AI server is handed to the app at pairing for away-from-home failover.
+
+---
+
 ## Errors and status codes
 
 HAL deliberately keeps HTTP status codes simple — almost everything is

@@ -86,6 +86,27 @@ Each phone also gets its own idle **photo-frame** screensaver, dismissed automat
 
 Build & install steps (Android + iOS, Capacitor): [`mobile/README.md`](./mobile/README.md).
 
+### Remote access (optional satellite gateway)
+
+By default a phone reaches PAL only on your LAN (or a VPN like Tailscale). The
+optional **`hal-gateway`** container (in `docker-compose.server*.yml`) is a
+token-gated reverse proxy you can expose to the internet — paired phones then
+work from anywhere, while the AI server itself stays LAN-only:
+
+- It forwards **only** the satellite-capable routes (talk, conversation log,
+  server-voice TTS, camera MJPEG fallback, photo-frame, themes) and rejects
+  everything else — the home-control surface (pairing, announce, display,
+  volume, MCP, MQTT) is never reachable from outside.
+- Every private route is authenticated **at the edge** by the device's pairing
+  token (validated against the server's own `/api/pair/status`). The gateway
+  holds no secrets.
+- **Pairing is local-only**: you can only add a phone at home; afterwards it
+  uses the gateway. The app tries your home URL first and falls back to the
+  gateway when away (set `HAL_GATEWAY_URL`, pair once at home).
+
+Put it behind any TLS ingress — a Cloudflare Tunnel hostname, a reverse proxy,
+or Tailscale Funnel. Allowlist details in [`API.md`](./API.md) and `gateway/`.
+
 ---
 
 ## Integrations & extension points

@@ -216,7 +216,14 @@ async def pair_redeem(request: Request, req: RedeemRequest):
     if token is None:
         return _json_error({"error": "invalid_or_expired"}, 400)
     await _push_pairing(state, {"type": "hide_pairing_code"})
-    return {"token": token, "server_name": os.environ.get("HAL_DEVICE_NAME", "HAL")}
+    # gateway_url (optional): the public satellite-gateway base. Pairing is
+    # local-only, but the phone keeps this so it can reach PAL from anywhere
+    # afterwards (it tries the local URL first, then falls back to this).
+    return {
+        "token": token,
+        "server_name": os.environ.get("HAL_DEVICE_NAME", "HAL"),
+        "gateway_url": os.environ.get("HAL_GATEWAY_URL", "").strip(),
+    }
 
 
 @router.get("/api/pair/status")

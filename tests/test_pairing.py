@@ -136,6 +136,18 @@ async def test_pair_redeem_roundtrip(pmod, fake_main):
     code, _ = fake_main.state.pairing.create_code()
     out = await pmod.pair_redeem(req, pmod.RedeemRequest(code=code, device_name="iPhone"))
     assert "token" in out and fake_main.state.pairing.is_valid_token(out["token"])
+    # gateway_url is always present (empty when HAL_GATEWAY_URL is unset) so the
+    # app can store it for away-from-home failover.
+    assert "gateway_url" in out
+
+
+@pytest.mark.asyncio
+async def test_pair_redeem_includes_gateway_url(pmod, fake_main, monkeypatch):
+    monkeypatch.setenv("HAL_GATEWAY_URL", "https://pal.example.com")
+    code, _ = fake_main.state.pairing.create_code()
+    out = await pmod.pair_redeem(SimpleNamespace(app=SimpleNamespace()),
+                                 pmod.RedeemRequest(code=code, device_name="iPhone"))
+    assert out["gateway_url"] == "https://pal.example.com"
 
 
 @pytest.mark.asyncio

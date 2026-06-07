@@ -31,7 +31,9 @@ export async function redeemCode(
       body: JSON.stringify({ code: code.trim(), device_name: deviceName }),
     });
     if (res.status === 200) {
-      const data = (await res.json()) as { token: string; server_name?: string };
+      const data = (await res.json()) as {
+        token: string; server_name?: string; gateway_url?: string;
+      };
       return {
         ok: true,
         config: {
@@ -39,6 +41,7 @@ export async function redeemCode(
           wsUrl: wsUrlFromBase(base),
           token: data.token,
           serverName: data.server_name,
+          gatewayBaseUrl: (data.gateway_url || "").trim() || undefined,
         },
       };
     }

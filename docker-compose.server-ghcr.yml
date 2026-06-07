@@ -32,6 +32,7 @@ services:
       - MQTT_PASSWORD=${MQTT_PASSWORD:-}
       - HAL_DEVICE_ID=${HAL_DEVICE_ID:-hal-default}
       - HAL_DEVICE_NAME=${HAL_DEVICE_NAME:-HAL}
+      - HAL_GATEWAY_URL=${HAL_GATEWAY_URL:-}
       - SENDSPIN_PLAYER_ENTITY=${SENDSPIN_PLAYER_ENTITY:-}
       - SENDSPIN_PAUSE_DURING_TTS=${SENDSPIN_PAUSE_DURING_TTS:-false}
       - GO2RTC_URL=${GO2RTC_URL:-http://host.docker.internal:1984}
@@ -128,6 +129,24 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Satellite gateway: internet-exposable, token-gated reverse proxy for paired
+  # phones. Reaches ai-server over the compose network; only ITS port is
+  # published. Holds no secrets. See gateway/gateway.py + CLAUDE.md.
+  gateway:
+    image: ghcr.io/moimart/conversation-hass/hal-gateway:latest
+    container_name: hal-gateway
+    restart: unless-stopped
+    ports:
+      - "8766:8766"
+    environment:
+      - AI_SERVER_URL=http://ai-server:8765
+      - GATEWAY_PORT=8766
+      - AUTH_CACHE_TTL=${GATEWAY_AUTH_CACHE_TTL:-30}
+      - RATE_LIMIT_RPM=${GATEWAY_RATE_LIMIT_RPM:-240}
+      - TRUST_CF_IP=${GATEWAY_TRUST_CF_IP:-1}
+    depends_on:
+      - ai-server
 
 volumes:
   huggingface-cache:
