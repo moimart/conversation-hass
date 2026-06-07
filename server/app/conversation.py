@@ -10,7 +10,12 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Callable, Awaitable
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 import httpx
 
@@ -230,6 +235,10 @@ class ConversationManager:
         self.compact_keep = 6
         self._context_summary: str = ""
         self._compacting = False
+        # Context diagnostics (exposed via MQTT): how many times the rolling
+        # thread has been compacted this session, and when last.
+        self._compaction_count = 0
+        self._last_compaction_iso: str | None = None
 
         # Text buffer accumulated after wake word
         self._command_buffer: list[str] = []
@@ -731,6 +740,44 @@ class ConversationManager:
         self.history.append({"role": "assistant", "content": fallback})
         return fallback
 
+    # --- context diagnostics + reset ---------------------------------------
+
+    def context_stats(self) -> dict:
+        """Snapshot of the rolling LLM context PAL feeds the local model each
+        turn: the verbatim history, the running compaction summary, and the
+        persona — with a rough token estimate (~chars/4) against num_ctx.
+
+        NOTE: this is PAL's LOCAL context. OpenClaw-routed turns run against the
+        gateway agent's own session, which this does not measure or clear."""
+        hist_chars = sum(len((m.get("content") or "")) for m in self.history)
+        summary_chars = len(self._context_summary)
+        persona_chars = len(self._system_prompt)
+        est_tokens = (hist_chars + summary_chars + persona_chars) // 4
+        pct = round(100.0 * est_tokens / self.num_ctx, 1) if self.num_ctx else 0.0
+        return {
+            "history_messages": len(self.history),
+            "history_chars": hist_chars,
+            "summary_chars": summary_chars,
+            "persona_chars": persona_chars,
+            "est_tokens": est_tokens,
+            "num_ctx": self.num_ctx,
+            "pct_used": pct,
+            "compactions": self._compaction_count,
+            "last_compaction": self._last_compaction_iso,
+        }
+
+    async def clear_context(self) -> dict:
+        """Drop the rolling context — verbatim history AND the running summary —
+        so the next turn starts fresh. Does NOT touch Shodh long-term memory
+        (persistent, separate) or any OpenClaw gateway session. Returns the
+        post-clear stats."""
+        n = len(self.history)
+        self.history = []
+        self._context_summary = ""
+        self._awaiting_followup = False
+        log.info(f"[context] cleared rolling context ({n} msgs + summary dropped)")
+        return self.context_stats()
+
     async def _compact_history(self) -> None:
         """Auto-compaction (size-triggered).
 
@@ -767,9 +814,12 @@ class ConversationManager:
                 except Exception as e:
                     log.warning(f"[compact] memory.remember failed: {e}")
             self.history = recent
+            self._compaction_count += 1
+            self._last_compaction_iso = _utcnow_iso()
             log.info(
                 f"[compact] folded {len(older)} msgs into summary "
-                f"({len(summary)} chars), kept {len(recent)} verbatim"
+                f"({len(summary)} chars), kept {len(recent)} verbatim "
+                f"[#{self._compaction_count}]"
             )
         except Exception as e:
             log.error(f"[compact] error: {e}", exc_info=True)

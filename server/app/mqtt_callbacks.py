@@ -478,6 +478,17 @@ async def wire(state, bridge) -> None:
         await _push_to_rpi(state, msg)
         await broadcast_to_ui(state, msg)
 
+    async def _mqtt_context_clear():
+        # Drop PAL's rolling LLM context (history + running summary); refresh
+        # the gauge so HA reflects the reset immediately. Long-term Shodh
+        # memory is untouched.
+        if state.conversation is None:
+            return
+        stats = await state.conversation.clear_context()
+        if state.mqtt_bridge:
+            await state.mqtt_bridge.publish_context_usage(stats)
+        log.info("MQTT: cleared rolling LLM context")
+
     async def _mqtt_photo_frame_show(args: dict):
         from .photo_frame import start_photo_frame
         entity_id = (args.get("entity_id") or "").strip()
@@ -791,6 +802,7 @@ async def wire(state, bridge) -> None:
     bridge.on_calendar_hide = _mqtt_calendar_hide
     bridge.on_conversation_log_show = _mqtt_conversation_log_show
     bridge.on_conversation_log_hide = _mqtt_conversation_log_hide
+    bridge.on_context_clear = _mqtt_context_clear
     bridge.on_photo_frame_show = _mqtt_photo_frame_show
     bridge.on_photo_frame_hide = _mqtt_photo_frame_hide
     bridge.set_config_callback("photo_frame_entity", _cfg_photo_frame_entity)

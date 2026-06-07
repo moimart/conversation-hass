@@ -353,6 +353,8 @@ class MQTTBridge:
         # Conversation log overlay (bare-trigger buttons).
         self.on_conversation_log_show: Callable[[], Awaitable[None]] | None = None
         self.on_conversation_log_hide: Callable[[], Awaitable[None]] | None = None
+        # Clear the rolling LLM context (bare-trigger button).
+        self.on_context_clear: Callable[[], Awaitable[None]] | None = None
         # Push-to-Talk callbacks. Bare-trigger topics (payload ignored):
         # `start` opens a PTT session, `end` closes it (runs the LLM),
         # `cancel` closes it AND discards the captured audio.
@@ -392,6 +394,7 @@ class MQTTBridge:
         self._cached_last_response: str = ""
         self._cached_task_metrics: dict | None = None
         self._cached_active_timers: tuple[int, list] = (0, [])
+        self._cached_context_usage: dict | None = None
         # Live config caches for republish-on-reconnect — one dict keyed by
         # ConfigEntity.key, seeded from each entity's declared default.
         # (Callers seed real values via self._cached_config["<key>"] = ...)
@@ -492,6 +495,24 @@ class MQTTBridge:
                 "icon": "mdi:message-text",
                 "availability": avail,
                 "device": device,
+            },
+        ))
+
+        # LLM context gauge — % of num_ctx the rolling context is estimated to
+        # use; attributes carry the full breakdown (history, summary, tokens,
+        # compaction count) for diagnosing whether compaction is keeping up.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/sensor/{self.device_id}/context_usage/config",
+            {
+                "name": "Context Usage",
+                "unique_id": f"{self.device_id}_context_usage",
+                "state_topic": f"{self.base}/context_usage",
+                "json_attributes_topic": f"{self.base}/context_usage/attrs",
+                "unit_of_measurement": "%",
+                "icon": "mdi:gauge",
+                "availability": avail,
+                "device": device,
+                "entity_category": "diagnostic",
             },
         ))
 
@@ -791,6 +812,19 @@ class MQTTBridge:
                 "device": device,
             },
         ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/button/{self.device_id}/clear_context/config",
+            {
+                "name": "Clear Context",
+                "unique_id": f"{self.device_id}_clear_context",
+                "command_topic": f"{self.base}/context/clear/set",
+                "payload_press": "",
+                "icon": "mdi:broom",
+                "availability": avail,
+                "device": device,
+                "entity_category": "diagnostic",
+            },
+        ))
         # Display power: a top-level switch (not in Configuration) so it's
         # one tap from the device card, plus a Configuration-section
         # number for the idle-blank timeout.
@@ -918,6 +952,8 @@ class MQTTBridge:
                     await self.publish_last_response(self._cached_last_response)
                     # Seed the timer count so the sensor shows 0, not "unknown".
                     await self.publish_active_timers(*self._cached_active_timers)
+                    if self._cached_context_usage is not None:
+                        await self.publish_context_usage(self._cached_context_usage)
                     if self._cached_task_metrics:
                         await self.publish_task_metrics(self._cached_task_metrics)
                     # Live runtime-config — publish the cached values so
@@ -956,6 +992,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/calendar/hide/set")
                     await client.subscribe(f"{self.base}/conversation_log/show/set")
                     await client.subscribe(f"{self.base}/conversation_log/hide/set")
+                    await client.subscribe(f"{self.base}/context/clear/set")
                     await client.subscribe(f"{self.base}/ptt/start")
                     await client.subscribe(f"{self.base}/ptt/end")
                     await client.subscribe(f"{self.base}/ptt/cancel")
@@ -1105,6 +1142,10 @@ class MQTTBridge:
                 if self.on_conversation_log_hide:
                     await self.on_conversation_log_hide()
 
+            elif topic == f"{self.base}/context/clear/set":
+                if self.on_context_clear:
+                    await self.on_context_clear()
+
 
 
 
@@ -1229,6 +1270,13 @@ class MQTTBridge:
     async def publish_theme(self, theme: str):
         self._cached_theme = theme
         await self._safe_publish(f"{self.base}/theme/state", theme)
+
+    async def publish_context_usage(self, stats: dict):
+        """Publish the LLM context gauge: state = pct_used; attributes = the
+        full breakdown (history_messages, est_tokens, num_ctx, compactions...)."""
+        self._cached_context_usage = stats
+        await self._safe_publish(f"{self.base}/context_usage", str(stats.get("pct_used", 0)))
+        await self._safe_publish(f"{self.base}/context_usage/attrs", json.dumps(stats))
 
     async def publish_active_timers(self, count: int, timers: list[dict]):
         """Publish the voice-timer count (sensor state) + per-timer details

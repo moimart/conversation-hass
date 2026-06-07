@@ -181,6 +181,11 @@ async def audio_endpoint(websocket: WebSocket):
                 duration_s=metrics.get("llm_total_s", 0.0),
                 model=model,
             )
+            # Refresh the context gauge at the end of every turn.
+            try:
+                await state.mqtt_bridge.publish_context_usage(conversation.context_stats())
+            except Exception as e:
+                log.debug(f"context_usage publish failed: {e}")
 
     conversation.on_response = on_response
     conversation.on_wake_word = on_wake_word

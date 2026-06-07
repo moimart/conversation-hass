@@ -1,5 +1,29 @@
 [
   [
+    "homeassistant/button/hal-default/clear_context/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/context/clear/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "diagnostic",
+      "icon": "mdi:broom",
+      "name": "Clear Context",
+      "payload_press": "",
+      "unique_id": "hal-default_clear_context"
+    }
+  ],
+  [
     "homeassistant/button/hal-default/hide_calendar/config",
     {
       "availability": [
@@ -742,6 +766,31 @@
       "name": "Active Timers",
       "state_topic": "hal/hal-default/active_timers",
       "unique_id": "hal-default_active_timers"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/context_usage/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "diagnostic",
+      "icon": "mdi:gauge",
+      "json_attributes_topic": "hal/hal-default/context_usage/attrs",
+      "name": "Context Usage",
+      "state_topic": "hal/hal-default/context_usage",
+      "unique_id": "hal-default_context_usage",
+      "unit_of_measurement": "%"
     }
   ],
   [

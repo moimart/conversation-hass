@@ -260,6 +260,7 @@ the theme catalog / voice list / model list changes.
 | **State**                     | `state`                  | `idle/listening/processing/speaking`           |
 | **Last Response**             | `last_response`          | text (≤ 250 chars); full text in attributes    |
 | **Active Timers**             | `active_timers`          | count of running voice timers; per-timer `{name, remaining_s, ends_at}` in attributes |
+| **Context Usage**             | `context_usage`          | % of `num_ctx` PAL's rolling context uses (est.); attributes: history_messages, est_tokens, summary_chars, compactions, last_compaction |
 | **Last Task Duration**        | `task_metrics.task_total_s` | seconds, diagnostic                          |
 | **Last LLM Duration**         | `task_metrics.llm_total_s`  | seconds, diagnostic                          |
 | **Last Tools Duration**       | `task_metrics.tools_total_s` | seconds, diagnostic                         |
@@ -322,6 +323,7 @@ the theme catalog / voice list / model list changes.
 | **Hide Calendar**            | `calendar/hide/set`  payload empty             |
 | **Show Conversation Log**    | `conversation_log/show/set` payload `PRESS`    |
 | **Hide Conversation Log**    | `conversation_log/hide/set` payload `PRESS`    |
+| **Clear Context**            | `context/clear/set` payload `PRESS` — drops PAL's rolling LLM context (history + summary); keeps long-term memory |
 | **PTT Start**                | `ptt/start`          payload `PRESS`           |
 | **PTT End**                  | `ptt/end`            payload `PRESS`           |
 | **PTT Cancel**               | `ptt/cancel`         payload `PRESS`           |
