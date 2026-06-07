@@ -68,6 +68,34 @@ export function mountConversationLog(root) {
         closeEl.addEventListener("click", () => dismiss("close"));
     }
 
+    // Image lightbox (mobile only): tapping a thumbnail shows it large with an
+    // ✕ to return to the log. Built once, lazily shown.
+    let lightboxEl = null;
+    function openLightbox(src, alt) {
+        if (!lightboxEl) {
+            lightboxEl = document.createElement("div");
+            lightboxEl.className = "clog-lightbox";
+            lightboxEl.innerHTML = `
+                <button class="clog-lightbox-close" aria-label="Close">&#x2715;</button>
+                <img class="clog-lightbox-img" alt="">
+            `;
+            // Dismiss on the ✕ or on a tap of the backdrop (but not the image).
+            lightboxEl.querySelector(".clog-lightbox-close")
+                .addEventListener("click", closeLightbox);
+            lightboxEl.addEventListener("click", (e) => {
+                if (e.target === lightboxEl) closeLightbox();
+            });
+            root.appendChild(lightboxEl);
+        }
+        const big = lightboxEl.querySelector(".clog-lightbox-img");
+        big.src = src;
+        big.alt = alt || "";
+        lightboxEl.classList.add("visible");
+    }
+    function closeLightbox() {
+        if (lightboxEl) lightboxEl.classList.remove("visible");
+    }
+
     function base() {
         return (HAL && HAL.serverBaseUrl) ? HAL.serverBaseUrl.replace(/\/+$/, "") : "";
     }
@@ -171,6 +199,15 @@ export function mountConversationLog(root) {
             img.loading = "lazy";
             img.alt = row.text || "Image shown on the orb";
             img.src = `${base()}/api/conversation/log/image?id=${row.id}`;
+            if (isMobile) {
+                // Tap to view larger in a lightbox (mobile only — on the kiosk
+                // a touch just resets the auto-dismiss timer).
+                img.classList.add("clog-img-tappable");
+                img.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    openLightbox(img.src, img.alt);
+                });
+            }
             text.appendChild(img);
         } else {
             text.textContent = row.text;
@@ -329,6 +366,7 @@ export function mountConversationLog(root) {
 
     function dismiss(reason = "explicit") {
         clearTimers();
+        closeLightbox();   // never leave the lightbox open behind a hidden log
         if (!document.body.classList.contains("show-conversation-log")) {
             clearDismissState("already-hidden");
             return Promise.resolve(reason);
