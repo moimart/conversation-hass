@@ -121,6 +121,10 @@ def build_mcp_server(state: "AppState") -> FastMCP:
     async def list_timers() -> str:
         return await _call("list_timers", {})
 
+    @mcp.tool(name="pair_phone", description="Start pairing the PAL companion phone app: generates a one-time 6-digit code, shows it full-screen on the kiosk, and returns it so you can read it aloud digit by digit. Use for 'pair my phone', 'pair the app', 'connect my phone', 'set up the mobile app'. Never invent a code — call this tool to get the real one.")
+    async def pair_phone() -> str:
+        return await _call("pair_phone", {})
+
     @mcp.tool(name="show_photo_frame", description="Open the photo frame on the kiosk (full-screen ambient image with clock).")
     async def show_photo_frame(entity_id: str = "") -> str:
         return await _call("show_photo_frame", {"entity_id": entity_id})

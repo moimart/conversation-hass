@@ -110,6 +110,16 @@ def _hide_log_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
     )
 
 
+def _pair_phone_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
+    return IntentHint(
+        tool="pair_phone",
+        sentence=("This is a device command: call the `pair_phone` tool NOW. It "
+                  "shows a one-time code on the kiosk and returns it; read that "
+                  "returned code aloud digit by digit. NEVER invent a code."),
+        guard_args={},
+    )
+
+
 # Order matters: cancel before start so "stop the 10 minute timer" never
 # creates one. Patterns stay conservative — anything nuanced falls through
 # with no hint and the model handles the turn unaided.
@@ -118,6 +128,11 @@ _INTENT_HINTS: list = [
      _show_log_intent),
     (re.compile(r"\b(hide|close|dismiss)\b.{0,40}\b(conversation|chat) (log|history)\b", re.I),
      _hide_log_intent),
+    (re.compile(
+        r"\bpair\b.{0,25}\b(phone|app|companion|mobile|device)\b"          # "pair a phone"
+        r"|\b(connect|set\s*up|register)\b.{0,25}\b(phone|companion|mobile app|companion app)\b",  # "set up the companion app"
+        re.I),
+     _pair_phone_intent),
     (re.compile(r"\b(cancel|stop|clear|delete|remove)\b.{0,30}\btimers?\b", re.I),
      _timer_cancel_intent),
     (re.compile(

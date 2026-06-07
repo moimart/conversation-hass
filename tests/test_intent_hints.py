@@ -30,6 +30,11 @@ from server.app.conversation import (
     ("stop timer number 3", "cancel_timer", {"name": "3"}),
     ("show me the conversation log", "show_conversation_log", {}),
     ("close the chat history", "hide_conversation_log", {}),
+    ("I want to pair a phone", "pair_phone", {}),
+    ("pair my phone", "pair_phone", {}),
+    ("pair the companion app", "pair_phone", {}),
+    ("connect my phone", "pair_phone", {}),
+    ("set up the companion app", "pair_phone", {}),
 ])
 def test_intent_matches_with_guard(text, tool, guard_args):
     hint = _match_intent_hint(text)
@@ -57,6 +62,9 @@ def test_timer_without_duration_hints_but_does_not_guard():
     "show me the weather",
     "stop the music",
     "how long until sunset",
+    "add a device to home assistant",   # NOT pairing the companion phone
+    "pair my headphones",               # bluetooth, not the PAL app
+    "set up an automation",
 ])
 def test_normal_turns_get_no_hint(text):
     assert _match_intent_hint(text) is None
