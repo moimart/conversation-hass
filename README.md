@@ -383,6 +383,80 @@ the HA entity does **not** stop the timer; cancel by voice ("cancel timer 2",
 
 ---
 
+## Security model
+
+PAL is a home appliance with a deliberately simple trust model. Read this before
+exposing anything beyond your LAN.
+
+### Trust boundaries
+
+| Surface | Who can reach it | Auth |
+|---|---|---|
+| **AI server** `:8765` (kiosk, RPi, HA, MQTT, satellites-on-VPN) | Your LAN (and Tailscale, if you use it) | **LAN-trusted** — most routes need no token by default |
+| **Satellite gateway** `:8766` (only if you expose it) | The internet, via your TLS ingress | **Token-gated allowlist** — every private route requires a paired-device token |
+
+**The LAN is trusted.** By default (`HAL_REQUIRE_TOKEN` unset) the AI server
+treats anything on your network as authorized — `/api/command`, `/ws/ui`, etc.
+need no token. Anyone on your Wi-Fi can talk to PAL, and **talking to PAL can
+control your house** (lights, locks, anything Home Assistant exposes), because
+PAL drives HA through the LLM. This is fine for a home LAN; it is **not** a
+public service. The satellite-only routes (`/api/satellite/*`) always require a
+token even on the LAN. You can flip the whole server to token-required with
+`HAL_REQUIRE_TOKEN=1` once every device is paired.
+
+### Pairing & tokens
+
+- A phone becomes a **satellite** by redeeming a 6-digit code **shown on the
+  kiosk** for a long-lived device token (32-byte URL-safe random). Pairing
+  therefore requires physical access to the display — it can only happen at
+  home, never remotely.
+- Tokens are persisted server-side (`runtime/pairing_tokens.json`) and, on the
+  phone, in app-sandboxed storage. **Known hardening gap:** the phone keeps the
+  token in Capacitor Preferences, not the iOS Keychain / Android Keystore yet —
+  on the roadmap. Treat a paired phone as a house key.
+- **Revoke a lost/compromised device** with the LAN-only routes
+  `GET /api/pair/devices` (lists names + token *prefixes*, never full tokens)
+  and `POST /api/pair/revoke` (`{"device_name": "..."}` or `{"token": "..."}`).
+  A revoked token dies immediately on the server and within ~30 s on the remote
+  (gateway) path.
+
+### Exposing to the internet (the gateway)
+
+The optional `hal-gateway` (see *Remote access* above) is the **only** thing you
+should put on the internet — never port-forward `:8765` directly. It is a
+default-deny reverse proxy:
+
+- It forwards an explicit **allowlist** of satellite routes (+ the `/ws/ui`
+  upgrade) and `404`s everything else — pairing mint/redeem, device admin,
+  `/api/speak`, `/api/display`, `/api/volume`, `/api/ptt/*`, `/mcp`, and MQTT
+  are all unreachable from outside.
+- Every private route is authenticated **at the edge** against the server's own
+  `/api/pair/status`; `/ws/ui` requires a valid token (no public mirror mode).
+- It **holds no secrets** — compromising the gateway container yields only the
+  network position any LAN device already has.
+- Put it behind real TLS (Cloudflare Tunnel, a reverse proxy, or Tailscale
+  Funnel). Do **not** add a Cloudflare Access / SSO policy in front — the
+  pairing token *is* the auth; an extra login layer would just break the app.
+
+**Residual risk to accept before exposing:** a stolen device token lets the
+holder talk to PAL from the internet — i.e. command the house through the LLM.
+It's revocable (above) and rate-limited at the gateway, but it is real. If that
+isn't acceptable for your threat model, keep satellites on Tailscale instead of
+exposing the gateway.
+
+### Secrets
+
+The main repo (`moimart/conversation-hass`) is **public**. No secrets live in
+it: `.env`, `cloud_providers.json`, and pairing tokens are gitignored; real
+secrets live encrypted in a separate git-crypt vault. Cloud-LLM provider keys
+stay server-side in `server/runtime/cloud_providers.json` (hot-reloaded, never
+sent to the app, MQTT, or the conversation log). The **Cloud LLM override boots
+OFF after every restart** so a cloud bill is never an accident. The conversation
+log stores a device's friendly name as the origin of a turn — **never** its
+token.
+
+---
+
 ## Running tests
 
 ```bash
