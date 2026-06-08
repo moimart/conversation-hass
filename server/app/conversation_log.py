@@ -119,31 +119,34 @@ class ConversationLog:
         meta: dict | None = None,
         image: bytes | None = None,
         image_mime: str | None = None,
-    ) -> None:
+    ) -> int | None:
         """Append one entry. NEVER raises — a DB hiccup must not break a turn.
         `image` stores a (caller-downscaled) thumbnail for kind='image' rows;
         pages never ship the bytes — the view loads them lazily via
-        fetch_image()."""
+        fetch_image(). Returns the new row id (used to build a push-notification
+        image URL), or None when disabled/dropped/failed."""
         try:
             text = (text or "").strip()
             if not text or kind not in VALID_KINDS:
-                return
+                return None
             if self._pool is None and not await self._try_connect():
                 log.warning(f"conversation_log: dropping {kind} entry (postgres unavailable)")
-                return
+                return None
             async with self._pool.acquire() as conn:
-                await conn.execute(
+                row_id = await conn.fetchval(
                     "INSERT INTO conversation_log (kind, text, origin, meta, image, image_mime) "
-                    "VALUES ($1, $2, $3, $4, $5, $6)",
+                    "VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
                     kind, text, origin,
                     json.dumps(meta) if meta is not None else None,
                     image, image_mime,
                 )
+            return int(row_id) if row_id is not None else None
         except Exception as e:
             log.warning(f"conversation_log: write failed ({type(e).__name__}: {e}) — entry dropped")
             # A failed write often means a dead pool (postgres restarted).
             # Drop it so the next call lazily reconnects.
             self._pool = None
+            return None
 
     async def fetch(self, limit: int = 100, before_id: int | None = None) -> dict:
         """One page, newest-first query reversed to ASC (oldest→newest) for

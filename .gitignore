@@ -18,3 +18,6 @@ htmlcov/
 
 # Cloud LLM provider secrets (defense-in-depth; runtime/ is already ignored)
 server/runtime/cloud_providers.json
+
+# Firebase Android config (restricted API key; placed locally, injected at build)
+mobile/android/app/google-services.json

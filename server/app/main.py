@@ -516,6 +516,23 @@ async def lifespan(app: FastAPI):
     state.pairing = PairingManager()
     log.info(f"Pairing ready (token enforcement: {'ON' if require_token_enabled() else 'OFF'})")
 
+    # Push notifications (APNs/FCM) for paired devices whose app is closed.
+    # No-ops until runtime/push_providers.json is configured. The signed-image-
+    # URL HMAC secret is per-process — a restart invalidates outstanding (~10min)
+    # image URLs, which is fine. No network at startup (tokens minted lazily).
+    import secrets as _secrets
+    state.push_signing_secret = _secrets.token_urlsafe(32)
+    state.push = None
+    try:
+        from .push import PushService
+        from .push_providers import PushProviderRegistry, DEFAULT_PUSH_PROVIDERS_PATH
+        _preg = PushProviderRegistry(os.environ.get("PUSH_PROVIDERS_PATH", DEFAULT_PUSH_PROVIDERS_PATH))
+        state.push = PushService(_preg, state.push_signing_secret,
+                                 os.environ.get("HAL_GATEWAY_URL", "").strip())
+        log.info(f"Push notifications ready (configured: {_preg.configured()})")
+    except Exception as e:
+        log.warning(f"Push init failed: {type(e).__name__}: {e}")
+
     # Persistent conversation log (postgres). connect() is backgrounded with
     # retry/backoff — a slow or absent postgres never blocks startup, and
     # writes degrade to warn+drop until it comes up.
@@ -1035,6 +1052,15 @@ async def announce_everywhere(state: AppState, text: str,
             await state.conversation_event_logger("announcement", text, source=log_source)
         except Exception:
             pass
+    # Push to paired devices whose app is closed (speak + finished timers ride
+    # this path; timers get their own category/channel). No-op until push is
+    # configured; never let a push failure crash the announce.
+    if getattr(state, "push", None) is not None:
+        try:
+            kind = "timer" if (alarm or log_source == "timer") else "speak"
+            await state.push.dispatch(state, kind, text, category=kind)
+        except Exception as e:
+            log.debug(f"announce push failed: {type(e).__name__}: {e}")
 
 
 # === Route registration ======================================================

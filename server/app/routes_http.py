@@ -377,6 +377,42 @@ async def get_conversation_log_image(request: Request):
                     headers={"Cache-Control": "max-age=86400, immutable"})
 
 
+@router.get("/api/push/image/{name}")
+async def get_push_image(name: str, request: Request):
+    """Signature-gated thumbnail for a push notification's inline image. The URL
+    is minted by the push layer (push.sign_image_url) carrying a short-lived
+    HMAC over the path+exp, so the gateway exposes it WITHOUT a bearer token —
+    THIS route enforces the signature. Path is `/{id}.jpg`; the `.jpg` extension
+    lets the iOS NSE / Android image loaders infer the type."""
+    from .main import _get_state
+    from .push import verify_image_sig
+    state = _get_state(request.app)
+    if not name.endswith(".jpg"):
+        return Response(status_code=404)
+    try:
+        row_id = int(name[:-4])
+    except ValueError:
+        return Response(status_code=404)
+    secret = getattr(state, "push_signing_secret", None)
+    if not verify_image_sig(secret, row_id,
+                            request.query_params.get("exp"),
+                            request.query_params.get("sig")):
+        return Response(status_code=403)
+    clog = state.conversation_log
+    if clog is None or not clog.enabled:
+        return Response(status_code=404)
+    try:
+        found = await clog.fetch_image(row_id)
+    except Exception as e:
+        log.warning(f"push image fetch failed: {type(e).__name__}: {e}")
+        return Response(status_code=503)
+    if found is None:
+        return Response(status_code=404)
+    image, _mime = found
+    return Response(content=image, media_type="image/jpeg",
+                    headers={"Cache-Control": "max-age=600"})
+
+
 @router.get("/api/cloud_llm")
 async def get_cloud_llm(request: Request):
     """Cloud override status. NEVER includes provider keys or endpoints.

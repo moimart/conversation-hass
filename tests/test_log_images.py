@@ -37,7 +37,7 @@ async def test_log_stores_image_bytes():
         cl = ConversationLog("postgresql://x")
         await cl.log("image", "Image shown on the orb", origin="camera.front_door",
                      image=b"JPGDATA", image_mime="image/jpeg")
-    args = conn.execute.await_args_list[-1].args
+    args = conn.fetchval.await_args_list[-1].args
     assert "INSERT" in args[0] and "image" in args[0]
     assert args[1] == "image"
     assert args[5] == b"JPGDATA" and args[6] == "image/jpeg"

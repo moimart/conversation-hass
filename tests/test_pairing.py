@@ -199,6 +199,59 @@ async def test_pair_devices_and_revoke_routes(pmod, fake_main):
     assert bad.status_code == 400
 
 
+# --- push tokens ------------------------------------------------------------
+
+def test_set_and_query_push_token(pmod):
+    mgr = pmod.PairingManager()
+    token = mgr.redeem(mgr.create_code()[0], "Pixel")
+    assert mgr.set_push_token(token, "fcm", "fcm-abc") is True
+    assert mgr.push_targets() == [(token, "fcm", "fcm-abc")]
+    dev = mgr.list_devices()[0]
+    assert dev["has_push"] is True and "fcm-abc" not in str(dev)  # token never leaks
+
+
+def test_set_push_token_unknown_token(pmod):
+    assert pmod.PairingManager().set_push_token("nope", "apns", "x") is False
+
+
+def test_clear_push_token(pmod):
+    mgr = pmod.PairingManager()
+    token = mgr.redeem(mgr.create_code()[0], "iPhone")
+    mgr.set_push_token(token, "apns", "apns-tok")
+    mgr.clear_push_token(token)
+    assert mgr.push_targets() == []
+    assert mgr.list_devices()[0]["has_push"] is False
+
+
+def test_push_token_persists_across_instances(pmod):
+    mgr = pmod.PairingManager()
+    token = mgr.redeem(mgr.create_code()[0], "phone")
+    mgr.set_push_token(token, "fcm", "fcm-xyz")
+    mgr2 = pmod.PairingManager()                    # reload from disk (schemaless)
+    assert mgr2.push_targets() == [(token, "fcm", "fcm-xyz")]
+
+
+@pytest.mark.asyncio
+async def test_push_register_route(pmod, fake_main):
+    pairing = fake_main.state.pairing
+    token = pairing.redeem(pairing.create_code()[0], "Pixel")
+    ok = await pmod.pair_push_register(
+        SimpleNamespace(app=SimpleNamespace(), headers={"authorization": f"Bearer {token}"}),
+        pmod.PushRegisterRequest(platform="android", push_token="fcm-xyz"))
+    assert ok == {"status": "ok", "service": "fcm"}
+    assert pairing.push_targets() == [(token, "fcm", "fcm-xyz")]
+    # missing token -> 401
+    bad = await pmod.pair_push_register(
+        SimpleNamespace(app=SimpleNamespace(), headers={}),
+        pmod.PushRegisterRequest(platform="ios", push_token="x"))
+    assert bad.status_code == 401
+    # unknown platform -> 400
+    bad2 = await pmod.pair_push_register(
+        SimpleNamespace(app=SimpleNamespace(), headers={"authorization": f"Bearer {token}"}),
+        pmod.PushRegisterRequest(platform="symbian", push_token="x"))
+    assert bad2.status_code == 400
+
+
 @pytest.mark.asyncio
 async def test_pair_status_valid_and_invalid(pmod, fake_main):
     code, _ = fake_main.state.pairing.create_code()

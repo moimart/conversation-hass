@@ -73,6 +73,10 @@ _ALLOWLIST = [
     ("GET",  r"^/api/conversation/log/image$",          True,  False),
     ("GET",  r"^/api/cloud_llm$",                        True,  False),
     ("POST", r"^/api/cloud_llm$",                        True,  False),
+    ("POST", r"^/api/pair/push-register$",              True,  False),
+    # Push image: signature-gated by the SERVER (short-lived HMAC), so the
+    # gateway exposes it tokenless — the .jpg anchor keeps the surface tight.
+    ("GET",  r"^/api/push/image/\d+\.jpg$",             False, False),
 ]
 _ALLOWLIST = [(m, re.compile(p), a, s) for (m, p, a, s) in _ALLOWLIST]
 

@@ -229,6 +229,32 @@ async def test_cloud_llm_post_allowed_with_token(client):
     assert ("POST", "/api/cloud_llm") in state["proxied"]
 
 
+# push notifications
+
+
+@pytest.mark.asyncio
+async def test_push_register_requires_token(client):
+    cl, state = client
+    assert (await cl.post("/api/pair/push-register")).status == 401   # no token
+    good = await cl.post("/api/pair/push-register", headers=_auth(),
+                         json={"platform": "android", "push_token": "x"})
+    assert good.status == 200
+    assert ("POST", "/api/pair/push-register") in state["proxied"]
+
+
+@pytest.mark.asyncio
+async def test_push_image_is_public_but_jpg_anchored(client):
+    """The signed image URL is server-gated, so the gateway lets it through
+    WITHOUT a token — but ONLY the /{id}.jpg shape (server checks the HMAC)."""
+    cl, state = client
+    ok = await cl.get("/api/push/image/5.jpg?exp=1&sig=abc")     # no auth header
+    assert ok.status == 200
+    assert state["status_hits"] == 0                             # not auth-checked
+    # no extension / non-numeric id -> not allowlisted -> denied, never proxied
+    assert (await cl.get("/api/push/image/5")).status == 404
+    assert (await cl.get("/api/push/image/abc.jpg")).status == 404
+
+
 # websocket
 
 @pytest.mark.asyncio

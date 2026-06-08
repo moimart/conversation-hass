@@ -169,15 +169,50 @@ class PairingManager:
 
     def list_devices(self) -> list[dict]:
         """Paired devices for the admin UI — device_name + created_at + a short
-        token PREFIX for disambiguation. NEVER the full token."""
+        token PREFIX for disambiguation. NEVER the full token (or push token)."""
         out = []
         for token, entry in self._tokens.items():
             out.append({
                 "device_name": entry.get("device_name"),
                 "created_at": entry.get("created_at"),
                 "token_prefix": token[:6],
+                "has_push": bool(entry.get("push_token")),
             })
         return sorted(out, key=lambda d: d.get("created_at") or 0)
+
+    # --- push tokens -------------------------------------------------------
+    def set_push_token(self, token: str, service: str, push_token: str) -> bool:
+        """Attach (or upsert) a device's APNs/FCM push token to its pairing
+        entry. The store is schemaless so no migration is needed. Returns False
+        if the pairing token is unknown."""
+        entry = self._tokens.get(token)
+        if entry is None:
+            return False
+        entry["push_service"] = service
+        entry["push_token"] = push_token
+        entry["push_registered_at"] = time.time()
+        self._save()
+        return True
+
+    def clear_push_token(self, token: str) -> None:
+        """Drop a device's push token (e.g. after APNs/FCM reports it dead)."""
+        entry = self._tokens.get(token)
+        if entry and ("push_token" in entry or "push_service" in entry):
+            entry.pop("push_token", None)
+            entry.pop("push_service", None)
+            entry.pop("push_registered_at", None)
+            self._save()
+
+    def push_targets(self) -> list[tuple[str, str, str]]:
+        """(pairing_token, service, push_token) for every device that has
+        registered a push token. The push layer filters this to the offline set."""
+        out = []
+        for token, entry in self._tokens.items():
+            pt = entry.get("push_token")
+            svc = entry.get("push_service")
+            if pt and svc:
+                out.append((token, svc, pt))
+        return out
 
 
 # === Routes ===================================================================
@@ -295,3 +330,33 @@ async def pair_revoke(request: Request, req: RevokeRequest):
         n = state.pairing.revoke_by_device_name(req.device_name)
         return {"revoked": n}
     return _json_error({"error": "device_name or token required"}, 400)
+
+
+class PushRegisterRequest(BaseModel):
+    platform: str            # "ios" | "android" (aliases apns/fcm accepted)
+    push_token: str
+
+
+# Map the app's platform string to our internal transport name.
+_PUSH_SERVICE = {"ios": "apns", "apns": "apns", "android": "fcm", "fcm": "fcm"}
+
+
+@router.post("/api/pair/push-register")
+async def pair_push_register(request: Request, req: PushRegisterRequest):
+    """Register (upsert) a paired device's APNs/FCM push token so PAL can notify
+    it while its app is closed. Requires the device's Bearer pairing token. The
+    app calls this after pairing, on every cold launch, and on token refresh.
+    Token-gated at the gateway edge too."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    token = extract_bearer(request)
+    if not state.pairing.is_valid_token(token):
+        return _json_error({"error": "unauthorized"}, 401)
+    service = _PUSH_SERVICE.get((req.platform or "").strip().lower())
+    if service is None:
+        return _json_error({"error": "invalid_platform"}, 400)
+    push_token = (req.push_token or "").strip()
+    if not push_token:
+        return _json_error({"error": "missing_push_token"}, 400)
+    state.pairing.set_push_token(token, service, push_token)
+    return {"status": "ok", "service": service}

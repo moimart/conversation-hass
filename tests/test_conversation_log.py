@@ -17,12 +17,14 @@ from server.app.conversation_log import ConversationLog
 # --- fakes -------------------------------------------------------------------
 
 class _FakeConn:
-    def __init__(self, fetch_rows=None, fail=False, fetchrow_result=None):
-        self.execute = AsyncMock()
+    def __init__(self, fetch_rows=None, fail=False, fetchrow_result=None, insert_id=7):
+        self.execute = AsyncMock()                       # schema DDL on connect
+        self.fetchval = AsyncMock(return_value=insert_id)  # INSERT ... RETURNING id
         self.fetch = AsyncMock(return_value=fetch_rows or [])
         self.fetchrow = AsyncMock(return_value=fetchrow_result)
         if fail:
             self.execute.side_effect = RuntimeError("db down")
+            self.fetchval.side_effect = RuntimeError("db down")
             self.fetch.side_effect = RuntimeError("db down")
             self.fetchrow.side_effect = RuntimeError("db down")
 
@@ -60,14 +62,16 @@ def _patched_pool(conn):
 # --- ConversationLog ----------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_log_inserts_row():
-    conn = _FakeConn()
+async def test_log_inserts_row_and_returns_id():
+    conn = _FakeConn(insert_id=42)
     with _patched_pool(conn):
         cl = ConversationLog("postgresql://x")
-        await cl.log("user", "turn on the lights", origin="iPhone Air")
-    args = conn.execute.await_args_list[-1].args
+        row_id = await cl.log("user", "turn on the lights", origin="iPhone Air")
+    args = conn.fetchval.await_args_list[-1].args
     assert "INSERT INTO conversation_log" in args[0]
+    assert "RETURNING id" in args[0]
     assert args[1:] == ("user", "turn on the lights", "iPhone Air", None, None, None)
+    assert row_id == 42                              # returned for push image URLs
 
 
 @pytest.mark.asyncio
@@ -75,7 +79,8 @@ async def test_log_never_raises_on_db_failure():
     conn = _FakeConn(fail=True)
     with _patched_pool(conn):
         cl = ConversationLog("postgresql://x")
-        await cl.log("assistant", "done")          # must not raise
+        rid = await cl.log("assistant", "done")     # must not raise
+    assert rid is None                              # failure -> no id
     assert cl._pool is None                         # dropped for lazy reconnect
 
 
@@ -86,9 +91,8 @@ async def test_log_skips_empty_and_invalid():
         cl = ConversationLog("postgresql://x")
         await cl.log("user", "   ")
         await cl.log("bogus-kind", "hello")
-    # only schema execute (on connect), no INSERTs
-    inserts = [c for c in conn.execute.await_args_list if "INSERT" in c.args[0]]
-    assert inserts == []
+    # invalid kind / empty text -> no INSERT (fetchval) calls at all
+    assert conn.fetchval.await_args_list == []
 
 
 @pytest.mark.asyncio
@@ -123,7 +127,7 @@ async def test_lazy_reconnect_on_use():
         await cl.log("user", "first try")           # connect fails → dropped
         assert cl._pool is None
         await cl.log("user", "second try")          # reconnects → inserted
-    inserts = [c for c in conn.execute.await_args_list if "INSERT" in c.args[0]]
+    inserts = [c for c in conn.fetchval.await_args_list if "INSERT" in c.args[0]]
     assert len(inserts) == 1
 
 

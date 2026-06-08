@@ -204,6 +204,7 @@ async def _dispatch_show_image(
     duration_s: int,
     *,
     entity_id: str = "external",
+    push: bool = True,
 ) -> bool:
     """Push an image to the kiosk via the existing show_camera WS message.
 
@@ -240,9 +241,27 @@ async def _dispatch_show_image(
     state.active_visual = {"msg": msg, "expires": _time.monotonic() + duration_s}
     # Conversation log: persist a thumbnail of what was shown (kind='image',
     # origin = the entity/source label). Fire-and-forget — the PIL downscale
-    # runs in a thread and a failure must never affect the display.
-    asyncio.create_task(_log_orb_image(state, image_b64, mime, entity_id))
+    # runs in a thread and a failure must never affect the display. When push
+    # is enabled, the same background task also notifies offline paired devices
+    # with an inline thumbnail (needs the log row id, so it logs then pushes);
+    # QR codes / internal frames pass push=False to opt out.
+    if push and getattr(state, "push", None) is not None:
+        asyncio.create_task(_log_and_push_image(state, image_b64, mime, entity_id))
+    else:
+        asyncio.create_task(_log_orb_image(state, image_b64, mime, entity_id))
     return sent
+
+
+async def _log_and_push_image(state, image_b64: str, mime: str, entity_id: str) -> None:
+    """Log the orb image (capturing its row id) then push an inline-thumbnail
+    notification to offline paired devices. If the log is disabled (no id) the
+    push degrades to text-only."""
+    row_id = await _log_orb_image(state, image_b64, mime, entity_id)
+    try:
+        await state.push.dispatch(state, "image", "📷 Image shown on the orb",
+                                  image_row_id=row_id, category="image")
+    except Exception as e:
+        log.debug(f"image push failed: {type(e).__name__}: {e}")
 
 
 _LOG_THUMB_MAX = 512        # px, longest edge of the stored thumbnail
@@ -271,17 +290,18 @@ def _make_thumbnail(image_bytes: bytes) -> tuple[bytes, str] | None:
         return None
 
 
-async def _log_orb_image(state, image_b64: str, mime: str, entity_id: str) -> None:
-    """Append an image entry to the persistent conversation log."""
+async def _log_orb_image(state, image_b64: str, mime: str, entity_id: str) -> int | None:
+    """Append an image entry to the persistent conversation log. Returns the new
+    row id (so a push notification can reference the thumbnail), or None."""
     clog = getattr(state, "conversation_log", None)
     if clog is None or not getattr(clog, "enabled", False):
-        return
+        return None
     try:
         raw = base64.b64decode(image_b64)
         thumb = await asyncio.to_thread(_make_thumbnail, raw)
         if thumb is None:
-            return
-        await clog.log(
+            return None
+        return await clog.log(
             "image",
             "Image shown on the orb",
             origin=entity_id or None,
@@ -291,6 +311,7 @@ async def _log_orb_image(state, image_b64: str, mime: str, entity_id: str) -> No
         )
     except Exception as e:
         log.debug(f"orb image log failed: {type(e).__name__}: {e}")
+        return None
 
 
 async def _dispatch_play_video(
