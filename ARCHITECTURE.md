@@ -439,6 +439,31 @@ Exposure is via a Cloudflare Tunnel (e.g. `pal.martinez.sh` →
 probes the home `/health` (2s) and uses the gateway only when home is
 unreachable, re-probing on resume. See the gateway runbook in `CLAUDE.md`.
 
+```
+                  ┌────────────────────── home LAN ──────────────────────┐
+                  │   kiosk RPi ──/ws/audio──►  ai-server:8765  ◄─► HA/MQTT │
+                  │                                  ▲                      │
+  satellite ──────┼──── /ws/ui + REST (token) ───────┤                      │
+  (home Wi-Fi)    │                                  │  allowlist +         │
+                  │                                  │  edge auth           │
+                  │                         hal-gateway:8766 ───────────────┘
+                  └──────────────────────────────▲───────────────────────┘
+                                                 │  Cloudflare Tunnel (wss/https)
+  satellite ───────────────────────────────────┘
+  (away / cellular)
+
+  · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·
+  push:  ai-server ──► APNs / FCM ──► device   (reaches it anywhere; NOT via the gateway)
+```
+
+A satellite on home Wi-Fi talks **straight** to `ai-server:8765` (`/ws/ui` +
+the satellite REST surface). Away from home it routes the **same** calls
+through the Cloudflare Tunnel → `hal-gateway:8766`, which allowlists and
+edge-authenticates them before forwarding to the unchanged `ai-server`. Push
+delivery is a third, independent path: the server calls APNs/FCM directly and
+Apple/Google deliver to the device wherever it is — the gateway isn't involved
+(only the later signed-image *fetch* rides back through it).
+
 ---
 
 ## Push notifications
