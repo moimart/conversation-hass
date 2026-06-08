@@ -1,13 +1,18 @@
-# HAL — REST + WebSocket API Reference
+# PAL — REST + WebSocket API Reference
 
 The AI server (default port **`8765`**) exposes a small REST surface and
 three WebSocket endpoints. The Raspberry Pi audio_streamer (port
 **`8080`** on the kiosk host) re-publishes a couple of these and serves
 the kiosk UI.
 
-All endpoints assume **LAN trust** — no authentication. Keep the server
-behind your local firewall or fronted by a reverse proxy if you need
-auth.
+**Two reachability tiers** (see [Reachability](#reachability-lan-vs-gateway)):
+
+- **LAN (`:8765`)** — the full surface, **no authentication** (LAN trust).
+  Keep it behind your firewall / VPN; never port-forward `:8765`.
+- **Gateway (`:8766`)** — the optional internet-facing `hal-gateway` proxy
+  exposes only a **token-gated allowlist** (the satellite subset). The
+  home-control surface (speak, display, volume, PTT, pairing mint, MCP,
+  MQTT) is **never** reachable through it.
 
 * **Default base URL**: `http://<ai-server-host>:8765`
 * **Content type for JSON bodies**: `application/json`
@@ -19,6 +24,7 @@ auth.
 ## Table of contents
 
 - [Conventions](#conventions)
+- [Reachability (LAN vs gateway)](#reachability-lan-vs-gateway)
 - [Health](#health)
 - [Push-to-Talk](#push-to-talk)
   - [`POST /api/ptt/start`](#post-apipttstart)
@@ -69,6 +75,43 @@ All JSON-returning endpoints follow this shape on **success**:
 
 Push-to-Talk and a few others return richer status strings — see each
 endpoint.
+
+---
+
+## Reachability (LAN vs gateway)
+
+The **LAN** surface (`:8765`) has **no auth** — the whole API below is
+reachable on the local network. The optional **gateway** (`hal-gateway`,
+`:8766`) is the only thing you expose to the internet, and it serves a
+**default-deny, token-gated allowlist**: only the rows marked ✓ below reach
+the server through it; everything else is `404` at the edge. So a route is
+internet-reachable **only** if its "Gateway" cell is ✓.
+
+| Endpoint | LAN `:8765` | Gateway `:8766` | Auth |
+|---|:---:|:---:|---|
+| `GET /health` | ✓ | ✓ | none (public) |
+| `GET /api/themes`, `GET /themes/{name}/{file}` | ✓ | ✓ | none (public) |
+| `POST /api/command` | ✓ | ✓ | token at gateway edge |
+| `GET /api/conversation/log` (+ `/image`) | ✓ | ✓ | token |
+| `GET`/`POST /api/cloud_llm` | ✓ | ✓ | token |
+| `GET /api/pair/status` | ✓ | ✓ | token (also the edge validator) |
+| `POST /api/pair/push-register` | ✓ | ✓ | token |
+| `GET /api/satellite/tts` | ✓ | ✓ | token |
+| `GET /api/satellite/stream.mjpeg` | ✓ | ✓ | token (`?token=`) |
+| `POST /api/satellite/photo_frame/{start,stop}` | ✓ | ✓ | token |
+| `GET /api/push/image/{id}.jpg` | ✓ | ✓ | **signed URL** (HMAC, no token) |
+| `WS /ws/ui` | ✓ (mirror, tokenless) | ✓ | **token REQUIRED** on the gateway |
+| `POST /api/speak` | ✓ | — | LAN-only |
+| `POST /api/mute`, `GET /api/mute`, `POST /api/volume` | ✓ | — | LAN-only |
+| `GET`/`POST /api/display`, `…/photo_frame/idle` | ✓ | — | LAN-only |
+| `POST /api/snapshot`, `GET /api/snapshot.jpg` | ✓ | — | LAN-only |
+| `POST /api/photo_frame/{start,end}` (kiosk) | ✓ | — | LAN-only |
+| `POST /api/ptt/{start,end,cancel}`, `WS /ws/ptt` | ✓ | — | LAN-only |
+| `POST /api/pair/request`, `/redeem` | ✓ | — | LAN-only — **pairing only happens at home** |
+| `GET /api/pair/devices`, `POST /api/pair/revoke` | ✓ | — | LAN-only — device admin stays home-side |
+| `/mcp`, `WS /ws/audio`, all MQTT | ✓ | — | LAN-only |
+
+Full gateway config + rationale: [Satellite gateway](#satellite-gateway-port-8766).
 
 ---
 
@@ -858,6 +901,8 @@ in addition to the `Authorization: Bearer` header and is redacted from logs.
 | `POST` | `/api/satellite/photo_frame/{start,stop}` | ✓ | phone screensaver |
 | `GET`  | `/api/conversation/log` (+ `/image`) | ✓ | history view |
 | `GET` `POST` | `/api/cloud_llm` | ✓ | settings (toggle allowed) |
+| `POST` | `/api/pair/push-register` | ✓ | register APNs/FCM push token |
+| `GET`  | `/api/push/image/{id}.jpg` | — (signed) | inline push-image thumbnail; **server**-validated HMAC, no token |
 | `WS`   | `/ws/ui` | ✓ (`?token=`) | **valid token required** — no public mirror mode |
 
 Explicitly NOT proxied (LAN-only): `/api/pair/request`, `/api/pair/redeem`
