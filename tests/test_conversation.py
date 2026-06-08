@@ -497,3 +497,37 @@ class TestHistoryCompaction:
     async def test_summarize_history_empty_input(self, conversation):
         out = await conversation._summarize_history([{"role": "user", "content": "   "}])
         assert out == ""
+
+
+class TestToolResultTruncation:
+    @pytest.mark.asyncio
+    async def test_large_tool_result_kept_out_of_context(self, conversation):
+        """A huge tool result (e.g. ha_get_camera_image's base64 snapshot) must be
+        truncated before it's fed back to the model — otherwise it overflows
+        num_ctx, evicts the persona + request, and the model replies nonsense."""
+        from server.app.conversation import _MAX_TOOL_RESULT_CHARS
+        huge = "A" * 60000                       # ~a camera snapshot's base64
+        conversation.mcp.call_tool = AsyncMock(return_value=huge)
+        responses = [
+            {"message": {"role": "assistant", "content": "",
+                         "tool_calls": [{"function": {
+                             "name": "ha_get_camera_image",
+                             "arguments": {"entity_id": "camera.living_room"}}}]}},
+            {"message": {"role": "assistant", "content": "Here's the camera."}},
+        ]
+        seen = []
+
+        async def fake_chat(messages, *a, **k):
+            seen.append([dict(m) for m in messages])   # snapshot per round
+            return responses[len(seen) - 1]
+
+        with patch.object(conversation, "_chat_completion", side_effect=fake_chat):
+            out = await conversation._run_llm_with_tools("show me the living room camera")
+
+        assert out == "Here's the camera."
+        tool_msgs = [m for m in seen[1] if m.get("role") == "tool"]
+        assert tool_msgs, "expected a tool-result message in round 2"
+        content = tool_msgs[-1]["content"]
+        assert len(content) <= _MAX_TOOL_RESULT_CHARS + 200
+        assert "truncated" in content
+        assert huge not in content                 # the full blob never reaches the model

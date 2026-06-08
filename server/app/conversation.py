@@ -25,6 +25,13 @@ from .tts import TTSEngine
 
 log = logging.getLogger("hal.conversation")
 
+# Cap on a single tool result fed back into the LLM context. A few tools (e.g.
+# ha_get_camera_image) return a base64 image — hundreds of KB — which on its own
+# overflows num_ctx, evicting the persona AND the user's request, so the model
+# replies with nonsense. The raw bytes are useless to a text model anyway;
+# images meant for the user are shown on the orb via show_camera / show_image.
+_MAX_TOOL_RESULT_CHARS = 8000
+
 DEFAULT_SYSTEM_PROMPT = """You are PAL, a helpful voice assistant for a smart home. \
 You speak naturally and concisely, like a person in a conversation. \
 Keep responses brief — 1-2 sentences max — because they will be spoken aloud.
@@ -725,10 +732,20 @@ class ConversationManager:
                 self._llm_metrics_acc["tools_total_s"] = t_tools_total
                 log.info(f"[llm] tool {tool_name} took {tool_elapsed:.2f}s")
 
-                # Feed tool result back into the conversation
+                # Feed tool result back into the conversation — but CAP it so a
+                # huge/binary result (e.g. a camera snapshot's base64) can't
+                # overflow num_ctx and make the model reply nonsense.
+                content = result if isinstance(result, str) else str(result)
+                if len(content) > _MAX_TOOL_RESULT_CHARS:
+                    omitted = len(content) - _MAX_TOOL_RESULT_CHARS
+                    log.warning(f"[llm] tool {tool_name} result {len(content)} chars "
+                                f"-> truncated to {_MAX_TOOL_RESULT_CHARS} (kept out of context)")
+                    content = (content[:_MAX_TOOL_RESULT_CHARS]
+                               + f"\n…[{omitted} chars truncated — large/binary tool result "
+                                 f"(e.g. a camera image) omitted; show it on the orb instead]")
                 messages.append({
                     "role": "tool",
-                    "content": result,
+                    "content": content,
                 })
 
         # If we exhausted the loop, return last assistant message
