@@ -198,6 +198,12 @@ body.show-conversation-log .clog-stage {
     object-fit: contain;
     border-radius: 8px;
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+    /* Pinch/pan are handled in JS (wireZoom); take gestures off the browser so
+       it doesn't try to scroll or page-zoom. transform-origin stays center so
+       the pan-clamp math (clampPan) holds. */
+    touch-action: none;
+    transform-origin: center center;
+    will-change: transform;
 }
 .clog-lightbox-close {
     position: absolute;

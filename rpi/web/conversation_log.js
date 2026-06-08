@@ -69,8 +69,70 @@ export function mountConversationLog(root) {
     }
 
     // Image lightbox (mobile only): tapping a thumbnail shows it large with an
-    // ✕ to return to the log. Built once, lazily shown.
+    // ✕ to return to the log. Built once, lazily shown. Supports pinch-to-zoom
+    // + pan + double-tap (see wireZoom). NOTE: the stored image is a ≤512px
+    // thumbnail, so zoom magnifies pixels — it does not reveal extra detail.
     let lightboxEl = null;
+    const Z_MIN = 1, Z_MAX = 4;
+    let zScale = 1, zTx = 0, zTy = 0;   // committed transform of the big image
+    function applyZoom(img) {
+        img.style.transform = `translate(${zTx}px, ${zTy}px) scale(${zScale})`;
+    }
+    function resetZoom(img) {
+        zScale = 1; zTx = 0; zTy = 0;
+        if (img) img.style.transform = "";
+    }
+    // Keep the (center-origin) scaled image from being dragged off-screen.
+    function clampPan(img) {
+        const w = img.offsetWidth, h = img.offsetHeight;   // layout size, pre-transform
+        const maxX = Math.max(0, (w * zScale - window.innerWidth) / 2);
+        const maxY = Math.max(0, (h * zScale - window.innerHeight) / 2);
+        zTx = Math.max(-maxX, Math.min(maxX, zTx));
+        zTy = Math.max(-maxY, Math.min(maxY, zTy));
+    }
+    function wireZoom(img) {
+        const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+        const midX = (t) => (t[0].clientX + t[1].clientX) / 2;
+        const midY = (t) => (t[0].clientY + t[1].clientY) / 2;
+        let startDist = 0, startScale = 1, startTx = 0, startTy = 0, startMX = 0, startMY = 0;
+        let panX = 0, panY = 0, lastTap = 0;
+        img.addEventListener("touchstart", (e) => {
+            if (e.touches.length === 2) {
+                startDist = dist(e.touches); startScale = zScale;
+                startTx = zTx; startTy = zTy;
+                startMX = midX(e.touches); startMY = midY(e.touches);
+                e.preventDefault();
+            } else if (e.touches.length === 1) {
+                const now = Date.now();
+                if (now - lastTap < 300) {            // double-tap toggles zoom
+                    if (zScale > Z_MIN) resetZoom(img);
+                    else { zScale = 2; zTx = 0; zTy = 0; applyZoom(img); }
+                    lastTap = 0; e.preventDefault(); return;
+                }
+                lastTap = now;
+                if (zScale > Z_MIN) {                 // begin single-finger pan
+                    panX = e.touches[0].clientX - zTx;
+                    panY = e.touches[0].clientY - zTy;
+                }
+            }
+        }, { passive: false });
+        img.addEventListener("touchmove", (e) => {
+            if (e.touches.length === 2) {             // pinch
+                zScale = Math.max(Z_MIN, Math.min(Z_MAX, startScale * (dist(e.touches) / startDist)));
+                zTx = startTx + (midX(e.touches) - startMX);   // pan with the pinch midpoint
+                zTy = startTy + (midY(e.touches) - startMY);
+                applyZoom(img); e.preventDefault();
+            } else if (e.touches.length === 1 && zScale > Z_MIN) {  // pan
+                zTx = e.touches[0].clientX - panX;
+                zTy = e.touches[0].clientY - panY;
+                applyZoom(img); e.preventDefault();
+            }
+        }, { passive: false });
+        img.addEventListener("touchend", () => {
+            if (zScale <= Z_MIN) resetZoom(img);
+            else { clampPan(img); applyZoom(img); }
+        });
+    }
     function openLightbox(src, alt) {
         if (!lightboxEl) {
             lightboxEl = document.createElement("div");
@@ -85,6 +147,7 @@ export function mountConversationLog(root) {
             lightboxEl.addEventListener("click", (e) => {
                 if (e.target === lightboxEl) closeLightbox();
             });
+            wireZoom(lightboxEl.querySelector(".clog-lightbox-img"));
             // Append to <body>, NOT root: the log's .clog-stage uses a
             // transform (rotate-in), which creates a stacking context that
             // would trap the lightbox below the input bar's gear button (the
@@ -92,12 +155,16 @@ export function mountConversationLog(root) {
             document.body.appendChild(lightboxEl);
         }
         const big = lightboxEl.querySelector(".clog-lightbox-img");
+        resetZoom(big);            // each open starts at 1× / centered
         big.src = src;
         big.alt = alt || "";
         lightboxEl.classList.add("visible");
     }
     function closeLightbox() {
-        if (lightboxEl) lightboxEl.classList.remove("visible");
+        if (lightboxEl) {
+            lightboxEl.classList.remove("visible");
+            resetZoom(lightboxEl.querySelector(".clog-lightbox-img"));
+        }
     }
 
     function base() {
