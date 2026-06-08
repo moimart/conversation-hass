@@ -174,6 +174,46 @@ export function mountConversationLog(root) {
         return (HAL && HAL.token) ? { Authorization: `Bearer ${HAL.token}` } : {};
     }
 
+    // Log images load via fetch+blob, NOT a tokened <img> URL. An <img> tag
+    // can't send an Authorization header; putting the token in the URL instead
+    // would pool it in the server's/CDN's access logs (URLs get logged, the
+    // Bearer header does not). So fetch with the same header as the log text,
+    // show an object URL, and revoke on clear. Lazy via IntersectionObserver so
+    // off-screen thumbnails in a 100-row page don't all fetch at once (matters
+    // on cellular through the gateway).
+    const imageObjectUrls = new Set();
+    async function loadLogImage(img, id) {
+        try {
+            const res = await fetch(`${base()}/api/conversation/log/image?id=${id}`, {
+                headers: authHeaders(), cache: "no-store",
+            });
+            if (!res.ok) throw new Error(`image ${id} -> ${res.status}`);
+            const url = URL.createObjectURL(await res.blob());
+            imageObjectUrls.add(url);
+            img.src = url;
+        } catch (e) {
+            console.warn("[clog] image load failed:", e);
+            img.classList.add("clog-img-failed");
+            img.alt = "⚠ image unavailable";
+        }
+    }
+    const imgObserver = ("IntersectionObserver" in window)
+        ? new IntersectionObserver((entries, obs) => {
+            for (const ent of entries) {
+                if (!ent.isIntersecting) continue;
+                obs.unobserve(ent.target);
+                loadLogImage(ent.target, ent.target.dataset.imageId);
+            }
+        }, { root: bodyEl, rootMargin: "200px" })
+        : null;
+    // Revoke object URLs before wiping the list — the only path that removes
+    // image rows from the DOM (older-history trim only drops day separators).
+    function clearBody() {
+        for (const url of imageObjectUrls) URL.revokeObjectURL(url);
+        imageObjectUrls.clear();
+        bodyEl.innerHTML = "";
+    }
+
     function clearTimers() {
         if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
         if (countdownRaf) { cancelAnimationFrame(countdownRaf); countdownRaf = null; }
@@ -263,20 +303,22 @@ export function mountConversationLog(root) {
         const text = document.createElement("span");
         text.className = "clog-text";
         if (row.kind === "image" && row.has_image) {
-            // Orb images render as a small lazy-loaded thumbnail — the page
-            // payload only says has_image; bytes come from the image route.
+            // Orb images render as a small thumbnail — the page payload only
+            // says has_image; bytes come from the image route, fetched with the
+            // Bearer header (see loadLogImage) and shown as an object URL.
             const img = document.createElement("img");
             img.className = "clog-img";
-            img.loading = "lazy";
             img.alt = row.text || "Image shown on the orb";
-            img.src = `${base()}/api/conversation/log/image?id=${row.id}`;
+            img.dataset.imageId = String(row.id);
+            if (imgObserver) imgObserver.observe(img);
+            else loadLogImage(img, row.id);     // no IO support: eager fetch
             if (isMobile) {
                 // Tap to view larger in a lightbox (mobile only — on the kiosk
                 // a touch just resets the auto-dismiss timer).
                 img.classList.add("clog-img-tappable");
                 img.addEventListener("click", (e) => {
                     e.stopPropagation();
-                    openLightbox(img.src, img.alt);
+                    if (img.src) openLightbox(img.src, img.alt);
                 });
             }
             text.appendChild(img);
@@ -320,7 +362,7 @@ export function mountConversationLog(root) {
     }
 
     function setNotice(cls, text, retryable = false) {
-        bodyEl.innerHTML = "";
+        clearBody();
         const el = document.createElement("div");
         el.className = `clog-empty ${cls || ""}`;
         el.textContent = text;
@@ -332,7 +374,7 @@ export function mountConversationLog(root) {
     }
 
     async function initialLoad(attempt = 0) {
-        bodyEl.innerHTML = "";
+        clearBody();
         renderedRows = 0;
         oldestId = null;
         hasMore = false;
@@ -359,7 +401,7 @@ export function mountConversationLog(root) {
             setNotice("", "No conversation history yet.");
             return;
         }
-        bodyEl.innerHTML = "";
+        clearBody();
         const { frag } = buildBlock(data.rows, null);
         bodyEl.appendChild(frag);
         renderedRows = data.rows.length;

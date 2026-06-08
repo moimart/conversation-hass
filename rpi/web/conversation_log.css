@@ -177,6 +177,16 @@ body.show-conversation-log .clog-stage {
 }
 /* Mobile: thumbnails are tappable (open the lightbox). */
 .clog-img-tappable { cursor: zoom-in; }
+/* Image fetch failed (e.g. revoked token over the gateway): show the alt text
+   as a muted badge instead of a broken-image icon. */
+.clog-img-failed {
+    width: auto;
+    min-height: 0;
+    padding: 4px 8px;
+    font-size: 0.85em;
+    color: var(--muted, #8a93a3);
+    background: rgba(255, 255, 255, 0.04);
+}
 
 /* Image lightbox (mobile only): full-screen view of a tapped thumbnail. */
 .clog-lightbox {
