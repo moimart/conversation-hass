@@ -20,6 +20,13 @@ from mcp.client.stdio import stdio_client
 
 log = logging.getLogger("hal.mcp")
 
+# Tools hidden from the LLM's tool list but still callable internally
+# (via call_tool / tool_names). The local text model can't use a raw camera
+# image and should reach for `show_camera`, which fetches the image AND puts it
+# on the orb; exposing `ha_get_camera_image` directly just makes the model fetch
+# unusable base64 (and floods its context). show_camera invokes it internally.
+_LLM_HIDDEN_TOOLS = {"ha_get_camera_image"}
+
 
 class MCPClient:
     """Manages a persistent connection to an MCP server (HTTP or stdio)."""
@@ -109,8 +116,10 @@ class MCPClient:
 
     @property
     def tools_for_llm(self) -> list[dict]:
-        """Return tool definitions formatted for Ollama's tool-calling API."""
-        return self._tools_for_llm
+        """Tool definitions for Ollama's tool-calling API, minus LLM-hidden
+        tools (still callable internally via call_tool)."""
+        return [t for t in self._tools_for_llm
+                if t.get("function", {}).get("name") not in _LLM_HIDDEN_TOOLS]
 
     @property
     def tool_names(self) -> list[str]:

@@ -39,6 +39,23 @@ class TestMCPClientToolDiscovery:
             assert "description" in t["function"]
             assert "parameters" in t["function"]
 
+    def test_hidden_tool_excluded_from_llm_but_still_callable(self):
+        """ha_get_camera_image is hidden from the LLM's tool list (so the model
+        uses show_camera) but stays in tool_names so show_camera can invoke it."""
+        client = MCPClient(server_url="http://x")
+        client._tools = [
+            {"name": "ha_get_camera_image", "description": "d", "input_schema": {}},
+            {"name": "ha_call_service", "description": "d", "input_schema": {}},
+        ]
+        client._tools_for_llm = [
+            {"type": "function", "function": {"name": "ha_get_camera_image", "description": "d", "parameters": {}}},
+            {"type": "function", "function": {"name": "ha_call_service", "description": "d", "parameters": {}}},
+        ]
+        llm_names = [t["function"]["name"] for t in client.tools_for_llm]
+        assert "ha_get_camera_image" not in llm_names      # hidden from the model
+        assert "ha_call_service" in llm_names
+        assert "ha_get_camera_image" in client.tool_names  # still callable internally
+
     def test_get_tool_descriptions_text(self, mock_mcp_client):
         text = mock_mcp_client.get_tool_descriptions_text()
         assert "ha_call_service" in text
