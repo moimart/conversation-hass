@@ -1,12 +1,15 @@
-# HAL / PAL — Architecture
+# PAL — Architecture
 
 This document describes how the pieces fit together: the nodes, the
 audio + LLM pipeline, the streaming surfaces, the mobile/remote surfaces,
 the self-healing logic, and the file/module layout.
 
-> **HAL vs PAL** — same system. "HAL" is the kiosk/in-house persona; "PAL"
-> is the mobile companion app's name. The code, server, and protocols are
-> shared; only branding differs.
+> **A note on naming** — the system is **PAL**. "HAL" is the **legacy name**
+> (the HAL 9000-styled eye it grew out of) that still pervades the code:
+> container names (`hal-ai-server`, `hal-gateway`, …), env vars (`HAL_*`,
+> `HAL_DEVICE_NAME`), and many identifiers. They refer to the same system —
+> the product name is PAL; the HAL-prefixed internals just haven't been
+> renamed.
 
 For the public-facing surface (REST + MQTT) see [`API.md`](./API.md)
 and [`MQTT.md`](./MQTT.md). For theme authoring see
