@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "sh.martinez.hal.companion",
+  appId: "sh.martinez.pal.companion",
   appName: "PAL",
   webDir: "www",
   // The display connects to the AI server over ws:// / http:// on the LAN, so

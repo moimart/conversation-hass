@@ -1,4 +1,4 @@
-package sh.martinez.hal.companion;
+package sh.martinez.pal.companion;
 
 import com.getcapacitor.BridgeActivity;
 
