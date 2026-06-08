@@ -198,6 +198,16 @@ class Gateway:
         if not self._rl.allow(ip):
             return web.Response(status=429, text="rate limited")
 
+        # CORS preflight: the app's WebView origin (capacitor://localhost) differs
+        # from the gateway host, so any fetch carrying an Authorization header is
+        # preceded by an OPTIONS preflight. Browsers strip credentials from
+        # preflights, so it can't be token-gated — answer it WITHOUT auth, but
+        # only for a (method, path) pair that IS in the allowlist (the browser
+        # names the real method in Access-Control-Request-Method). Forward to the
+        # server so its CORS policy produces the same headers as the LAN path.
+        if request.method == "OPTIONS":
+            return await self._handle_preflight(request, ip)
+
         match = next(
             (entry for entry in _ALLOWLIST
              if entry[0] == request.method and entry[1].match(request.path)),
@@ -231,6 +241,28 @@ class Gateway:
                 return web.Response(status=up.status, body=data, headers=out_headers)
         except Exception as e:
             log.warning(f"proxy {request.method} {request.path} failed: {type(e).__name__}: {e}")
+            return web.Response(status=502, text="bad gateway")
+
+    async def _handle_preflight(self, request: web.Request, ip: str) -> web.StreamResponse:
+        """Answer a CORS preflight for allowlisted routes (no token required)."""
+        want = (request.headers.get("Access-Control-Request-Method") or "").upper()
+        allowed = any(e[0] == want and e[1].match(request.path) for e in _ALLOWLIST)
+        if not allowed:
+            log.info(f"DENY OPTIONS {request.path}?{_redact(request.query_string)} from {ip}")
+            return web.Response(status=404, text="not found")
+        target = f"{AI_SERVER_URL}{request.rel_url}"
+        session = await self._ensure_session()
+        try:
+            async with session.request(
+                "OPTIONS", target, headers=_forward_headers(request),
+                allow_redirects=False, timeout=aiohttp.ClientTimeout(total=10),
+            ) as up:
+                out_headers = {k: v for k, v in up.headers.items()
+                               if k.lower() not in _HOP_HEADERS}
+                return web.Response(status=up.status, body=await up.read(),
+                                    headers=out_headers)
+        except Exception as e:
+            log.warning(f"preflight {request.path} failed: {type(e).__name__}: {e}")
             return web.Response(status=502, text="bad gateway")
 
     async def _proxy_stream(self, request, session, target, headers, body) -> web.StreamResponse:

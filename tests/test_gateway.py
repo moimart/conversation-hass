@@ -159,6 +159,48 @@ async def test_token_via_query_param(client):
     assert (await cl.get("/api/satellite/stream.mjpeg?token=bad")).status == 401
 
 
+# CORS preflight — the app's WebView origin differs from the gateway host, so
+# token-bearing fetches are preceded by an unauthenticated OPTIONS preflight.
+
+@pytest.mark.asyncio
+async def test_preflight_allowed_route_no_token(client):
+    """OPTIONS preflight for an allowlisted (method, path) is forwarded WITHOUT
+    a token (browsers strip credentials from preflights) and never auth-checked."""
+    cl, state = client
+    resp = await cl.options(
+        "/api/conversation/log?limit=100",
+        headers={"Access-Control-Request-Method": "GET",
+                 "Origin": "capacitor://localhost"},
+    )
+    assert resp.status == 200
+    assert ("OPTIONS", "/api/conversation/log") in state["proxied"]
+    assert state["status_hits"] == 0       # preflight is not token-validated
+
+
+@pytest.mark.asyncio
+async def test_preflight_unlisted_route_denied(client):
+    """A preflight for a route not in the allowlist is denied, untouched."""
+    cl, state = client
+    resp = await cl.options(
+        "/api/speak",
+        headers={"Access-Control-Request-Method": "POST"},
+    )
+    assert resp.status == 404
+    assert state["proxied"] == []
+
+
+@pytest.mark.asyncio
+async def test_preflight_wrong_method_for_path_denied(client):
+    """Preflight names the real method; DELETE on /api/command isn't allowed."""
+    cl, state = client
+    resp = await cl.options(
+        "/api/command",
+        headers={"Access-Control-Request-Method": "DELETE"},
+    )
+    assert resp.status == 404
+    assert state["proxied"] == []
+
+
 @pytest.mark.asyncio
 async def test_auth_cache_avoids_repeat_subrequests(client):
     cl, state = client
