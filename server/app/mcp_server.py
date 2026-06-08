@@ -65,7 +65,7 @@ def build_mcp_server(state: "AppState") -> FastMCP:
     async def speak_verbatim(text: str) -> str:
         return await _call("speak_verbatim", {"text": text})
 
-    @mcp.tool(name="show_camera", description="Show a snapshot from a HA camera entity on the kiosk orb.")
+    @mcp.tool(name="show_camera", description="Show a camera to the user ON THE ORB (kiosk + paired phones): fetches the latest snapshot AND displays it. This is THE tool for any 'show me the <camera>' request. Do NOT use ha_get_camera_image (or any raw image-fetch tool) to display a camera — those return raw image bytes that CANNOT be shown to the user and bloat your context; show_camera does the fetch internally.")
     async def show_camera(entity_id: str, duration_s: int = 150) -> str:
         return await _call("show_camera", {"entity_id": entity_id, "duration_s": duration_s})
 

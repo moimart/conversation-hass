@@ -284,7 +284,7 @@ def build_local_tools(state) -> LocalToolsClient:
 
     tools.register(
         "show_camera",
-        "Display a Home Assistant camera snapshot OR image entity inside HAL's orb on the kiosk. Accepts both camera.* (fetched via MCP) and image.* (fetched via HA REST /api/image_proxy with bearer token). Use when the user asks to 'show me the <camera>' or 'show the <image entity>'. The image is shown for duration_s seconds (default 150) then the orb returns to normal. To find the right entity_id, use ha_search_entities with domain=camera or domain=image first.",
+        "Show a camera (camera.*) or image entity (image.*) to the user ON THE ORB (kiosk + paired phones). THIS is the tool for any 'show me the <camera>' or 'show the <image entity>' request — it fetches the snapshot AND displays it for duration_s seconds (default 150). Do NOT use ha_get_camera_image (or other raw image-fetch tools) to display a camera: those return raw image bytes that CANNOT be shown to the user and bloat the context — show_camera does the fetch internally (camera.* via MCP, image.* via HA REST /api/image_proxy). Find the entity_id with ha_search_entities (domain=camera or image) first.",
         {
             "type": "object",
             "properties": {
