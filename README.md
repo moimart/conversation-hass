@@ -107,6 +107,24 @@ work from anywhere, while the AI server itself stays LAN-only:
 Put it behind any TLS ingress — a Cloudflare Tunnel hostname, a reverse proxy,
 or Tailscale Funnel. Allowlist details in [`API.md`](./API.md) and `gateway/`.
 
+### Push notifications (when the app is closed)
+
+When a paired phone's app is **closed or backgrounded**, PAL can still reach it
+with native OS notifications — via **APNs** (iOS) and **FCM** (Android):
+
+- 🔔 **Spoken announcements** — the text PAL announced
+- ⏲️ **Finished timers** — on their own notification channel/sound
+- 🖼️ **Orb images** — shown as an **inline thumbnail** in the notification
+
+Privacy-preserving by design: the notification text/URL transits Apple/Google,
+but the **image bytes are fetched from your own gateway** via a short-lived
+signed link — they never touch Apple or Google. Delivery only happens when the
+device is offline (the app open = it gets the live `/ws/ui` feed instead, no
+push). Requires an Apple Developer account (APNs key) and a Firebase project
+(FCM); credentials live in `server/runtime/push_providers.json` (hot-reloaded,
+never committed). Setup notes in `CLAUDE.md`; the build/install is in
+[`mobile/README.md`](./mobile/README.md).
+
 ---
 
 ## Integrations & extension points
@@ -116,7 +134,7 @@ or Tailscale Funnel. Allowlist details in [`API.md`](./API.md) and `gateway/`.
 | [`API.md`](./API.md)                      | Full REST + WebSocket reference (PTT, command, speak, mute, volume, snapshots, themes; `/ws/{ptt,ui,audio}`)        |
 | [`MQTT.md`](./MQTT.md)                    | Every MQTT topic the bridge subscribes to or publishes; complete HA Discovery entity table; automation snippets    |
 | [`THEMES.md`](./THEMES.md)                | Plug-in theme authoring (CSS variable reference, `effect.js` API, manifest schema, hot-reload behaviour)            |
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md)    | Pipeline walkthrough, STT engine choice, PTT internals, camera/video modes, runtime config, project structure       |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md)    | Node layout, pipeline + LLM routing (local/agentic/cloud), STT, PTT, orb camera/video, conversation log, timers, satellites + gateway, push notifications, project structure |
 | [`openclaw-channel/hal/`](./openclaw-channel/hal/README.md) | OpenClaw channel plugin — routes voice through an OpenClaw agent with full mcporter/MCP tool access, Ollama fallback |
 | `openclaw-skill/hal/SKILL.md`             | OpenClaw skill teaching the agent how to control HAL's kiosk via mcporter                                          |
 | `desktop/`                                | Rust/GTK4 Wayland overlay for typing commands + hold-to-talk PTT from your Linux desktop                            |

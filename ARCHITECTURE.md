@@ -1,8 +1,12 @@
-# HAL — Architecture
+# HAL / PAL — Architecture
 
-This document describes how the pieces of HAL fit together: the two
-nodes, the audio + LLM pipeline, the streaming surfaces, the
-self-healing logic, and the file/module layout.
+This document describes how the pieces fit together: the nodes, the
+audio + LLM pipeline, the streaming surfaces, the mobile/remote surfaces,
+the self-healing logic, and the file/module layout.
+
+> **HAL vs PAL** — same system. "HAL" is the kiosk/in-house persona; "PAL"
+> is the mobile companion app's name. The code, server, and protocols are
+> shared; only branding differs.
 
 For the public-facing surface (REST + MQTT) see [`API.md`](./API.md)
 and [`MQTT.md`](./MQTT.md). For theme authoring see
@@ -12,11 +16,17 @@ and [`MQTT.md`](./MQTT.md). For theme authoring see
 
 ## Table of contents
 
-- [Two-node layout](#two-node-layout)
+- [Node layout](#node-layout)
 - [Pipeline walkthrough](#pipeline-walkthrough)
+- [LLM routing (local / agentic / cloud)](#llm-routing-local--agentic--cloud)
 - [Speech-to-Text engines](#speech-to-text-engines)
 - [Push-to-Talk](#push-to-talk)
 - [Camera / video / image in the orb](#camera--video--image-in-the-orb)
+- [Conversation log](#conversation-log)
+- [Voice timers](#voice-timers)
+- [Mobile satellites & pairing](#mobile-satellites--pairing)
+- [Satellite gateway (remote access)](#satellite-gateway-remote-access)
+- [Push notifications](#push-notifications)
 - [Live runtime config](#live-runtime-config)
 - [Sendspin (multi-room audio)](#sendspin-multi-room-audio)
 - [Self-healing behaviour](#self-healing-behaviour)
@@ -24,7 +34,7 @@ and [`MQTT.md`](./MQTT.md). For theme authoring see
 
 ---
 
-## Two-node layout
+## Node layout
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -98,6 +108,22 @@ to turn an audio buffer into text. See
 The only persistent connection between the Pi and the AI server is a
 single WebSocket (`/ws/audio`) carrying raw PCM upstream and TTS audio +
 JSON control messages downstream.
+
+The diagram above is the **core voice loop**. In practice the system spans
+more processes than two boxes — the AI server is the hub the rest connect
+to:
+
+| Node / container | Where | Role |
+|---|---|---|
+| **AI server** (`ai-server`) | GPU host | The hub: VAD front-end, conversation engine, MCP tools, TTS client, MQTT bridge, all REST/WS surfaces |
+| **STT service** (`stt-service`) | GPU host (own container) | The heavy ASR model behind `RemoteTranscriber` — see [STT engines](#speech-to-text-engines) |
+| **Kiosk RPi** (`audio-streamer`, `sendspin`) | Raspberry Pi | Mic/speaker I/O + the kiosk Chromium display (`/ws/ui`) |
+| **Postgres** (`hal-postgres`) | with AI server | Persistent [conversation log](#conversation-log) (text + image thumbnails) |
+| **Satellite gateway** (`hal-gateway`) | with AI server | Token-gated reverse proxy that exposes the satellite surface to the internet — see [gateway](#satellite-gateway-remote-access) |
+| **Mobile satellites** (PAL app) | phones / tablets, anywhere | Paired companion apps over `/ws/ui` + REST; reach home on the LAN or the gateway when away |
+| **Home Assistant + Mosquitto** | HA box | HA control (via MCP) + the MQTT broker the bridge publishes to |
+| **OpenClaw gateway** | host process on the AI-server host | Agentic LLM path the router can hand turns to — see [LLM routing](#llm-routing-local--agentic--cloud) |
+| **Ollama, Wyoming TTS, go2rtc, Shodh memory** | with AI server | Local model serving, speech synthesis, RTSP↔WebRTC, long-term memory |
 
 ---
 
@@ -187,6 +213,35 @@ JSON control messages downstream.
     and it appears inside the eye (filling the area up to the
     metallic rim, with the bezel and crystal highlights still on
     top). See [Camera / video / image in the orb](#camera--video--image-in-the-orb).
+
+---
+
+## LLM routing (local / agentic / cloud)
+
+Step 5 above is not a single model. A small, fast **router** model
+classifies each turn and dispatches it down one of three paths; tools,
+persona, history, memory, and satellite routing are identical regardless
+of which engine answers:
+
+- **Local Ollama** — the default in-process tool loop (`gemma`-class model
+  with the MCP/LocalTools definitions). Lowest latency; handles most
+  home-control and chit-chat turns.
+- **OpenClaw (agentic)** — for turns the router judges need an agent, the
+  turn is handed to the **OpenClaw gateway** (a host process reached at
+  `host.docker.internal:18789`), which runs a larger model with its own
+  tool stack and posts the result back to `/api/openclaw/response`.
+- **Cloud override** — when the "Cloud LLM" switch is ON, the whole tool
+  loop routes to an OpenAI-compatible cloud provider instead of local
+  Ollama (`server/app/cloud_llm.py`). Provider keys live only in
+  `server/runtime/cloud_providers.json` (hot-reloaded, never logged); the
+  switch always boots OFF.
+
+**Intent hints + guard** — tool-shaped phrases (show/hide the conversation
+log, start/cancel a timer, pair a device) are matched by `_INTENT_HINTS`
+in `conversation.py`. The match does **not** bypass the LLM: it appends a
+one-line steering note to the engine input (history stays clean) and arms
+a post-turn guard that calls the tool directly if the model didn't, so the
+deterministic action still happens at full engine quality.
 
 ---
 
@@ -316,6 +371,100 @@ and [`MQTT.md`](./MQTT.md) for the exact endpoints.
 
 ---
 
+## Conversation log
+
+Every user turn, assistant reply, proactive announcement, and orb image is
+appended to a persistent **PostgreSQL** log (`server/app/conversation_log.py`,
+`hal-postgres` container). The schema self-migrates on connect (idempotent
+`ALTER … IF NOT EXISTS`), so there is no migration framework. Image rows
+store a ≤512px JPEG thumbnail (`image BYTEA`); pages never ship the bytes —
+the kiosk/app view lazy-loads them via `GET /api/conversation/log/image?id=`.
+
+The log view (`rpi/web/conversation_log.js`, shown on the kiosk and in the
+app) paginates by keyset (`before_id`, 100 rows/page, capped at 1500
+rendered rows). On mobile, image thumbnails are tappable into a
+pinch-to-zoom lightbox. Writes never raise — a DB hiccup degrades to
+warn-and-drop so a turn is never broken.
+
+---
+
+## Voice timers
+
+`server/app/timers.py` (`TimerManager` on `state.timer_manager`) runs
+in-memory voice timers named in the local language ("Timer 1", "Timer 2", …
+from runtime templates). The originating device shows a last-10-seconds
+countdown in its orb; when a timer finishes, `announce_everywhere()` speaks
+the finish line on **every** device (kiosk + all satellites) with a
+prepended alarm beep (`server/app/alarm.py`). Timers are mirrored to
+pre-created HA helpers `timer.pal_timer_1..5` (PAL is the source of truth);
+>5 concurrent are tracked but unmirrored. Timers do **not** survive an
+ai-server restart (startup best-effort cancels the HA pool to avoid ghosts).
+
+---
+
+## Mobile satellites & pairing
+
+The **PAL** companion app (Capacitor, `mobile/`) reuses the kiosk display
+(`rpi/web`, copied into the app bundle) and connects as a **satellite**:
+the same `/ws/ui` feed the kiosk uses, plus a satellite-only REST surface
+(server TTS, MJPEG camera fallback, photo frame, conversation log).
+
+Pairing (`server/app/pairing.py`) trades a short-lived 6-digit code shown
+on the kiosk for a long-lived device **token** (32-byte urlsafe, persisted
+to `pairing_tokens.json`). The app stores the token in the iOS
+Keychain / Android Keystore (`@aparajita/capacitor-secure-storage`), never
+in the plaintext config blob. Token auth is opt-in server-wide
+(`HAL_REQUIRE_TOKEN`); satellite-only routes always enforce it. The server
+tracks connected satellites in `state.satellite_ws` (`token → WebSocket`),
+which doubles as the "is this device's app open?" signal used by push.
+
+---
+
+## Satellite gateway (remote access)
+
+`gateway/gateway.py` (`hal-gateway` container, `:8766`) is a tiny aiohttp
+**reverse proxy** that lets paired phones reach PAL from the internet while
+the AI server stays LAN-only. It reimplements nothing: it forwards an
+explicit **default-DENY allowlist** of satellite routes (+ the `/ws/ui`
+upgrade) to `ai-server:8765` and 404s everything else. The home-control
+surface (pairing mint/redeem, speak, display, volume, PTT, MCP, MQTT) is
+simply absent from the allowlist, so a token can only ever be minted at
+home.
+
+Token-gated routes are validated at the edge by an auth subrequest to the
+server's own `GET /api/pair/status` (30s positive cache). The gateway holds
+**no secrets** — compromising it yields only a LAN network position.
+Exposure is via a Cloudflare Tunnel (e.g. `pal.martinez.sh` →
+`http://…:8766`). The app stores both bases and fails over: `boot.ts`
+probes the home `/health` (2s) and uses the gateway only when home is
+unreachable, re-probing on resume. See the gateway runbook in `CLAUDE.md`.
+
+---
+
+## Push notifications
+
+When a paired device's app is **closed** (its token is absent from
+`state.satellite_ws`), PAL delivers native push notifications for three
+event classes — **speak** announcements, **finished timers**, and **orb
+images** — via **APNs** (iOS) and **FCM** (Android). The dispatch layer
+(`server/app/push.py`) is transport-agnostic; credentials live in
+`server/runtime/push_providers.json` (APNs `.p8` + FCM service account,
+hot-reloaded, never logged).
+
+Images ride as an **inline thumbnail**: the push carries a short-lived
+HMAC-**signed URL** (`/api/push/image/{id}.jpg`) that the device fetches
+from the gateway — the image bytes come from your own infrastructure, never
+Apple/Google; only the notification + URL transit them. On iOS a
+Notification Service Extension (`mobile/ios/App/NotificationServiceExtension/`)
+downloads and attaches the image; on Android FCM's `notification.image`
+renders BigPicture natively. Push delivery itself bypasses the gateway
+(APNs/FCM reach the device anywhere). The signed-image route is the one
+public, *server*-signature-gated entry in the gateway allowlist, so the
+gateway stays secret-free. Devices register their token via
+`POST /api/pair/push-register` after pairing and on each launch.
+
+---
+
 ## Live runtime config
 
 A handful of settings can be changed from HA without restarting the
@@ -406,85 +555,58 @@ A few things keep the assistant resilient on real-world hardware:
 
 ```
 conversation-hass/
-├── docker-compose.server.yml          # AI server (build locally)
-├── docker-compose.server-ghcr.yml     # AI server (pre-built image)
-├── docker-compose.rpi.yml             # RPi: audio_streamer + sendspin (build locally)
-├── docker-compose.rpi-ghcr.yml        # RPi: audio_streamer + sendspin (pre-built)
-├── .env.example                       # Configuration template
-├── setup.sh                           # Interactive setup script
-│
+├── docker-compose.server.yml / .server-ghcr.yml   # AI server + gateway + postgres (build / pre-built)
+├── docker-compose.rpi.yml / .rpi-ghcr.yml          # RPi: audio_streamer + sendspin (build / pre-built)
+├── .env.example, setup.sh
 ├── API.md, MQTT.md, THEMES.md, ARCHITECTURE.md, README.md
 │
-├── stt-service/                       # Decoupled STT microservice (separate container)
-│   ├── Dockerfile                     # NVIDIA CUDA + faster-whisper + NeMo (build context = repo root)
-│   ├── requirements.txt               # faster-whisper, nemo_toolkit, fastapi
-│   └── app.py                         # FastAPI /transcribe + /health; reuses server/app/transcriber.py
-│
 ├── server/
-│   ├── Dockerfile                     # NVIDIA CUDA (VAD + resemblyzer); ASR deps moved to stt-service
-│   ├── requirements.txt               # silero-vad, resemblyzer, librosa, mcp, aiomqtt, httpx
-│   ├── system_prompt.txt              # LLM personality (mounted read-only)
-│   ├── mcp_servers.json               # MCP server list (multi-server support)
-│   ├── themes/                        # Plug-in theme folders (manifest+theme.css+optional effect.js)
+│   ├── Dockerfile, requirements.txt                # python:3.11-slim + torch-CPU (ASR lives in stt-service)
+│   ├── system_prompt.txt, mcp_servers.json, themes/
+│   ├── runtime/                                    # gitignored live config + secrets
+│   │   ├── config.json                             #   HA-editable live runtime config
+│   │   ├── cloud_providers.json                    #   cloud-LLM keys (chmod 600, hot-reloaded)
+│   │   └── push_providers.json                     #   APNs .p8 + FCM service account (chmod 600)
 │   └── app/
-│       ├── main.py                    # FastAPI server, WebSocket + REST endpoints
-│       ├── audio_pipeline.py          # VAD + transcription cadence + speaker filter (STT engine is remote)
-│       ├── transcriber.py             # Whisper / Nemotron / RemoteTranscriber + create_transcriber factory
-│       ├── speaker_filter.py          # Voice embedding comparison (resemblyzer)
-│       ├── conversation.py            # Wake word, MCP tool-calling, follow-up window
-│       ├── ptt.py                     # Push-to-Talk session lifecycle
-│       ├── calendar_ha.py             # HA REST calendar fetcher (60 s list cache)
-│       ├── memory.py                  # Shodh Memory client (remember/recall)
-│       ├── mcp_client.py              # MCP client + MultiMCPClient (merge tools)
-│       ├── local_tools.py             # In-process MCP server: theme/volume/mute/sun/speak/etc.
-│       ├── ha_ws.py                   # HA WebSocket client (WebRTC offer signaling)
-│       ├── go2rtc.py                  # go2rtc HTTP client (stream registration + WebRTC offer)
-│       ├── runtime_config.py          # File-backed live config (atomic JSON, env bootstrap)
-│       ├── themes.py                  # Plug-in theme registry (scan + polling reload)
-│       ├── mqtt_bridge.py             # HA Discovery + MQTT state/command bridge
-│       └── tts.py                     # Wyoming protocol TTS client
+│       ├── main.py                                 # FastAPI app, lifespan, AppState, dispatch helpers
+│       ├── routes_http.py / routes_ws.py           # REST + WebSocket route modules
+│       ├── audio_pipeline.py / transcriber.py / speaker_filter.py   # VAD + STT cadence + speaker filter
+│       ├── conversation.py                         # turn engine: router, intent hints+guard, tool loop
+│       ├── openclaw_client.py / cloud_llm.py       # agentic + cloud-override LLM paths
+│       ├── mcp_client.py / mcp_server.py / local_tools*.py          # MCP + in-process LocalTools
+│       ├── pairing.py                              # device pairing, tokens, push-register
+│       ├── conversation_log.py                     # postgres log (text + image thumbnails)
+│       ├── timers.py / alarm.py                    # voice timers + finish alarm
+│       ├── push.py / push_providers.py             # APNs/FCM dispatch, signed image URLs, creds
+│       ├── media.py / media_player.py / streaming.py / go2rtc.py / qr_code.py   # orb image/video/stream
+│       ├── photo_frame.py / display.py             # ambient photo frame + kiosk display control
+│       ├── ptt.py, calendar_ha.py, memory.py       # push-to-talk, calendar, Shodh memory
+│       ├── mqtt_bridge.py / mqtt_callbacks.py      # HA Discovery + MQTT state/command bridge
+│       └── runtime_config.py, themes.py, tts.py, ha_ws.py
+│
+├── stt-service/                                    # decoupled ASR microservice (own GPU container)
+│
+├── gateway/                                        # internet-facing satellite reverse proxy (hal-gateway)
+│   └── gateway.py                                  #   default-DENY allowlist + edge auth subrequest
 │
 ├── rpi/
-│   ├── Dockerfile                     # Python 3.11 slim + PulseAudio + ALSA
-│   ├── audio_streamer/
-│   │   ├── main.py                    # Mic capture, FIR resample, TTS playback,
-│   │   │                              # CDP snapshot loop, music-state hook, HID buttons
-│   │   └── cdp_snapshot.py            # Chrome DevTools Protocol screenshot client
-│   ├── web/
-│   │   ├── index.html                 # HAL 9000 UI (cube wrapper for calendar overlay)
-│   │   ├── style.css                  # Animations, theme variants, PTT chip + orb aura
-│   │   ├── app.js                     # WebSocket client (orb / overlays / video / calendar)
-│   │   ├── calendar.css               # Calendar overlay styling
-│   │   └── calendar.js                # Month/week/day grid, WAAPI fade-swap
-│   └── sendspin/
-│       ├── Dockerfile                 # Python 3.12 slim + sendspin daemon
-│       ├── entrypoint.sh              # Daemon launcher with MA hooks
-│       └── README.md                  # Pulse ducking + channel-mode docs
+│   ├── audio_streamer/                             # mic/speaker I/O, CDP snapshot loop, HID buttons
+│   ├── web/                                        # kiosk display (ALSO bundled into the mobile app)
+│   │   └── app.js, style.css, calendar.*, conversation_log.*, timer_overlay.*, pairing_overlay.js
+│   └── sendspin/                                   # multi-room audio sidecar
 │
-├── desktop/                           # Rust/GTK4 desktop command app
-│   ├── Cargo.toml                     # GTK4, layer-shell, reqwest
-│   ├── src/main.rs                    # Wayland overlay; types commands; PTT hold-button
-│   ├── config/                        # Default config.toml + style.css
-│   └── install.sh                     # Build + install to ~/.local/bin
+├── mobile/                                         # PAL companion app (Capacitor; iOS + Android)
+│   ├── src/                                        # boot.ts, config/, onboarding/, overlay/, platform/ (push.ts)
+│   ├── android/  ios/                              # native (FCM google-services.json; iOS NSE target)
+│   └── scripts/                                    # build.mjs + sync-web.mjs (copies rpi/web → www)
 │
-├── openclaw-skill/                    # OpenClaw skill exposing HAL's REST API
-│   └── hal/SKILL.md
+├── desktop/                                        # Rust/GTK4 desktop command app
+├── openclaw-skill/  openclaw-channel/              # OpenClaw skill + channel integration
+├── docs/themes/                                    # README screenshot gallery
 │
-├── docs/themes/                       # README screenshot gallery (14 thumbnails)
-│
-└── tests/                             # pytest suite — mocked, no GPU needed
-    ├── test_audio_manager.py
-    ├── test_audio_pipeline.py
-    ├── test_calendar_ha.py
-    ├── test_conversation.py
-    ├── test_mcp_client.py
-    ├── test_ptt.py
-    ├── test_runtime_config.py
-    ├── test_server_main.py
-    ├── test_speaker_filter.py
-    ├── test_themes.py
-    ├── test_transcriber.py
-    └── test_tts.py
+└── tests/                                          # pytest suite (~38 files, mocked, no GPU) — incl.
+                                                    #   test_pairing, test_gateway, test_timers, test_push,
+                                                    #   test_conversation_log, test_log_images, …
 ```
 
 ---
