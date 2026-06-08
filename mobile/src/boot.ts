@@ -11,6 +11,7 @@ import { observeResponses } from "./overlay/tts-local";
 import { mountSatelliteAudio } from "./overlay/satellite-audio";
 import { startPhotoFrameIdle } from "./overlay/photo-frame-idle";
 import { configurePlatform, hideSplash, onResume } from "./platform/platform";
+import { registerPush } from "./platform/push";
 
 async function main(): Promise<void> {
   await configurePlatform();
@@ -36,6 +37,11 @@ async function main(): Promise<void> {
   mountOverlay(sessionCfg);      // text + mic input bar
   observeResponses(false); // on-device TTS off (server voice via satellite-audio)
   startPhotoFrameIdle(sessionCfg); // ambient photo frame after the phone goes idle
+
+  // Register for native push so PAL can notify this device while the app is
+  // closed (speak / timer / orb image). Best-effort, non-blocking; uses the
+  // active base + paired token. Covers cold-launch; token refreshes re-fire.
+  void registerPush(active.serverBaseUrl, cfg.token);
 
   // On foreground resume, re-resolve: if home↔gateway reachability flipped
   // (left the house / came back), reload so every surface re-targets the now-
