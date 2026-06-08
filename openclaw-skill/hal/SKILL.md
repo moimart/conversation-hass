@@ -1,17 +1,17 @@
 ---
 name: hal
-description: Control HAL — local voice assistant for Home Assistant. Send spoken commands, adjust speaker volume, toggle mic mute, switch the web UI theme, drive push-to-talk, open or auto-trigger the photo frame, toggle the kiosk display (DPMS), and pop up the calendar.
+description: Control PAL — local voice assistant for Home Assistant. Send spoken commands, adjust speaker volume, toggle mic mute, switch the web UI theme, drive push-to-talk, open or auto-trigger the photo frame, toggle the kiosk display (DPMS), and pop up the calendar.
 metadata.openclaw.requires.bins: ["curl"]
 metadata.openclaw.requires.config: ["HAL_SERVER_URL"]
 ---
 
-# HAL Voice Assistant Control
+# PAL Voice Assistant Control
 
-You can control a self-hosted HAL voice assistant via its REST API. HAL is a 2001-style voice assistant that listens through a Raspberry Pi, runs Whisper STT + a local LLM (Ollama) with Home Assistant MCP tools, and replies through a Wyoming-protocol TTS service. The Raspberry Pi also serves a HAL 9000-style web UI showing live transcription and the assistant's state.
+You can control a self-hosted PAL voice assistant via its REST API. PAL is a 2001-style voice assistant that listens through a Raspberry Pi, runs Whisper STT + a local LLM (Ollama) with Home Assistant MCP tools, and replies through a Wyoming-protocol TTS service. The Raspberry Pi also serves a glowing-eye web UI showing live transcription and the assistant's state.
 
 The base URL of the AI server is exposed as `$HAL_SERVER_URL` (set in OpenClaw config). All requests use JSON.
 
-## MANDATORY: How to control Home Assistant and HAL hardware
+## MANDATORY: How to control Home Assistant and PAL hardware
 
 When the user asks you to control lights, climate, sensors, or any
 Home Assistant device, you MUST use the `exec` tool to run `mcporter`.
@@ -32,7 +32,7 @@ mcporter call <server>.<tool> key=value key2=value2
   `ha_get_state`, `ha_search_entities`, `ha_get_history`, and all
   other HA tools. Use this for lights, climate, sensors, automations,
   scripts, service calls, etc.
-- **`hal`** — HAL kiosk controls: volume, mute, display power, photo
+- **`hal`** — PAL kiosk controls: volume, mute, display power, photo
   frame, calendar, cameras, speak, and theme.
 
 ### Examples
@@ -47,23 +47,23 @@ mcporter call berlinmcp.ha_get_state entity_id=sun.sun
 # Search for entities
 mcporter call berlinmcp.ha_search_entities query=light domain=light
 
-# Show photo frame on HAL kiosk
+# Show photo frame on PAL kiosk
 mcporter call hal.show_photo_frame
 
-# Speak text on HAL kiosk
+# Speak text on PAL kiosk
 mcporter call hal.speak_verbatim text="Hello Master"
 ```
 
 ### Important
 
-- Do NOT route HA tasks through HAL's `/api/command`.
+- Do NOT route HA tasks through PAL's `/api/command`.
 - There is NO tool called "mcporter" — always use `exec` to run the
   `mcporter` CLI binary. If you get "tool mcporter not found," you
   forgot to use exec.
 
 ## Loop prevention
 
-When OpenClaw IS the conversation engine for HAL (via the `hal` channel
+When OpenClaw IS the conversation engine for PAL (via the `hal` channel
 plugin), do **NOT** call `/api/command` — that routes through the
 conversation pipeline, which in this mode IS OpenClaw, creating an
 infinite loop. Use `/api/speak` for verbatim TTS output, and use the
@@ -71,35 +71,35 @@ direct REST/MQTT endpoints below for orb display, volume, mute, etc.
 
 ## When to use this skill
 
-- The user asks to "tell HAL", "ask HAL", "command HAL", or anything addressed to HAL
-- The user asks to control the HAL UI (theme, volume, mute) without speaking
-- The user wants HAL to do something on their smart home (lights, climate, scenes) — HAL has the Home Assistant MCP tools wired in, so just send the natural-language command via `/api/command`
-- The user wants something shown inside HAL's orb (a camera snapshot, a live camera stream, an arbitrary image URL, an RTSP URL, an HTTP MP4/HLS video) — describe it in natural language to `/api/command` and HAL's LLM will pick the right tool
+- The user asks to "tell PAL", "ask PAL", "command PAL", or anything addressed to PAL
+- The user asks to control the PAL UI (theme, volume, mute) without speaking
+- The user wants PAL to do something on their smart home (lights, climate, scenes) — PAL has the Home Assistant MCP tools wired in, so just send the natural-language command via `/api/command`
+- The user wants something shown inside PAL's orb (a camera snapshot, a live camera stream, an arbitrary image URL, an RTSP URL, an HTTP MP4/HLS video) — describe it in natural language to `/api/command` and PAL's LLM will pick the right tool
 
-## What HAL can do (via /api/command)
+## What PAL can do (via /api/command)
 
-When you POST a natural-language command to `/api/command`, HAL's LLM has these tools available — describe the intent and the LLM dispatches to the right one. You don't have to name the tool; just ask plainly.
+When you POST a natural-language command to `/api/command`, PAL's LLM has these tools available — describe the intent and the LLM dispatches to the right one. You don't have to name the tool; just ask plainly.
 
 **Smart home (via Home Assistant MCP):**
 - Control devices: lights, climate, scenes, media players, scripts, automations, helpers
 - Query state: temperatures, sensor readings, device status, history
 - Anything Home Assistant exposes through its MCP server
 
-**HAL UI / hardware:**
+**PAL UI / hardware:**
 - Switch the kiosk theme: "switch the theme to japandi" (registry is dynamic; see Theme control for how to list available themes)
 - Set or adjust speaker volume: "turn the volume up", "set volume to 30%"
 - Toggle mic mute
-- Make HAL speak text exactly: "say out loud: dinner is ready"
+- Make PAL speak text exactly: "say out loud: dinner is ready"
 - Turn the kiosk display (panel) on or off via real DPMS: "turn off the screen", "wake the screen" (`set_display_power`)
 - Auto-blank the display after N idle seconds (set via voice or REST; see Display power)
 - Auto-activate the photo frame after N idle minutes: "auto-show the photo frame after 30 minutes" (`set_photo_frame_idle_minutes`)
 
 **Orb display (image / video / camera / photo frame / calendar):**
-- Snapshot from a Home Assistant camera: "show me the front door camera" — paints a JPEG inside HAL's orb for ~2.5 minutes (`show_camera`)
+- Snapshot from a Home Assistant camera: "show me the front door camera" — paints a JPEG inside PAL's orb for ~2.5 minutes (`show_camera`)
 - Live WebRTC stream from a HA camera: "watch the kitchen camera live", "stream the porch" — opens a low-latency feed for up to 5 minutes (`stream_camera`)
 - Live RTSP URL (any IP cam, NVR, Frigate go2rtc, etc.): "stream the rtsp at rtsp://user:pass@host/path" — uses the bundled go2rtc sidecar (`stream_rtsp`)
 - Arbitrary image URL: "show the picture at https://example.com/x.jpg" or "put X on screen for 30 seconds" — fetches and displays for 60 s by default (`show_image`)
-- HTTP video / HLS playlist: "play the video at https://example.com/clip.mp4" or "play this looping silently: <url>" — auto-stops on end of file unless `loop=true`; auto-ducks audio when HAL speaks (`play_video`)
+- HTTP video / HLS playlist: "play the video at https://example.com/clip.mp4" or "play this looping silently: <url>" — auto-stops on end of file unless `loop=true`; auto-ducks audio when PAL speaks (`play_video`)
 - Stop any active orb display: "stop streaming", "stop the video", "don't show the camera anymore" (`stop_streaming` clears webrtc + video)
 - Show the photo frame (a configured HA `image.*` / `camera.*` entity, Ken-Burns + clock): "show the photo frame", "open the slideshow" (`show_photo_frame`); dismiss: "hide the photo frame", "stop the slideshow" (`hide_photo_frame`)
 - Pop up the calendar overlay: "show my calendar for this week", "what's on the calendar tomorrow", "open the month view" (`show_calendar`); dismiss: "hide the calendar" (`hide_calendar`)
@@ -108,7 +108,7 @@ The orb shows one thing at a time — starting any new display replaces whatever
 
 ## Send a spoken command to the LLM
 
-Use this for ANY request that should run through HAL's LLM, including HA control commands like "turn on the kitchen lights". The text appears on HAL's web UI as a transcription, the LLM processes it (with all its MCP tools available), and HAL speaks the response through the Raspberry Pi.
+Use this for ANY request that should run through PAL's LLM, including HA control commands like "turn on the kitchen lights". The text appears on PAL's web UI as a transcription, the LLM processes it (with all its MCP tools available), and PAL speaks the response through the Raspberry Pi.
 
 ```sh
 curl -sS -X POST "$HAL_SERVER_URL/api/command" \
@@ -133,7 +133,7 @@ Examples:
 
 ## Speak text out loud verbatim (bypass the LLM)
 
-When you (the agent) want HAL to say a specific message exactly as written —
+When you (the agent) want PAL to say a specific message exactly as written —
 notifications, announcements, status reports — use `/api/speak`. This
 bypasses the LLM entirely: the text is sent straight to TTS and played on the
 Raspberry Pi speaker. No persona transformation, no paraphrasing.
@@ -149,8 +149,8 @@ Examples:
 - `{"text": "Heads up: the front door has been open for 5 minutes."}`
 - `{"text": "Build complete. All tests passed."}`
 
-Use this when the wording matters and you don't want HAL's witty butler
-persona to rewrite it. Use `/api/command` instead when you want HAL to
+Use this when the wording matters and you don't want PAL's witty butler
+persona to rewrite it. Use `/api/command` instead when you want PAL to
 process the request through its LLM (e.g., to control the home).
 
 ## Volume control
@@ -263,7 +263,7 @@ binary pushes from automations).
 
 Play an HTTP video (MP4, WebM) or HLS playlist on the kiosk orb.
 Auto-stops at end of file unless `loop` is set. Audio ducks
-automatically when HAL speaks.
+automatically when PAL speaks.
 
 ```sh
 # Via MQTT — plain URL
@@ -408,7 +408,7 @@ Statuses returned by `/start`: `ok` (opened), `already_active` (same entity alre
 
 After `N` minutes of no activity the kiosk auto-activates the photo
 frame (uses the configured `photo_frame_entity`). `0` disables. Wake
-word, PTT, video/image/calendar takeover, HAL TTS, and a kiosk-side
+word, PTT, video/image/calendar takeover, PAL TTS, and a kiosk-side
 dismissal all reset the timer.
 
 ```sh
@@ -434,16 +434,16 @@ curl -sS -X POST "$HAL_SERVER_URL/api/command" \
 
 ## Health check
 
-Verify HAL is alive and which subsystems are connected:
+Verify PAL is alive and which subsystems are connected:
 
 ```sh
 curl -sS "$HAL_SERVER_URL/health"
 # → {"status":"ok","pipeline_ready":true,"mcp_connected":true,"tts_available":true,"memory_available":true}
 ```
 
-## Read what HAL last said
+## Read what PAL last said
 
-Useful when you want to confirm or react to HAL's most recent reply:
+Useful when you want to confirm or react to PAL's most recent reply:
 
 ```sh
 # Published on MQTT as a Home Assistant sensor entity:
@@ -454,7 +454,7 @@ Useful when you want to confirm or react to HAL's most recent reply:
 
 ## Grab a screenshot of the kiosk
 
-For visual confirmation of what HAL is currently showing (orb state, active photo frame, calendar overlay, camera view, etc.), fetch the latest kiosk snapshot. The RPi audio_streamer posts a fresh JPEG to the server every `SNAPSHOT_INTERVAL_S` seconds (default 60).
+For visual confirmation of what PAL is currently showing (orb state, active photo frame, calendar overlay, camera view, etc.), fetch the latest kiosk snapshot. The RPi audio_streamer posts a fresh JPEG to the server every `SNAPSHOT_INTERVAL_S` seconds (default 60).
 
 ```sh
 curl -sS -o /tmp/hal.jpg "$HAL_SERVER_URL/api/snapshot.jpg"
@@ -462,14 +462,14 @@ curl -sS -o /tmp/hal.jpg "$HAL_SERVER_URL/api/snapshot.jpg"
 
 ## Theme control
 
-HAL's web UI theme is a plug-in registry; the available set changes as themes are added/removed under `server/themes/`. List the current set with:
+PAL's web UI theme is a plug-in registry; the available set changes as themes are added/removed under `server/themes/`. List the current set with:
 
 ```sh
 curl -sS "$HAL_SERVER_URL/api/themes"
 # → {"themes":[{"name":"birch", ...},{"name":"dark", ...}, ...]}
 ```
 
-The HAL server picks the theme automatically at dusk/dawn when auto-theme is enabled, but you can also drive it through the LLM:
+The PAL server picks the theme automatically at dusk/dawn when auto-theme is enabled, but you can also drive it through the LLM:
 
 ```sh
 curl -sS -X POST "$HAL_SERVER_URL/api/command" \
@@ -484,6 +484,6 @@ Use the `exec` tool to run the curl commands above. Always:
 1. Read `$HAL_SERVER_URL` from configuration
 2. Run the appropriate `curl` invocation
 3. Confirm the response shows `{"status":"ok"}` (or the expected payload for GETs)
-4. Reply to the user with what you did, e.g. "Sent to HAL: 'turn on the kitchen lights'"
+4. Reply to the user with what you did, e.g. "Sent to PAL: 'turn on the kitchen lights'"
 
 If the response is `{"status":"error","message":"RPi not connected"}` it means the Raspberry Pi audio client is not currently connected to the AI server — tell the user.

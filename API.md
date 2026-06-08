@@ -276,7 +276,7 @@ curl -XPOST http://hal:8765/api/command \
 
 Speak text **verbatim** through the RPi speaker. **Does not** run the
 LLM — this is for announcements ("the package arrived"), notifications,
-or anything where you want the exact wording vocalised in HAL's voice.
+or anything where you want the exact wording vocalised in PAL's voice.
 
 **Request body**
 
@@ -516,7 +516,7 @@ reconnect). `{"status":"unavailable",...}` if the kiosk container has
 no working DPMS backend.
 
 Any incoming kiosk activity — wake-word fire, PTT, calendar / photo
-frame / camera / image / video takeover, HAL TTS playback — auto-wakes
+frame / camera / image / video takeover, PAL TTS playback — auto-wakes
 the display before the activity proceeds.
 
 ```bash
@@ -533,7 +533,7 @@ The kiosk can auto-fall-back to the photo frame after a configurable
 idle period. `0` minutes disables the feature. Range 0–720 (12 h).
 
 Activity that resets the timer: wake word, PTT, video / image /
-calendar / camera takeover, HAL TTS playback, and a
+calendar / camera takeover, PAL TTS playback, and a
 `photo_frame_dismissed` event from the kiosk. The photo frame itself
 opening does **not** reset the timer — that would re-arm it forever and
 prevent re-trigger after a manual dismiss.
@@ -769,7 +769,7 @@ and LLM response. Volume / mute / theme-picker UI clients can use this.
 |-------------------|-------------------------------------------------------------------------|
 | `state`           | `{"state": "idle"\|"listening"\|"processing"\|"speaking", "wake_word": "..."}` (initial only) |
 | `transcription`   | `{"text": "...", "is_partial": bool, "speaker": "human"\|"ai"\|"unknown"}` |
-| `response`        | `{"text": "..."}` — what HAL said back |
+| `response`        | `{"text": "..."}` — what PAL said back |
 | `wake`            | `{}` — wake word detected (also when chime fires) |
 | `set_theme`       | `{"name": "<theme>"}` — active theme changed |
 | `themes_changed`  | `{}` — kiosk should re-fetch `/api/themes` |
@@ -855,7 +855,7 @@ endpoints so the browser only has to talk to one origin.
 | `GET`  | `/themes/{name}/{filename}` | Proxy to AI server theme assets |
 | `GET`  | `/ws` | Kiosk WebSocket (see message table below) |
 | `POST` | `/api/snapshot` | Receives JPEG from a kiosk client, forwards to AI server `/api/snapshot` |
-| `POST` | `/api/music/state` | Sendspin daemon hook: tells the audio_streamer to route HW volume buttons to the media player instead of HAL TTS while a stream is active |
+| `POST` | `/api/music/state` | Sendspin daemon hook: tells the audio_streamer to route HW volume buttons to the media player instead of PAL TTS while a stream is active |
 
 ### Kiosk `/ws` message types
 
@@ -918,7 +918,7 @@ AI server is handed to the app at pairing for away-from-home failover.
 
 ## Errors and status codes
 
-HAL deliberately keeps HTTP status codes simple — almost everything is
+PAL deliberately keeps HTTP status codes simple — almost everything is
 `200` and the *application-level* status sits in the body's `"status"`
 field. This makes shell scripting and HA `rest_command` integration
 straightforward (you check the JSON, not the HTTP code).

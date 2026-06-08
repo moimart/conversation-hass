@@ -53,7 +53,7 @@ and [`MQTT.md`](./MQTT.md). For theme authoring see
 │  │  ┌────────────────────────┐  │              │  │  │  Speaker Filter       │  │    │  │
 │  │  │   Web UI  (:8080)      │  │  transcript  │  │  │  (resemblyzer)        │  │    │  │
 │  │  │                        │◄─┼──────────────┼──│  │  human vs AI voice    │  │    │  │
-│  │  │  HAL 9000 Eye          │  │  + state     │  │  └──────────┬────────────┘  │    │  │
+│  │  │  PAL eye / orb         │  │  + state     │  │  └──────────┬────────────┘  │    │  │
 │  │  │  (14 themes,           │  │  + wake flash│  │             │               │    │  │
 │  │  │   auto day/night)      │  │              │  │  ┌──────────▼────────────┐  │    │  │
 │  │  │  Live Transcription    │  │  + JPEG      │  │  │ Conversation Manager  │  │    │  │
@@ -142,7 +142,7 @@ to:
 4. **Wake word or always-on or push-to-talk** — Three modes:
    - **Wake word** (default): Transcribed text is monitored for the
      wake word. Only after detecting it does the system engage the
-     LLM. A two-tone chime plays and the HAL eye flashes white as
+     LLM. A two-tone chime plays and the PAL eye flashes white as
      confirmation. A 10-second follow-up window allows natural
      back-and-forth without repeating the wake word.
    - **Always-on**: Set `WAKE_WORD=` empty to process every
@@ -162,7 +162,7 @@ to:
    `play_video`, `stop_streaming`, `show_calendar`, `hide_calendar`).
    The LLM searches for entities by friendly name, then calls HA
    services with the correct entity IDs. The system prompt lives in
-   `server/system_prompt.txt` — edit it to customise HAL's
+   `server/system_prompt.txt` — edit it to customise PAL's
    personality.
 
 6. **Long-term memory** — Before each LLM call, relevant memories
@@ -177,7 +177,7 @@ to:
    TTS service and streamed back to the Raspberry Pi for playback
    through the speaker (resampled to the device's native rate).
 
-8. **Web UI with themes** — A modern HAL 9000-inspired interface
+8. **Web UI with themes** — A modern glowing-eye interface
    with metallic bezel ring, animated eye, live transcription, AI
    responses, and state indicators. Fourteen themes spanning the
    AI-pantheon (`dark`/`sal`/`glados`/`mother`/`joi`/`kitt`/
@@ -187,7 +187,7 @@ to:
    entity. See [`THEMES.md`](./THEMES.md) for authoring docs.
 
 9. **Home Assistant integration** — When MQTT is configured, the AI
-   server publishes HA Discovery messages so HAL appears as a single
+   server publishes HA Discovery messages so PAL appears as a single
    device exposing state, volume, mute, theme, a camera (the latest
    UI snapshot), text inputs that speak/command, PTT buttons,
    calendar buttons, and live runtime-config selectors. The
@@ -199,13 +199,13 @@ to:
 
 10. **Multi-room audio** (optional) — A Sendspin sidecar on the Pi
     registers an [Open Home Foundation](https://www.openhomefoundation.org/)
-    multi-room player in Music Assistant. HAL TTS and Sendspin music
+    multi-room player in Music Assistant. PAL TTS and Sendspin music
     share the same PulseAudio socket; HA announcements duck the
-    music via `module-role-ducking` while HAL speaks. Hardware
+    music via `module-role-ducking` while PAL speaks. Hardware
     volume buttons on the Anker target MA when music is playing and
-    HAL TTS otherwise. See [Sendspin](#sendspin-multi-room-audio).
+    PAL TTS otherwise. See [Sendspin](#sendspin-multi-room-audio).
 
-11. **Camera in the orb** — Ask HAL to show or stream any HA camera
+11. **Camera in the orb** — Ask PAL to show or stream any HA camera
     and it appears inside the eye (filling the area up to the
     metallic rim, with the bezel and crystal highlights still on
     top). See [Camera / video / image in the orb](#camera--video--image-in-the-orb).
@@ -322,7 +322,7 @@ Source: `server/app/ptt.py`.
 
 ## Camera / video / image in the orb
 
-HAL can paint any image — HA camera snapshot, live WebRTC stream, or
+PAL can paint any image — HA camera snapshot, live WebRTC stream, or
 arbitrary URL — inside the eye, filling the area up to the metallic
 rim while keeping the bezel and crystal highlights on top. Five
 modes, all mutually exclusive (newest replaces previous):
@@ -351,8 +351,8 @@ modes, all mutually exclusive (newest replaces previous):
   `<video>` element. No server-side fetching, no transcoding — the
   browser handles playback. HLS is detected by `.m3u8` and routed
   through hls.js; everything else uses native `<video src>`. Audio
-  plays by default and **auto-ducks while HAL is speaking**, then
-  restores the user's muted preference when HAL goes back to idle.
+  plays by default and **auto-ducks while PAL is speaking**, then
+  restores the user's muted preference when PAL goes back to idle.
 
 - **Arbitrary image push** — `show_image(url, duration_s=60)` from
   the LLM, or publish to MQTT `hal/<id>/image/set` (URL, binary
@@ -530,15 +530,15 @@ on the Pi:
 load-module module-role-ducking trigger_roles=phone ducking_roles=music volume=-25dB
 ```
 
-Then `systemctl --user restart pulseaudio`. HAL TTS streams (tagged
+Then `systemctl --user restart pulseaudio`. PAL TTS streams (tagged
 `media.role=phone`) trigger ducking; music streams (`media.role=music`)
-duck by 25 dB while HAL speaks and resume automatically.
+duck by 25 dB while PAL speaks and resume automatically.
 
 Set `SENDSPIN_PLAYER_ENTITY=media_player.hal_speaker` (or your actual
 entity) on the *server* `.env` to enable hardware-volume-button
 redirection (buttons drive MA when music is playing) and the optional
 Shape C explicit pause/resume (`SENDSPIN_PAUSE_DURING_TTS=true`).
-Shape C only resumes if MA was actually playing when HAL spoke —
+Shape C only resumes if MA was actually playing when PAL spoke —
 manual user pauses are never overridden.
 
 See `rpi/sendspin/README.md` for details.

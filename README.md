@@ -14,7 +14,7 @@
 - 🗣️ **Talks back** in a voice you pick, through a Wyoming-protocol TTS service
 - 🏠 **Controls Home Assistant** via MCP tool-calling — switches, scenes, climate, media, all of it
 - 🧠 **Remembers** what you've told it (Shodh Hebbian long-term memory) so context survives across days
-- 👁️ **Shows itself** through a kiosk inspired by HAL-inspired AI system designs — an animated eye and 16 switchable themes, including two with looping in-orb state videos that change with PAL's mood
+- 👁️ **Shows itself** through a kiosk styled after fiction's iconic AIs — an animated eye and 16 switchable themes, including two with looping in-orb state videos that change with PAL's mood
 - 📸 **Displays cameras, images, and videos** inside the orb (HA snapshots, live WebRTC, RTSP, HLS playlists)
 - 📅 **Pops up a calendar overlay** (month / week / day) pulled from any HA calendar, on voice or HA button
 - 📜 **Keeps a conversation log** — every request, answer, and announcement persisted forever in PostgreSQL, browsable full-screen on the kiosk (by voice or HA button) and in the companion app, with timestamps, origin labels (which phone asked, which channel announced), and inline thumbnails of every image shown on the orb
@@ -36,8 +36,8 @@ Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_th
 
 | Preview | Theme | Vibe |
 |---|---|---|
-| <img src="docs/themes/dark.jpg" width="200"> | `dark` | Classic 2001 HAL — matte black panel, deep red eye, white-hot core when speaking |
-| <img src="docs/themes/sal.jpg" width="200"> | `sal` | SAL 9000 — HAL's twin from 2010, cyan eye on deep blue-black |
+| <img src="docs/themes/dark.jpg" width="200"> | `dark` | The *2001: A Space Odyssey* look — matte black panel, deep red eye, white-hot core when speaking |
+| <img src="docs/themes/sal.jpg" width="200"> | `sal` | SAL 9000 — the twin from *2010*, cyan eye on deep blue-black |
 | <img src="docs/themes/glados.jpg" width="200"> | `glados` | Portal 2 — Aperture Science amber optic on warm black |
 | <img src="docs/themes/matrix.jpg" width="200"> | `matrix` | Phosphor green on pitch black — old-CRT terminal with digital-rain canvas |
 | <img src="docs/themes/mother.jpg" width="200"> | `mother` | Alien *Nostromo* — industrial dim amber on grimy near-black |
@@ -136,7 +136,7 @@ never committed). Setup notes in `CLAUDE.md`; the build/install is in
 | [`THEMES.md`](./THEMES.md)                | Plug-in theme authoring (CSS variable reference, `effect.js` API, manifest schema, hot-reload behaviour)            |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md)    | Node layout, pipeline + LLM routing (local/agentic/cloud), STT, PTT, orb camera/video, conversation log, timers, satellites + gateway, push notifications, project structure |
 | [`openclaw-channel/hal/`](./openclaw-channel/hal/README.md) | OpenClaw channel plugin — routes voice through an OpenClaw agent with full mcporter/MCP tool access, Ollama fallback |
-| `openclaw-skill/hal/SKILL.md`             | OpenClaw skill teaching the agent how to control HAL's kiosk via mcporter                                          |
+| `openclaw-skill/hal/SKILL.md`             | OpenClaw skill teaching the agent how to control PAL's kiosk via mcporter                                          |
 | `desktop/`                                | Rust/GTK4 Wayland overlay for typing commands + hold-to-talk PTT from your Linux desktop                            |
 | [`mobile/`](./mobile/README.md)           | iOS + Android companion app (Capacitor) — pair a phone as a satellite for text/voice + household broadcasts          |
 
@@ -347,7 +347,7 @@ See [`openclaw-channel/hal/README.md`](./openclaw-channel/hal/README.md) for ful
 | `MQTT_USERNAME`    | —                    | Broker username (optional)                             |
 | `MQTT_PASSWORD`    | —                    | Broker password (optional)                             |
 | `HAL_DEVICE_ID`    | `hal-default`        | MQTT object id (slug)                                  |
-| `HAL_DEVICE_NAME`  | `HAL`                | Display name in HA                                     |
+| `HAL_DEVICE_NAME`  | `PAL`                | Display name in HA                                     |
 | `START_MUTED`      | `false`              | Boot with mic muted (live-toggleable from HA)          |
 
 ### Calendar overlay

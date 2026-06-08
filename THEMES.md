@@ -1,6 +1,6 @@
-# Writing HAL themes
+# Writing PAL themes
 
-HAL's kiosk UI is plug-in themable. A theme is a folder of files; drop it in, the server picks it up within ~10 seconds, and the kiosk's picker updates without a restart on either side. This document covers the contract, the available CSS variables, the optional effect.js API, and how to develop and ship a theme.
+PAL's kiosk UI is plug-in themable. A theme is a folder of files; drop it in, the server picks it up within ~10 seconds, and the kiosk's picker updates without a restart on either side. This document covers the contract, the available CSS variables, the optional effect.js API, and how to develop and ship a theme.
 
 ---
 
@@ -123,7 +123,7 @@ These are the variables defined in the kiosk's `:root`. Override any in your the
 
 | Variable | Purpose |
 |---|---|
-| `--accent` | Main accent hex (`#ff2d2d` for HAL red) |
+| `--accent` | Main accent hex (`#ff2d2d` for PAL red) |
 | `--accent-rgb` | Same color as comma-separated rgb tuple (used in `rgba(var(--accent-rgb), 0.x)` shadows) |
 | `--accent-glow` | Lighter halo color |
 | `--accent-glow-rgb` | RGB triple form |
@@ -299,7 +299,7 @@ For each tier, your theme should look acceptable:
 
 | Theme | Folder | Notes |
 |---|---|---|
-| dark | `themes/dark/` | Baseline HAL red. Mirrors the kiosk `:root`. |
+| dark | `themes/dark/` | Baseline PAL red. Mirrors the kiosk `:root`. |
 | sal | `themes/sal/` | Cyan on blue-black. |
 | glados | `themes/glados/` | Aperture amber on warm black. |
 | matrix | `themes/matrix/` | Phosphor green + `effect.js` digital rain. |

@@ -1,7 +1,7 @@
-# OpenClaw skill — HAL
+# OpenClaw skill — PAL
 
-A skill that lets an OpenClaw agent control your HAL voice assistant via its
-REST API. It teaches the agent how to send commands to HAL, adjust the
+A skill that lets an OpenClaw agent control your PAL voice assistant via its
+REST API. It teaches the agent how to send commands to PAL, adjust the
 speaker volume, toggle the mic mute, switch the UI theme, and check health.
 
 ## Install
@@ -15,7 +15,7 @@ cp -r hal ~/.openclaw/workspace/skills/
 
 ## Configure
 
-Set the HAL server URL in your OpenClaw config so the skill can read
+Set the PAL server URL in your OpenClaw config so the skill can read
 `$HAL_SERVER_URL`:
 
 ```yaml
@@ -30,13 +30,13 @@ The skill also requires `curl` on PATH (it uses the `exec` tool).
 
 Once installed, the agent can:
 
-- Send any natural-language command to HAL's LLM via `/api/command`
+- Send any natural-language command to PAL's LLM via `/api/command`
   (covers Home Assistant control, conversational replies, etc.)
 - Adjust the Raspberry Pi speaker volume up or down (`/api/volume`)
 - Toggle the microphone mute (`/api/mute`)
 - Query mute state (`GET /api/mute`)
-- Check HAL health (`/health`)
-- Change the web UI theme by phrasing it as a command to HAL
+- Check PAL health (`/health`)
+- Change the web UI theme by phrasing it as a command to PAL
 
 ## Endpoints reference
 
@@ -49,5 +49,5 @@ Once installed, the agent can:
 | `/api/mute` | GET | — | Read mute state |
 | `/health` | GET | — | Service health |
 
-See the [HAL repository](https://github.com/moimart/conversation-hass) for
+See the [PAL repository](https://github.com/moimart/conversation-hass) for
 more detail on the server.

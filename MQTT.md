@@ -1,6 +1,6 @@
-# HAL — MQTT Reference
+# PAL — MQTT Reference
 
-HAL connects to your MQTT broker (`MQTT_BROKER_HOST` / `MQTT_BROKER_PORT`)
+PAL connects to your MQTT broker (`MQTT_BROKER_HOST` / `MQTT_BROKER_PORT`)
 as a single device with `device_id = HAL_DEVICE_ID` (default
 `hal-default`) and publishes Home Assistant Discovery payloads for
 every entity so it appears in HA without manual configuration.
@@ -25,7 +25,7 @@ each, and the resulting HA entities.
 ## Table of contents
 
 - [Topic layout overview](#topic-layout-overview)
-- [Subscribed topics (HA → HAL)](#subscribed-topics)
+- [Subscribed topics (HA → PAL)](#subscribed-topics)
   - [Quick controls](#quick-controls)
   - [Conversation triggers](#conversation-triggers)
   - [Display payloads](#display-payloads)
@@ -33,7 +33,7 @@ each, and the resulting HA entities.
   - [Calendar overlay](#calendar-overlay)
   - [Conversation log](#conversation-log)
   - [Live runtime config](#live-runtime-config)
-- [Published topics (HAL → HA)](#published-topics)
+- [Published topics (PAL → HA)](#published-topics)
 - [HA Discovery entities](#ha-discovery-entities)
 - [HA automation snippets](#ha-automation-snippets)
 - [Direct MQTT publishing (mosquitto_pub examples)](#direct-mqtt-publishing-mosquitto_pub-examples)
@@ -91,7 +91,7 @@ hal/<device_id>/
 
 ## Subscribed topics
 
-HA (or any MQTT publisher on your LAN) writes to these. HAL reads.
+HA (or any MQTT publisher on your LAN) writes to these. PAL reads.
 
 ### Quick controls
 
@@ -185,7 +185,7 @@ only.
 ### Live runtime config
 
 Each key has a `<state>` topic the bridge publishes to (retained) and a
-`<set>` topic HAL subscribes to. Changes persist atomically to
+`<set>` topic PAL subscribes to. Changes persist atomically to
 `server/runtime/config.json` and survive restarts.
 
 | Key | State / Set topic | Payload | Constraints |
@@ -209,7 +209,7 @@ Each key has a `<state>` topic the bridge publishes to (retained) and a
 
 ## Published topics
 
-HAL writes to these. HA (or anything else subscribed) reads.
+PAL writes to these. HA (or anything else subscribed) reads.
 
 | Topic | Payload | Notes |
 |---|---|---|
@@ -249,8 +249,8 @@ HA diagnostic sensor via `value_template`.
 
 ## HA Discovery entities
 
-Every entity below appears under one HA device (default name `HAL`).
-Discovery payloads are published retained on `homeassistant/<component>/<device_id>/<key>/config`. Republished on every HAL boot and any time
+Every entity below appears under one HA device (default name `PAL`).
+Discovery payloads are published retained on `homeassistant/<component>/<device_id>/<key>/config`. Republished on every PAL boot and any time
 the theme catalog / voice list / model list changes.
 
 ### Sensors (read-only)
@@ -347,7 +347,7 @@ release events to PTT start/end. Example with a Zigbee2MQTT-published
 remote that emits `action: "hold"` and `action: "release"`:
 
 ```yaml
-- alias: HAL PTT hold
+- alias: PAL PTT hold
   triggers:
     - trigger: mqtt
       topic: zigbee2mqtt/desk_button/action
@@ -357,7 +357,7 @@ remote that emits `action: "hold"` and `action: "release"`:
       target:
         entity_id: button.hal_ptt_start
 
-- alias: HAL PTT release
+- alias: PAL PTT release
   triggers:
     - trigger: mqtt
       topic: zigbee2mqtt/desk_button/action
@@ -368,7 +368,7 @@ remote that emits `action: "hold"` and `action: "release"`:
         entity_id: button.hal_ptt_end
 ```
 
-### Make HAL announce things
+### Make PAL announce things
 
 ```yaml
 - alias: Announce when washing machine finishes
@@ -481,10 +481,10 @@ mosquitto_sub -h mqtt.broker.lan -t 'hal/hal-default/#' -v
 
 * All `state` topics are published **retained, QoS 1**, so a fresh HA
   install picks up the current state immediately when it connects.
-* The `availability` LWT means HAL going offline (network blip,
+* The `availability` LWT means PAL going offline (network blip,
   container restart) flips every entity to `unavailable` in HA within
   a few seconds.
-* On HAL startup, the bridge re-publishes every cached state in order
+* On PAL startup, the bridge re-publishes every cached state in order
   (state → volume → mute → theme → last_response → task_metrics → all
   config keys), so HA never sees stale `unknown` values mid-restart.
 * The `snapshot` topic is binary and may be > 100 KB per publish — the
