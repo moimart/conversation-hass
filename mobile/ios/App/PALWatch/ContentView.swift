@@ -33,21 +33,11 @@ struct ContentView: View {
         .onAppear { speech.describeSupport() }
     }
 
-    /// Path B (in-app recognizer): orb is a tap target driving SpeechManager.
-    /// Path A (the watchOS reality): orb is the LABEL of a TextFieldLink — tap
-    /// opens the system dictation sheet, the result lands in `dictated(_:)`.
-    @ViewBuilder
+    /// Both paths: tap the orb → SpeechManager.toggle(). Path B drives the
+    /// in-app recognizer; Path A (the watchOS reality) presents the system
+    /// dictation screen directly (suggestions:nil skips the keyboard).
     private var micControl: some View {
-        if SpeechManager.pathBAvailable {
-            orb.onTapGesture { speech.toggle() }
-        } else {
-            TextFieldLink(prompt: Text("PAL command")) {
-                orb
-            } onSubmit: { value in
-                speech.dictated(value)
-            }
-            .buttonStyle(.plain)
-        }
+        orb.onTapGesture { speech.toggle() }
     }
 
     private var statusLine: String {

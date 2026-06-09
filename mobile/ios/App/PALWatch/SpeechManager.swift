@@ -204,17 +204,37 @@ final class SpeechManager: NSObject, ObservableObject {
     }
 #else
     // Speech framework absent on this SDK (the verified watchOS reality) —
-    // ContentView routes the orb through Path A (TextFieldLink → system
-    // dictation) and reports results back via `dictated(_:)`.
+    // Path A. NOT TextFieldLink: on keyboard-capable watches (Series 7+/Ultra)
+    // that opens QWERTY first. presentTextInputController with suggestions:nil
+    // goes STRAIGHT to the dictation screen — the PTT behaviour we want.
     func describeSupport() {
         diagnostics = "Speech fw: absent on watchOS → Path A (system dictation)"
     }
 
     func toggle() {
-        phase = .error("use the dictation orb")
+        guard phase != .listening else { return }
+        startDictation()
     }
 
-    /// Path A result hand-off from the system dictation sheet.
+    private func startDictation() {
+        guard let controller = WKExtension.shared().visibleInterfaceController else {
+            phase = .error("no interface controller")
+            return
+        }
+        transcript = ""
+        phase = .listening
+        controller.presentTextInputController(
+            withSuggestions: nil,
+            allowedInputMode: .plain
+        ) { [weak self] results in
+            Task { @MainActor in
+                guard let self else { return }
+                self.dictated((results?.first as? String) ?? "")
+            }
+        }
+    }
+
+    /// Result hand-off from the system dictation sheet ("" = cancelled/empty).
     func dictated(_ text: String) {
         transcript = text
         if text.isEmpty {
