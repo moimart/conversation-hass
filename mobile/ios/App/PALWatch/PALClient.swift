@@ -19,23 +19,28 @@ enum PALClient {
     enum Failure: LocalizedError {
         case httpStatus(Int)
         case badPayload
+        case notPaired
 
         var errorDescription: String? {
             switch self {
             case .httpStatus(let code): return "HTTP \(code)"
             case .badPayload: return "unexpected response"
+            case .notPaired: return "not paired"
             }
         }
     }
 
     /// Send a command and return PAL's spoken reply text ("" if none).
     static func command(_ text: String) async throws -> String {
-        var request = URLRequest(
-            url: DevConfig.serverBase.appending(path: "api/command"))
+        guard let base = ConfigStore.base, let token = ConfigStore.token,
+              !base.isEmpty, !token.isEmpty,
+              let url = URL(string: "\(base)/api/command") else {
+            throw Failure.notPaired
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(DevConfig.watchToken)",
-                         forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         // The turn can take a while (LLM + tools); server caps at 90s.
         request.timeoutInterval = 95
         request.httpBody = try JSONEncoder().encode(
