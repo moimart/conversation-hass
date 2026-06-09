@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// Spike UI: the PAL orb as the mic. Tap to listen (orb pulses, live partial
-/// transcript below), auto-stops on silence, success haptic + final text.
-/// The diagnostics line is the spike's verdict (framework / availability /
-/// on-device support, then which engine actually transcribed).
+/// The PAL orb as the mic. Tap → system dictation → command runs on PAL →
+/// reply text + haptic. Shows the orb, a status line, the quoted transcript,
+/// and PAL's reply.
 struct ContentView: View {
     @StateObject private var speech = SpeechManager()
     @State private var pulsing = false
