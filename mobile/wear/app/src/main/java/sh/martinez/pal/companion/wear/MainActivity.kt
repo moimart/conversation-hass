@@ -54,7 +54,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        speech.describeSupport()
         setContent { OrbScreen(speech, onTap = ::onOrbTap) }
     }
 
@@ -119,8 +118,9 @@ private fun OrbScreen(speech: SpeechManager, onTap: () -> Unit) {
                 Text(speech.reply, color = Color.White, fontSize = 14.sp,
                     textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
             }
-            if (speech.diagnostics.isNotEmpty()) {
-                Text(speech.diagnostics, color = Color.Cyan, fontSize = 10.sp,
+            // Error detail only — the spike verdict/engine line is gone.
+            if (speech.phase == SpeechManager.Phase.ERROR && speech.diagnostics.isNotEmpty()) {
+                Text(speech.diagnostics, color = Color(0xFFFF9800), fontSize = 11.sp,
                     textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
             }
         }

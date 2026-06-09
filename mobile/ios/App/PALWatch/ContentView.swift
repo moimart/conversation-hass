@@ -27,16 +27,9 @@ struct ContentView: View {
                         .font(.footnote)
                         .multilineTextAlignment(.center)
                 }
-                if !speech.diagnostics.isEmpty {
-                    Text(speech.diagnostics)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.cyan)
-                        .multilineTextAlignment(.leading)
-                }
             }
             .frame(maxWidth: .infinity)
         }
-        .onAppear { speech.describeSupport() }
     }
 
     /// Both paths: tap the orb → SpeechManager.toggle(). Path B drives the
