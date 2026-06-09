@@ -17,15 +17,15 @@ object PALClient {
     class Failure(message: String) : Exception(message)
 
     /** Send a command, return PAL's reply text ("" if none). */
-    suspend fun command(text: String): String = withContext(Dispatchers.IO) {
-        val url = URL("${DevConfig.SERVER_BASE}/api/command")
+    suspend fun command(base: String, token: String, text: String): String = withContext(Dispatchers.IO) {
+        val url = URL("${base.trimEnd('/')}/api/command")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 10_000
             readTimeout = 95_000          // server caps the turn at 90s
             setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer ${DevConfig.WATCH_TOKEN}")
+            setRequestProperty("Authorization", "Bearer $token")
         }
         try {
             val body = JSONObject()

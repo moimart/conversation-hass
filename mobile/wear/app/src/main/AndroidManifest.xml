@@ -10,6 +10,7 @@
         android:allowBackup="true"
         android:label="PAL"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault">
 
         <uses-library

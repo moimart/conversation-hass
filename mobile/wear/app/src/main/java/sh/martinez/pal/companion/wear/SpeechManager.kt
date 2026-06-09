@@ -98,11 +98,18 @@ class SpeechManager(app: Application) : AndroidViewModel(app) {
     }
 
     private fun sendToPAL(text: String) {
+        val base = ConfigStore.base(ctx)
+        val token = ConfigStore.token(ctx)
+        if (base.isNullOrEmpty() || token.isNullOrEmpty()) {
+            phase = Phase.ERROR
+            diagnostics = "not paired"
+            return
+        }
         phase = Phase.SENDING
         reply = ""
         viewModelScope.launch {
             try {
-                val answer = PALClient.command(text)
+                val answer = PALClient.command(base, token, text)
                 reply = answer.ifEmpty { "(done — no reply text)" }
                 phase = Phase.DONE
                 vibrate(120)
