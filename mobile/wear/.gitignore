@@ -1,0 +1,7 @@
+# Wear OS (Android) build + local config
+.gradle/
+build/
+app/build/
+local.properties
+# Holds a real derived watch-scope token (dev-only)
+app/src/main/java/sh/martinez/pal/companion/wear/DevConfig.kt
