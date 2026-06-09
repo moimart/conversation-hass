@@ -119,6 +119,7 @@ def _auth(token=GOOD):
     ("POST", "/api/pair/request"),
     ("POST", "/api/pair/revoke"),          # device kill switch — LAN-only
     ("GET",  "/api/pair/devices"),         # device list — LAN-only
+    ("POST", "/api/pair/derive"),          # scoped-token mint — LAN-only, like pairing
     ("POST", "/api/speak"),                # announce
     ("POST", "/api/display"),
     ("POST", "/api/volume"),

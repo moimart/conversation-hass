@@ -432,6 +432,14 @@ async def ui_endpoint(websocket: WebSocket):
     token = websocket.query_params.get("token")
     is_satellite = bool(token) and state.pairing is not None and state.pairing.is_valid_token(token)
 
+    # Scope gate: a valid token whose scope doesn't grant "ws_ui" (e.g. a watch
+    # token) is refused outright — NOT downgraded to a tokenless mirror, which
+    # would hand it every household broadcast. Fail closed regardless of
+    # HAL_REQUIRE_TOKEN.
+    if is_satellite and not state.pairing.scope_allows(token, "ws_ui"):
+        await websocket.close(code=4403)
+        return
+
     # Auth gate (opt-in): when HAL_REQUIRE_TOKEN is set, a valid token is required.
     if require_token_enabled() and not is_satellite:
         await websocket.close(code=4401)

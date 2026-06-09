@@ -29,6 +29,21 @@ CODE_LEN = 6
 REDEEM_WINDOW_S = 60.0          # throttle window
 MAX_REDEEM_ATTEMPTS = 10        # max redeem attempts per window
 
+# --- Token scopes -------------------------------------------------------------
+# A token's scope bounds what it may do. "full" (the phone app, and every token
+# issued before scopes existed) is unrestricted. "watch" is the standalone
+# Apple Watch companion: it may speak to PAL through the LLM, probe its own
+# validity, and register for push — nothing else (no /ws/ui mirror, no cloud
+# override, no satellite routes). Scope limits the SURFACE, not the power of
+# /api/command itself; its real wins are independent revocation and no lateral
+# access. A scoped token is minted by `derive` (authorized by a full token),
+# never by code redemption.
+_SCOPE_PERMISSIONS: dict[str, set[str] | None] = {
+    "full": None,                                   # None = unrestricted
+    "watch": {"command", "pair_status", "push_register"},
+}
+DERIVABLE_SCOPES = {"watch"}
+
 
 def _tokens_path() -> str:
     return os.environ.get("PAIRING_TOKENS_FILE", "/app/runtime/pairing_tokens.json")
@@ -128,13 +143,64 @@ class PairingManager:
         self._tokens[token] = {
             "device_name": (device_name or "device")[:64],
             "created_at": time.time(),
+            "scope": "full",
         }
         self._save()
         log.info(f"pairing: issued token for device {self._tokens[token]['device_name']!r}")
         return token
 
+    def derive(self, parent_token: str | None, scope: str,
+               device_name: str) -> str | None:
+        """Mint a scoped child token, authorized by an existing FULL token.
+
+        The phone-assisted enrollment primitive: a device that already holds
+        full trust vouches for a less-privileged one (the watch) — no code
+        typing on the new device. Children cannot derive further tokens
+        (scoped parents are rejected), and `scope` must be a known derivable
+        scope ("full" is deliberately not derivable). Returns None when the
+        parent is invalid/insufficient or the scope unknown."""
+        if not self.is_valid_token(parent_token):
+            return None
+        if self.token_scope(parent_token) != "full":
+            return None
+        if scope not in DERIVABLE_SCOPES:
+            return None
+        token = secrets.token_urlsafe(32)
+        self._tokens[token] = {
+            "device_name": (device_name or "device")[:64],
+            "created_at": time.time(),
+            "scope": scope,
+            "derived_from": parent_token[:6],   # prefix only — never a copy of the secret
+        }
+        self._save()
+        log.info(f"pairing: derived {scope!r} token for "
+                 f"{self._tokens[token]['device_name']!r} "
+                 f"(parent {parent_token[:6]}…)")
+        return token
+
     def is_valid_token(self, token: str | None) -> bool:
         return bool(token) and token in self._tokens
+
+    def token_scope(self, token: str | None) -> str | None:
+        """The scope of a valid token ("full" for pre-scope entries), or None
+        for an unknown/absent token."""
+        if not token:
+            return None
+        entry = self._tokens.get(token)
+        if entry is None:
+            return None
+        return entry.get("scope", "full")
+
+    def scope_allows(self, token: str | None, permission: str) -> bool:
+        """True iff `token` is valid AND its scope grants `permission`.
+        Unknown scopes deny everything (fail closed)."""
+        scope = self.token_scope(token)
+        if scope is None:
+            return False
+        perms = _SCOPE_PERMISSIONS.get(scope)
+        if perms is None:
+            return scope in _SCOPE_PERMISSIONS   # "full" → unrestricted
+        return permission in perms
 
     def device_name(self, token: str | None) -> str | None:
         """Human-readable name of the paired device for a token, or None.
@@ -177,6 +243,7 @@ class PairingManager:
                 "created_at": entry.get("created_at"),
                 "token_prefix": token[:6],
                 "has_push": bool(entry.get("push_token")),
+                "scope": entry.get("scope", "full"),
             })
         return sorted(out, key=lambda d: d.get("created_at") or 0)
 
@@ -338,6 +405,38 @@ async def pair_revoke(request: Request, req: RevokeRequest):
         n = state.pairing.revoke_by_device_name(req.device_name)
         return {"revoked": n}
     return _json_error({"error": "device_name or token required"}, 400)
+
+
+class DeriveRequest(BaseModel):
+    scope: str = "watch"
+    device_name: str = "Apple Watch"
+
+
+@router.post("/api/pair/derive")
+async def pair_derive(request: Request, req: DeriveRequest):
+    """Mint a scoped child token, authorized by the caller's FULL pairing token
+    (Bearer). The phone-assisted enrollment path for the watch: the phone calls
+    this, then hands the child token to the watch over WatchConnectivity — no
+    code typing on the watch. LAN-only BY OMISSION: the satellite gateway does
+    not proxy this route, so (like code pairing) tokens can only be minted at
+    home. Mirrors redeem's response shape so the enrollee also learns the
+    gateway base for away-from-home failover."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    parent = extract_bearer(request)
+    if not state.pairing.is_valid_token(parent) or \
+            state.pairing.token_scope(parent) != "full":
+        return _json_error({"error": "unauthorized"}, 401)
+    child = state.pairing.derive(parent, (req.scope or "").strip(),
+                                 req.device_name)
+    if child is None:
+        return _json_error({"error": "invalid_scope"}, 400)
+    return {
+        "token": child,
+        "scope": (req.scope or "").strip(),
+        "server_name": os.environ.get("HAL_DEVICE_NAME", "HAL"),
+        "gateway_url": os.environ.get("HAL_GATEWAY_URL", "").strip(),
+    }
 
 
 class PushRegisterRequest(BaseModel):

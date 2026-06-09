@@ -212,6 +212,14 @@ async def post_command(request: Request, req: CommandRequest):
     token = extract_bearer(request)
     token_valid = bool(token) and state.pairing and state.pairing.is_valid_token(token)
 
+    # Scope gate: a valid token whose scope doesn't grant "command" is refused
+    # outright (fail closed for future scopes; "full" and "watch" both allow it).
+    if token_valid and not state.pairing.scope_allows(token, "command"):
+        return Response(
+            content='{"status":"error","message":"forbidden_scope"}',
+            status_code=403, media_type="application/json",
+        )
+
     # Mobile auth gate (opt-in): when HAL_REQUIRE_TOKEN is set, a paired device
     # token is required. Default OFF leaves the existing LAN behaviour intact.
     if require_token_enabled() and not token_valid:
@@ -413,6 +421,20 @@ async def get_push_image(name: str, request: Request):
                     headers={"Cache-Control": "max-age=600"})
 
 
+def _scope_forbids(state, request: Request, permission: str) -> bool:
+    """True if the request presents a VALID Bearer token whose scope does not
+    grant `permission` — the route must 403. Absent/invalid tokens return
+    False and fall through to the route's existing auth rules (LAN trust /
+    gateway edge auth). This is the server-side scope gate for gateway-proxied
+    routes: the gateway edge only checks token VALIDITY (via /api/pair/status),
+    so without this a scoped (watch) token could reach any allowlisted route."""
+    from .pairing import extract_bearer
+    pairing = getattr(state, "pairing", None)
+    token = extract_bearer(request)
+    return bool(token and pairing and pairing.is_valid_token(token)
+                and not pairing.scope_allows(token, permission))
+
+
 @router.get("/api/cloud_llm")
 async def get_cloud_llm(request: Request):
     """Cloud override status. NEVER includes provider keys or endpoints.
@@ -420,6 +442,8 @@ async def get_cloud_llm(request: Request):
     (the mobile settings sheet hides its toggle when false)."""
     from .main import _get_state
     state = _get_state(request.app)
+    if _scope_forbids(state, request, "cloud_llm"):
+        return Response(status_code=403)
     return {
         "enabled": bool(state.cloud_llm_enabled),
         "model": state.cloud_llm_model or "",
@@ -435,6 +459,8 @@ async def post_cloud_llm(request: Request, req: CloudLLMRequest):
     (mirrors the post_photo_frame_idle pattern)."""
     from .main import _get_state
     state = _get_state(request.app)
+    if _scope_forbids(state, request, "cloud_llm"):
+        return Response(status_code=403)
     callbacks = state.mqtt_bridge._config_callbacks if state.mqtt_bridge else {}
     if req.model is not None:
         cb = callbacks.get("cloud_llm_model")

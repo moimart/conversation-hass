@@ -272,3 +272,144 @@ async def test_pair_status_valid_and_invalid(pmod, fake_main):
     assert ok == {"valid": True}
     bad = await pmod.pair_status(SimpleNamespace(app=SimpleNamespace(), headers={}))
     assert bad.status_code == 401
+
+
+# --- Scoped tokens (watch enrollment) ----------------------------------------
+
+def test_redeemed_token_has_full_scope(pmod):
+    mgr = pmod.PairingManager()
+    token = mgr.redeem(mgr.create_code()[0], "iPhone")
+    assert mgr.token_scope(token) == "full"
+    assert mgr.scope_allows(token, "command")
+    assert mgr.scope_allows(token, "ws_ui")           # full = unrestricted
+    assert mgr.scope_allows(token, "cloud_llm")
+
+
+def test_legacy_token_without_scope_field_is_full(pmod):
+    # Tokens issued before scopes existed have no "scope" key — treated as full.
+    mgr = pmod.PairingManager()
+    token = mgr.redeem(mgr.create_code()[0], "old phone")
+    del mgr._tokens[token]["scope"]
+    assert mgr.token_scope(token) == "full"
+    assert mgr.scope_allows(token, "ws_ui")
+
+
+def test_derive_mints_scoped_child(pmod):
+    mgr = pmod.PairingManager()
+    parent = mgr.redeem(mgr.create_code()[0], "iPhone")
+    child = mgr.derive(parent, "watch", "Apple Watch")
+    assert child and child != parent
+    assert mgr.is_valid_token(child)
+    assert mgr.token_scope(child) == "watch"
+    # the stored entry references the parent by PREFIX only, never the secret
+    assert mgr._tokens[child]["derived_from"] == parent[:6]
+    assert parent not in str(mgr._tokens[child])
+    # persisted: a fresh manager loads it with the scope intact
+    mgr2 = pmod.PairingManager()
+    assert mgr2.token_scope(child) == "watch"
+
+
+def test_watch_scope_permission_matrix(pmod):
+    mgr = pmod.PairingManager()
+    parent = mgr.redeem(mgr.create_code()[0], "iPhone")
+    watch = mgr.derive(parent, "watch", "Apple Watch")
+    # allowed
+    assert mgr.scope_allows(watch, "command")
+    assert mgr.scope_allows(watch, "pair_status")
+    assert mgr.scope_allows(watch, "push_register")
+    # denied
+    assert not mgr.scope_allows(watch, "ws_ui")
+    assert not mgr.scope_allows(watch, "cloud_llm")
+    assert not mgr.scope_allows(watch, "anything_else")
+    # invalid/absent tokens deny everything
+    assert not mgr.scope_allows("nope", "command")
+    assert not mgr.scope_allows(None, "command")
+
+
+def test_derive_rejects_bad_parents_and_scopes(pmod):
+    mgr = pmod.PairingManager()
+    parent = mgr.redeem(mgr.create_code()[0], "iPhone")
+    watch = mgr.derive(parent, "watch", "Apple Watch")
+    assert mgr.derive("invalid-token", "watch", "w") is None    # unknown parent
+    assert mgr.derive(None, "watch", "w") is None
+    assert mgr.derive(watch, "watch", "w2") is None             # no chaining
+    assert mgr.derive(parent, "full", "evil") is None           # full not derivable
+    assert mgr.derive(parent, "banana", "w") is None            # unknown scope
+
+
+def test_unknown_scope_fails_closed(pmod):
+    mgr = pmod.PairingManager()
+    token = mgr.redeem(mgr.create_code()[0], "phone")
+    mgr._tokens[token]["scope"] = "mystery"     # e.g. config from a newer version
+    assert not mgr.scope_allows(token, "command")
+    assert not mgr.scope_allows(token, "ws_ui")
+
+
+def test_derived_token_revocable_independently(pmod):
+    mgr = pmod.PairingManager()
+    parent = mgr.redeem(mgr.create_code()[0], "iPhone")
+    watch = mgr.derive(parent, "watch", "Apple Watch")
+    assert mgr.revoke(watch) is True
+    assert not mgr.is_valid_token(watch)
+    assert mgr.is_valid_token(parent)           # parent untouched
+
+
+def test_list_devices_includes_scope(pmod):
+    mgr = pmod.PairingManager()
+    parent = mgr.redeem(mgr.create_code()[0], "iPhone")
+    mgr.derive(parent, "watch", "Apple Watch")
+    by_name = {d["device_name"]: d for d in mgr.list_devices()}
+    assert by_name["iPhone"]["scope"] == "full"
+    assert by_name["Apple Watch"]["scope"] == "watch"
+
+
+@pytest.mark.asyncio
+async def test_pair_derive_route(pmod, fake_main, monkeypatch):
+    monkeypatch.setenv("HAL_GATEWAY_URL", "https://pal.example")
+    pairing = fake_main.state.pairing
+    parent = pairing.redeem(pairing.create_code()[0], "iPhone")
+
+    ok = await pmod.pair_derive(
+        SimpleNamespace(app=SimpleNamespace(),
+                        headers={"authorization": f"Bearer {parent}"}),
+        pmod.DeriveRequest(scope="watch", device_name="Apple Watch"))
+    assert ok["scope"] == "watch"
+    assert ok["gateway_url"] == "https://pal.example"   # watch learns the failover base
+    assert pairing.token_scope(ok["token"]) == "watch"
+
+    # no bearer -> 401
+    bad = await pmod.pair_derive(
+        SimpleNamespace(app=SimpleNamespace(), headers={}),
+        pmod.DeriveRequest())
+    assert bad.status_code == 401
+    # a scoped (watch) bearer cannot derive -> 401
+    bad2 = await pmod.pair_derive(
+        SimpleNamespace(app=SimpleNamespace(),
+                        headers={"authorization": f"Bearer {ok['token']}"}),
+        pmod.DeriveRequest())
+    assert bad2.status_code == 401
+    # full bearer + unknown scope -> 400
+    bad3 = await pmod.pair_derive(
+        SimpleNamespace(app=SimpleNamespace(),
+                        headers={"authorization": f"Bearer {parent}"}),
+        pmod.DeriveRequest(scope="banana"))
+    assert bad3.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_watch_token_can_use_status_and_push_register(pmod, fake_main):
+    """The watch's whole allowlist besides /api/command: validity probe +
+    push registration must accept a watch-scoped bearer."""
+    pairing = fake_main.state.pairing
+    parent = pairing.redeem(pairing.create_code()[0], "iPhone")
+    watch = pairing.derive(parent, "watch", "Apple Watch")
+
+    ok = await pmod.pair_status(SimpleNamespace(
+        app=SimpleNamespace(), headers={"authorization": f"Bearer {watch}"}))
+    assert ok == {"valid": True}
+
+    reg = await pmod.pair_push_register(
+        SimpleNamespace(app=SimpleNamespace(),
+                        headers={"authorization": f"Bearer {watch}"}),
+        pmod.PushRegisterRequest(platform="ios", push_token="watch-apns-tok"))
+    assert reg == {"status": "ok", "service": "apns"}
