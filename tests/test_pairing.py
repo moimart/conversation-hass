@@ -223,6 +223,17 @@ def test_clear_push_token(pmod):
     assert mgr.list_devices()[0]["has_push"] is False
 
 
+def test_set_push_token_dedups_across_pairing_entries(pmod):
+    # A re-paired device re-registers the SAME push token under a new pairing
+    # token; the stale entry must lose it so dispatch doesn't double-notify.
+    mgr = pmod.PairingManager()
+    old = mgr.redeem(mgr.create_code()[0], "Pixel")
+    new = mgr.redeem(mgr.create_code()[0], "Pixel")
+    mgr.set_push_token(old, "fcm", "fcm-dup")
+    mgr.set_push_token(new, "fcm", "fcm-dup")
+    assert mgr.push_targets() == [(new, "fcm", "fcm-dup")]
+
+
 def test_push_token_persists_across_instances(pmod):
     mgr = pmod.PairingManager()
     token = mgr.redeem(mgr.create_code()[0], "phone")

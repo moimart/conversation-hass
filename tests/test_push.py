@@ -138,6 +138,21 @@ def test_offline_targets_empty():
     assert push._offline_targets(FakeState(FakePairing([]))) == []
 
 
+def test_offline_targets_dedups_duplicate_push_token():
+    # Same device re-paired under two pairing tokens (same push_token): notify once.
+    pairing = FakePairing([("tA", "fcm", "dup"), ("tB", "fcm", "dup"), ("tC", "apns", "p3")])
+    out = push._offline_targets(FakeState(pairing))
+    assert sorted(pt for _t, _s, pt in out) == ["dup", "p3"]
+    assert len(out) == 2
+
+
+def test_offline_targets_skips_device_open_under_any_pairing_token():
+    # If any pairing entry sharing the push_token is connected, the device is open.
+    pairing = FakePairing([("tA", "fcm", "dup"), ("tB", "fcm", "dup")])
+    state = FakeState(pairing, satellite_ws={"tB": object()})
+    assert push._offline_targets(state) == []
+
+
 def test_image_url_needs_gateway_secret_and_id():
     assert push.PushService(FakeRegistry(), SECRET, "").image_url(5) is None
     assert push.PushService(FakeRegistry(), "", GW).image_url(5) is None

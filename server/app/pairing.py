@@ -188,6 +188,14 @@ class PairingManager:
         entry = self._tokens.get(token)
         if entry is None:
             return False
+        # A push token identifies a single app install; keep it under exactly
+        # one pairing entry so a re-paired device isn't notified once per stale
+        # pairing token (the duplicate-FCM double-notification bug).
+        for other_tok, other in self._tokens.items():
+            if other_tok != token and other.get("push_token") == push_token:
+                other.pop("push_token", None)
+                other.pop("push_service", None)
+                other.pop("push_registered_at", None)
         entry["push_service"] = service
         entry["push_token"] = push_token
         entry["push_registered_at"] = time.time()

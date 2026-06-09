@@ -195,15 +195,23 @@ class FcmSender:
 
 def _offline_targets(state) -> list[tuple[str, str, str]]:
     """(token, service, push_token) for paired devices with a push token whose
-    app is NOT currently connected as a satellite."""
+    app is NOT currently connected as a satellite. Deduped by push_token: a
+    device re-registered under several pairing tokens is notified once — and not
+    at all if ANY of its pairing entries is currently connected (app open)."""
     pairing = getattr(state, "pairing", None)
     if pairing is None:
         return []
     connected = getattr(state, "satellite_ws", {}) or {}
+    targets = list(pairing.push_targets())
+    # A push_token is "open" if any of its pairing tokens is connected.
+    open_tokens = {pt for tok, _svc, pt in targets if tok in connected}
     out = []
-    for token, service, push_token in pairing.push_targets():
-        if token not in connected:
-            out.append((token, service, push_token))
+    seen = set()
+    for token, service, push_token in targets:
+        if push_token in open_tokens or push_token in seen:
+            continue
+        seen.add(push_token)
+        out.append((token, service, push_token))
     return out
 
 
