@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		19957089898BCAC6BD1B1CB8 /* PALClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 322ADCA3DA52CAF16F017F2D /* PALClient.swift */; };
 		2150636A706B70A2A880541D /* PALWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7336BB422165C50E2357CA3D /* PALWatchApp.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		302D98D17B50A1BEDDCED14E /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F22BB3E657A001453BCB02F /* NotificationService.swift */; };
@@ -19,6 +20,7 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		6E9EF5EAA89054766FABEB97 /* NotificationServiceExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 61B182AEF6E390C5B5A1331E /* NotificationServiceExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		98886CF76B47338CE45B08C4 /* DevConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89BCB100620C0224DE95C9F2 /* DevConfig.swift */; };
 		A5790889B612C9971C5B98BF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73452A7586CE8D422F6A5182 /* ContentView.swift */; };
 		C117E658A64AC443F78B1317 /* SpeechManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1274699DFA9878E3842406D7 /* SpeechManager.swift */; };
 		EDD4AF27D8D2CF3D36428484 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA21238DF781256934B686CA /* Foundation.framework */; };
@@ -52,6 +54,7 @@
 		074F4A18703FFAACFF6BE367 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1274699DFA9878E3842406D7 /* SpeechManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpeechManager.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		322ADCA3DA52CAF16F017F2D /* PALClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PALClient.swift; sourceTree = "<group>"; };
 		3F22BB3E657A001453BCB02F /* NotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -64,6 +67,7 @@
 		61B182AEF6E390C5B5A1331E /* NotificationServiceExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NotificationServiceExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7336BB422165C50E2357CA3D /* PALWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PALWatchApp.swift; sourceTree = "<group>"; };
 		73452A7586CE8D422F6A5182 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		89BCB100620C0224DE95C9F2 /* DevConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevConfig.swift; sourceTree = "<group>"; };
 		8D86FC8E8CAEDF6B5A25E472 /* PALWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PALWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		D98F5FA55853680841571280 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -159,6 +163,8 @@
 				7336BB422165C50E2357CA3D /* PALWatchApp.swift */,
 				1274699DFA9878E3842406D7 /* SpeechManager.swift */,
 				73452A7586CE8D422F6A5182 /* ContentView.swift */,
+				322ADCA3DA52CAF16F017F2D /* PALClient.swift */,
+				89BCB100620C0224DE95C9F2 /* DevConfig.swift */,
 			);
 			name = PALWatch;
 			path = PALWatch;
@@ -333,6 +339,8 @@
 				2150636A706B70A2A880541D /* PALWatchApp.swift in Sources */,
 				C117E658A64AC443F78B1317 /* SpeechManager.swift in Sources */,
 				A5790889B612C9971C5B98BF /* ContentView.swift in Sources */,
+				19957089898BCAC6BD1B1CB8 /* PALClient.swift in Sources */,
+				98886CF76B47338CE45B08C4 /* DevConfig.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

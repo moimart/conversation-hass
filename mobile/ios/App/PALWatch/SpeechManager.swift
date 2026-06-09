@@ -22,6 +22,7 @@ final class SpeechManager: NSObject, ObservableObject {
         case idle
         case requesting
         case listening
+        case sending
         case done
         case error(String)
     }
@@ -38,12 +39,40 @@ final class SpeechManager: NSObject, ObservableObject {
 
     @Published var phase: Phase = .idle
     @Published var transcript = ""
+    @Published var reply = ""
     @Published var diagnostics = ""
 
     /// Auto-endpoint: stop after this much silence once words have arrived.
     private let silenceWindow: TimeInterval = 1.3
     /// Give up if nothing at all was heard for this long.
     private let emptyTimeout: TimeInterval = 6.0
+
+    /// Dictation result hand-off (both paths): empty = cancelled/heard
+    /// nothing; otherwise the text goes straight to PAL.
+    func dictated(_ text: String) {
+        transcript = text
+        guard !text.isEmpty else {
+            phase = .error("heard nothing")
+            return
+        }
+        sendToPAL(text)
+    }
+
+    private func sendToPAL(_ text: String) {
+        phase = .sending
+        reply = ""
+        Task {
+            do {
+                let answer = try await PALClient.command(text)
+                self.reply = answer.isEmpty ? "(done — no reply text)" : answer
+                self.phase = .done
+                WKInterfaceDevice.current().play(.success)
+            } catch {
+                self.phase = .error("PAL: \(error.localizedDescription)")
+                WKInterfaceDevice.current().play(.failure)
+            }
+        }
+    }
 
 #if canImport(Speech)
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -75,12 +104,6 @@ final class SpeechManager: NSObject, ObservableObject {
         }
     }
 
-    /// Path A result hand-off (unused when Path B drives the orb, but both
-    /// ContentView branches are type-checked regardless of the runtime flag).
-    func dictated(_ text: String) {
-        transcript = text
-        phase = text.isEmpty ? .error("heard nothing") : .done
-    }
 
     func start() {
         transcript = ""
@@ -178,15 +201,12 @@ final class SpeechManager: NSObject, ObservableObject {
         }
     }
 
-    /// Stop listening and settle on whatever was transcribed.
+    /// Stop listening and hand the transcript to the shared dictated() flow.
     private func endpoint() {
         guard phase == .listening else { return }
-        phase = transcript.isEmpty ? .error("heard nothing") : .done
-        if phase == .done {
-            WKInterfaceDevice.current().play(.success)
-            diagnostics = "engine: \(usedOnDevice ? "ON-DEVICE" : "server-based")"
-        }
+        diagnostics = "engine: \(usedOnDevice ? "ON-DEVICE" : "server-based")"
         teardownAudio()
+        dictated(transcript)
     }
 
     private func teardownAudio() {
@@ -231,17 +251,6 @@ final class SpeechManager: NSObject, ObservableObject {
                 guard let self else { return }
                 self.dictated((results?.first as? String) ?? "")
             }
-        }
-    }
-
-    /// Result hand-off from the system dictation sheet ("" = cancelled/empty).
-    func dictated(_ text: String) {
-        transcript = text
-        if text.isEmpty {
-            phase = .error("heard nothing")
-        } else {
-            phase = .done
-            WKInterfaceDevice.current().play(.success)
         }
     }
 #endif

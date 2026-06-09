@@ -17,7 +17,13 @@ struct ContentView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 if !speech.transcript.isEmpty {
-                    Text(speech.transcript)
+                    Text("\u{201C}\(speech.transcript)\u{201D}")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                if !speech.reply.isEmpty {
+                    Text(speech.reply)
                         .font(.footnote)
                         .multilineTextAlignment(.center)
                 }
@@ -45,6 +51,7 @@ struct ContentView: View {
         case .idle: return "tap to speak"
         case .requesting: return "permissions…"
         case .listening: return "listening — tap to stop"
+        case .sending: return "asking PAL…"
         case .done: return "tap to speak again"
         case .error(let message): return message
         }
@@ -80,6 +87,7 @@ struct ContentView: View {
     private var orbColors: [Color] {
         switch speech.phase {
         case .listening: return [.cyan, .blue.opacity(0.3)]
+        case .sending: return [.purple, .indigo.opacity(0.3)]
         case .done: return [.green, .teal.opacity(0.3)]
         case .error: return [.orange, .red.opacity(0.3)]
         default: return [.teal, .blue.opacity(0.25)]
