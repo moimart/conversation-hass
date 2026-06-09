@@ -1,4 +1,4 @@
-# PAL companion app (iOS + Android)
+# PAL companion app (iOS + Android + watchOS)
 
 A Capacitor app that pairs a phone as a **satellite** of PAL — not a mirror of
 the kiosk. You talk to PAL by **text** or **voice**; your turn runs in the shared
@@ -85,6 +85,79 @@ npx cap run ios            # or open ios/App/App.xcodeproj in Xcode
 `NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription`.
 A hosted demo over HTTPS/WSS needs no ATS exception.
 
+## Apple Watch app (PALWatch)
+
+A **native SwiftUI** target (`ios/App/PALWatch`, scheme `PALWatch`) — none of
+the Capacitor/web stack applies on watchOS (no WebView exists there). It's a
+**standalone watch-only app** (`WKWatchOnly`): on a cellular watch it needs no
+phone present. Hero flow:
+
+> tap the orb → system dictation → `POST /api/command` (`wait_reply: true`)
+> via the **gateway over HTTPS** → PAL runs the command → reply text +
+> success haptic on the wrist.
+
+Design facts (each one was discovered the hard way — don't re-litigate):
+
+- **watchOS has no Speech framework.** `SFSpeechRecognizer` does not exist in
+  the watchOS SDK (verified against 26.4), so a custom in-app recognizer is
+  impossible. `SpeechManager` keeps that implementation behind
+  `canImport(Speech)` (compiles to a stub; lights up if Apple ever ships it)
+  and the app uses the **system dictation** input instead.
+- **Don't use `TextFieldLink`** — on keyboard-capable watches (Series 7+/
+  Ultra) it opens QWERTY first. `WKExtension.shared()
+  .visibleInterfaceController?.presentTextInputController(withSuggestions:nil,
+  allowedInputMode:.plain)` presents the input directly and works from the
+  SwiftUI lifecycle. watchOS then remembers the **last-used input mode**: once
+  the user picks dictation (mic icon) it opens dictation-first thereafter.
+- **Auth = a scoped token.** The watch presents a `watch`-scope pairing token
+  (see `POST /api/pair/derive` in [`API.md`](../API.md)): allowed on
+  `/api/command`, `/api/pair/status`, `/api/pair/push-register`, 403/4403
+  everywhere else, independently revocable. Dev wiring keeps it in
+  `ios/App/PALWatch/DevConfig.swift` — **gitignored** (real secret); copy the
+  shape from `DevConfig.example.swift`. Planned replacement: phone-assisted
+  enrollment over WatchConnectivity into the watch Keychain.
+- **Replies are synchronous.** The watch scope deliberately excludes `/ws/ui`,
+  so it sends `wait_reply: true` and PAL's reply comes back in the same HTTP
+  response (server caps the turn at 90s; the gateway proxy timeout is 100s to
+  accommodate this).
+- **It talks to the gateway base even at home** — exercises the real
+  away-from-home path and avoids an ATS cleartext exception in the generated
+  Info.plist.
+
+### Build & run (watch)
+
+```bash
+# simulator
+xcodebuild -project ios/App/App.xcodeproj -scheme PALWatch \
+  -destination 'generic/platform=watchOS Simulator' build
+
+# physical watch (signed; needs the watch registered in the developer portal)
+xcodebuild -project ios/App/App.xcodeproj -scheme PALWatch \
+  -destination 'platform=watchOS,id=<coredevice-id>' -allowProvisioningUpdates build
+xcrun devicectl device install app --device <coredevice-id> <DerivedData>/Build/Products/Debug-watchos/PALWatch.app
+xcrun devicectl device process launch --device <coredevice-id> sh.martinez.pal.companion.watchkitapp
+```
+
+First-time physical-deploy gotchas (in the order you'll hit them):
+
+1. **Developer Mode** on the watch (Settings → Privacy & Security) only
+   *appears* after Xcode has connected to the watch once — which needs the
+   paired **iPhone cabled to the Mac** with Xcode's Devices window open.
+2. The watch must be **registered in the developer portal** before a dev
+   profile can include it (App Store Connect API `POST /v1/devices` with the
+   hardware UDID, or Xcode GUI) — an App-Manager API key can't cloud-register
+   it through `xcodebuild`.
+3. The Mac↔watch CoreDevice tunnel is **flaky without the iPhone cabled**:
+   keep the watch awake + phone nearby. A failed remote *launch* right after
+   a successful install usually just means the watch screen is locked — open
+   the app on the watch instead.
+4. `WKWatchOnly` and `WKRunsIndependentlyOfCompanionApp` are mutually
+   exclusive — defining both fails the install.
+
+Still to come (tracked in the watch plan): WatchConnectivity enrollment,
+home/gateway failover, watch APNs push (timer haptics), complication +
+Action Button quick-launch.
+
 ## Layout
 ```
 src/boot.ts            entry: config → display → overlay
@@ -97,6 +170,7 @@ src/platform/          keep-awake/status-bar/splash/resume wrappers
 scripts/               sync-web + build (esbuild)
 www/                   build output (gitignored)
 android/ ios/          native projects (committed after `cap add`)
+ios/App/PALWatch/      native SwiftUI watch app (PTT; DevConfig.swift gitignored)
 ```
 
 ## Notes / follow-ups

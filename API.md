@@ -25,6 +25,7 @@ the kiosk UI.
 
 - [Conventions](#conventions)
 - [Reachability (LAN vs gateway)](#reachability-lan-vs-gateway)
+  - [Token scopes](#token-scopes)
 - [Health](#health)
 - [Push-to-Talk](#push-to-talk)
   - [`POST /api/ptt/start`](#post-apipttstart)
@@ -108,10 +109,35 @@ internet-reachable **only** if its "Gateway" cell is ✓.
 | `POST /api/photo_frame/{start,end}` (kiosk) | ✓ | — | LAN-only |
 | `POST /api/ptt/{start,end,cancel}`, `WS /ws/ptt` | ✓ | — | LAN-only |
 | `POST /api/pair/request`, `/redeem` | ✓ | — | LAN-only — **pairing only happens at home** |
+| `POST /api/pair/derive` | ✓ | — | LAN-only — scoped-token mint (full-token Bearer) |
 | `GET /api/pair/devices`, `POST /api/pair/revoke` | ✓ | — | LAN-only — device admin stays home-side |
 | `/mcp`, `WS /ws/audio`, all MQTT | ✓ | — | LAN-only |
 
 Full gateway config + rationale: [Satellite gateway](#satellite-gateway-port-8766).
+
+### Token scopes
+
+Pairing tokens carry a **scope** that bounds what they may do *server-side*
+(the gateway edge only checks validity, so scope is enforced per-route by the
+server). `full` — phones, and every token issued before scopes existed —
+is unrestricted. `watch` — the Apple Watch companion — may use **only**
+`POST /api/command`, `GET /api/pair/status`, and `POST /api/pair/push-register`;
+anything else returns `403` (or close code `4403` on `/ws/ui` — a scoped token
+is never downgraded to a tokenless mirror). Unknown scopes deny everything.
+
+A scoped token is minted with **`POST /api/pair/derive`** (LAN-only),
+authorized by an existing **full** token in the `Authorization: Bearer`
+header — the phone vouches for the watch, no code typing on the new device:
+
+```json
+{ "scope": "watch", "device_name": "Apple Watch" }
+```
+
+→ `{ "token": "...", "scope": "watch", "server_name": "...", "gateway_url": "..." }`
+(mirrors `/api/pair/redeem`, so the enrollee learns the gateway base for
+away-from-home use). Scoped tokens can't derive further tokens, `full` is not
+derivable, and each derived token revokes independently via
+`POST /api/pair/revoke`. `GET /api/pair/devices` shows each device's scope.
 
 ---
 
@@ -255,8 +281,9 @@ TTS response that plays on the RPi.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `text` | string | ✓ | The user's utterance. Empty/whitespace returns `"error"`. |
+| `wait_reply` | bool | — | Default `false`. `true` = run the turn **synchronously** and return PAL's reply in this response. |
 
-**Response** `200`
+**Response** `200` (default, fire-and-forget)
 
 ```json
 { "status": "ok", "message": "Command received" }
@@ -265,6 +292,18 @@ TTS response that plays on the RPi.
 The command runs asynchronously — the response confirms receipt, not
 completion. Watch `/ws/ui` for state transitions or `state.last_response`
 on MQTT for the eventual reply.
+
+**Response** `200` (`wait_reply: true`)
+
+```json
+{ "status": "ok", "reply": "The kitchen lights are off, Master." }
+```
+
+The request blocks until the turn completes (capped at 90 s; on timeout
+`reply` is `""` with a `message`). This is the reply channel for clients
+without a `/ws/ui` connection — the Apple Watch app (whose token scope
+excludes the WebSocket) uses it for every command. The gateway's proxy
+timeout (100 s) accommodates it.
 
 ```bash
 curl -XPOST http://hal:8765/api/command \

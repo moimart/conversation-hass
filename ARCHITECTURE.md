@@ -414,6 +414,27 @@ in the plaintext config blob. Token auth is opt-in server-wide
 tracks connected satellites in `state.satellite_ws` (`token → WebSocket`),
 which doubles as the "is this device's app open?" signal used by push.
 
+Tokens carry a **scope**, enforced per-route on the server (the gateway edge
+only checks validity): `full` (phones; unrestricted) or `watch` (command +
+status + push-register only — everything else 403, and `/ws/ui` closes with
+`4403` rather than degrade a scoped token to a tokenless mirror). A full
+token mints a scoped child via the LAN-only `POST /api/pair/derive` — the
+phone-vouches-for-the-watch enrollment primitive; children can't chain,
+`full` isn't derivable, and each child revokes independently.
+
+### Apple Watch (PALWatch)
+
+A **native SwiftUI** watch app (`mobile/ios/App/PALWatch`) — watchOS has no
+WebView, so none of the Capacitor stack applies. It's standalone
+(`WKWatchOnly`; phone-free on a cellular watch) and intentionally minimal:
+**system dictation** (watchOS ships no Speech framework, so an in-app
+recognizer is impossible — only the final text ever leaves the watch) →
+`POST /api/command` with `wait_reply: true` over the **gateway HTTPS base**
+→ PAL's reply in the same HTTP response + a wrist haptic. `wait_reply`
+exists precisely because the watch scope has no `/ws/ui` reply channel; the
+gateway's proxy timeout is 100 s to cover the turn's 90 s cap. Build/deploy
+gotchas live in `mobile/README.md`.
+
 ---
 
 ## Satellite gateway (remote access)
@@ -616,9 +637,10 @@ conversation-hass/
 │   │   └── app.js, style.css, calendar.*, conversation_log.*, timer_overlay.*, pairing_overlay.js
 │   └── sendspin/                                   # multi-room audio sidecar
 │
-├── mobile/                                         # PAL companion app (Capacitor; iOS + Android)
+├── mobile/                                         # PAL companion app (Capacitor; iOS + Android + watchOS)
 │   ├── src/                                        # boot.ts, config/, onboarding/, overlay/, platform/ (push.ts)
 │   ├── android/  ios/                              # native (FCM google-services.json; iOS NSE target)
+│   ├── ios/App/PALWatch/                           # native SwiftUI watch app (PTT; DevConfig.swift gitignored)
 │   └── scripts/                                    # build.mjs + sync-web.mjs (copies rpi/web → www)
 │
 ├── desktop/                                        # Rust/GTK4 desktop command app
