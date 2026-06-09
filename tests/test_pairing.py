@@ -413,3 +413,43 @@ async def test_watch_token_can_use_status_and_push_register(pmod, fake_main):
                         headers={"authorization": f"Bearer {watch}"}),
         pmod.PushRegisterRequest(platform="ios", push_token="watch-apns-tok"))
     assert reg == {"status": "ok", "service": "apns"}
+
+
+# --- scoped redeem (watch self-enrollment) -----------------------------------
+
+def test_redeem_with_watch_scope(pmod):
+    mgr = pmod.PairingManager()
+    code, _ = mgr.create_code()
+    token = mgr.redeem(code, "Pixel Watch 3", scope="watch")
+    assert token and mgr.token_scope(token) == "watch"
+    assert mgr.scope_allows(token, "command")
+    assert not mgr.scope_allows(token, "ws_ui")
+
+
+def test_redeem_defaults_to_full(pmod):
+    mgr = pmod.PairingManager()
+    token = mgr.redeem(mgr.create_code()[0], "iPhone")
+    assert mgr.token_scope(token) == "full"
+
+
+def test_redeem_rejects_unknown_scope(pmod):
+    mgr = pmod.PairingManager()
+    code, _ = mgr.create_code()
+    assert mgr.redeem(code, "x", scope="superuser") is None
+    # the code is NOT consumed when the scope was invalid (pre-check)
+    assert mgr.redeem(code, "x", scope="watch") is not None
+
+
+@pytest.mark.asyncio
+async def test_pair_redeem_route_scope(pmod, fake_main):
+    pairing = fake_main.state.pairing
+    code, _ = pairing.create_code()
+    out = await pmod.pair_redeem(SimpleNamespace(app=SimpleNamespace()),
+                                 pmod.RedeemRequest(code=code, device_name="Watch", scope="watch"))
+    assert out["scope"] == "watch"
+    assert pairing.token_scope(out["token"]) == "watch"
+    # unknown scope -> 400
+    code2, _ = pairing.create_code()
+    bad = await pmod.pair_redeem(SimpleNamespace(app=SimpleNamespace()),
+                                 pmod.RedeemRequest(code=code2, device_name="x", scope="root"))
+    assert bad.status_code == 400

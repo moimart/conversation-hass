@@ -132,8 +132,15 @@ class PairingManager:
         self._redeem_hits.append(now)
         return False
 
-    def redeem(self, code: str, device_name: str) -> str | None:
-        """Exchange a valid code for a new device token, or None if invalid."""
+    def redeem(self, code: str, device_name: str,
+               scope: str = "full") -> str | None:
+        """Exchange a valid code for a new device token, or None if invalid.
+
+        `scope` lets a device self-enroll least-privilege: a watch redeems with
+        scope="watch". Unknown scopes are rejected (None) — the caller has the
+        kiosk code either way, so client-chosen scope only ever *narrows*."""
+        if scope not in _SCOPE_PERMISSIONS:
+            return None
         self._purge_expired()
         code = (code or "").strip()
         if code not in self._codes:
@@ -143,10 +150,11 @@ class PairingManager:
         self._tokens[token] = {
             "device_name": (device_name or "device")[:64],
             "created_at": time.time(),
-            "scope": "full",
+            "scope": scope,
         }
         self._save()
-        log.info(f"pairing: issued token for device {self._tokens[token]['device_name']!r}")
+        log.info(f"pairing: issued {scope!r} token for device "
+                 f"{self._tokens[token]['device_name']!r}")
         return token
 
     def derive(self, parent_token: str | None, scope: str,
@@ -297,6 +305,7 @@ router = APIRouter()
 class RedeemRequest(BaseModel):
     code: str
     device_name: str = "device"
+    scope: str = "full"      # "watch" lets a watch self-enroll least-privilege
 
 
 def _json_error(payload: dict, status: int) -> Response:
@@ -349,15 +358,19 @@ async def pair_redeem(request: Request, req: RedeemRequest):
     state = _get_state(request.app)
     if state.pairing.throttled():
         return _json_error({"error": "too_many_attempts"}, 429)
-    token = state.pairing.redeem(req.code, req.device_name)
+    scope = (req.scope or "full").strip()
+    if scope not in _SCOPE_PERMISSIONS:
+        return _json_error({"error": "invalid_scope"}, 400)
+    token = state.pairing.redeem(req.code, req.device_name, scope)
     if token is None:
         return _json_error({"error": "invalid_or_expired"}, 400)
     await _push_pairing(state, {"type": "hide_pairing_code"})
     # gateway_url (optional): the public satellite-gateway base. Pairing is
-    # local-only, but the phone keeps this so it can reach PAL from anywhere
+    # local-only, but the device keeps this so it can reach PAL from anywhere
     # afterwards (it tries the local URL first, then falls back to this).
     return {
         "token": token,
+        "scope": scope,
         "server_name": os.environ.get("HAL_DEVICE_NAME", "HAL"),
         "gateway_url": os.environ.get("HAL_GATEWAY_URL", "").strip(),
     }
