@@ -93,6 +93,7 @@ private fun OrbScreen(speech: SpeechManager, onTap: () -> Unit) {
         ) {
             val colors = when (speech.phase) {
                 SpeechManager.Phase.LISTENING -> listOf(Color.Cyan, Color(0x3300008B))
+                SpeechManager.Phase.SENDING -> listOf(Color(0xFF9C27B0), Color(0x334B0082))
                 SpeechManager.Phase.DONE -> listOf(Color.Green, Color(0x33008080))
                 SpeechManager.Phase.ERROR -> listOf(Color(0xFFFF9800), Color(0x33FF0000))
                 else -> listOf(Color(0xFF26A69A), Color(0x33000080))
@@ -111,7 +112,11 @@ private fun OrbScreen(speech: SpeechManager, onTap: () -> Unit) {
                 modifier = Modifier.padding(top = 6.dp)
             )
             if (speech.transcript.isNotEmpty()) {
-                Text(speech.transcript, color = Color.White, fontSize = 13.sp,
+                Text("“${speech.transcript}”", color = Color.Gray, fontSize = 11.sp,
+                    textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+            }
+            if (speech.reply.isNotEmpty()) {
+                Text(speech.reply, color = Color.White, fontSize = 14.sp,
                     textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
             }
             if (speech.diagnostics.isNotEmpty()) {
@@ -125,6 +130,7 @@ private fun OrbScreen(speech: SpeechManager, onTap: () -> Unit) {
 private fun statusLine(phase: SpeechManager.Phase) = when (phase) {
     SpeechManager.Phase.IDLE -> "tap to speak"
     SpeechManager.Phase.LISTENING -> "listening…"
+    SpeechManager.Phase.SENDING -> "asking PAL…"
     SpeechManager.Phase.DONE -> "tap to speak again"
     SpeechManager.Phase.ERROR -> "error — tap to retry"
 }

@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -11,6 +13,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 
 /**
  * Wear OS PTT spike — answers the #1 unknown: does IN-APP live recognition
@@ -26,10 +30,11 @@ import androidx.lifecycle.AndroidViewModel
  */
 class SpeechManager(app: Application) : AndroidViewModel(app) {
 
-    enum class Phase { IDLE, LISTENING, DONE, ERROR }
+    enum class Phase { IDLE, LISTENING, SENDING, DONE, ERROR }
 
     var phase by mutableStateOf(Phase.IDLE)
     var transcript by mutableStateOf("")
+    var reply by mutableStateOf("")
     var diagnostics by mutableStateOf("")
     var usedOnDevice by mutableStateOf(false)
 
@@ -83,9 +88,35 @@ class SpeechManager(app: Application) : AndroidViewModel(app) {
 
     private fun settle(text: String?) {
         transcript = text?.trim().orEmpty()
-        phase = if (transcript.isEmpty()) Phase.ERROR else Phase.DONE
-        diagnostics = if (transcript.isEmpty()) "heard nothing"
-        else "engine: ${if (usedOnDevice) "ON-DEVICE" else "network/system"}"
+        if (transcript.isEmpty()) {
+            phase = Phase.ERROR
+            diagnostics = "heard nothing"
+            return
+        }
+        diagnostics = "engine: ${if (usedOnDevice) "ON-DEVICE" else "network/system"}"
+        sendToPAL(transcript)
+    }
+
+    private fun sendToPAL(text: String) {
+        phase = Phase.SENDING
+        reply = ""
+        viewModelScope.launch {
+            try {
+                val answer = PALClient.command(text)
+                reply = answer.ifEmpty { "(done — no reply text)" }
+                phase = Phase.DONE
+                vibrate(120)
+            } catch (e: Exception) {
+                phase = Phase.ERROR
+                diagnostics = "PAL: ${e.message}"
+                vibrate(60); vibrate(60)
+            }
+        }
+    }
+
+    private fun vibrate(ms: Long) {
+        val v = ctx.getSystemService(Vibrator::class.java) ?: return
+        v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
     }
 
     private val listener = object : RecognitionListener {
