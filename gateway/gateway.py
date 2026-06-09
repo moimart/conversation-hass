@@ -237,7 +237,10 @@ class Gateway:
             async with session.request(
                 request.method, target, headers=headers, data=body,
                 allow_redirects=False,
-                timeout=aiohttp.ClientTimeout(total=30),
+                # 100s: above /api/command wait_reply's 90s turn cap (the
+                # watch's synchronous reply channel), below Cloudflare's ~100s
+                # edge timeout. Still bounds a hung upstream.
+                timeout=aiohttp.ClientTimeout(total=100),
             ) as up:
                 out_headers = {k: v for k, v in up.headers.items()
                                if k.lower() not in _HOP_HEADERS}
