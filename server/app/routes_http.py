@@ -16,6 +16,10 @@ router = APIRouter()
 
 class CommandRequest(BaseModel):
     text: str
+    # Await the turn and include PAL's reply text in the HTTP response. For
+    # clients with no /ws/ui channel for async replies — i.e. the watch, whose
+    # scope deliberately excludes the satellite mirror.
+    wait_reply: bool = False
 
 
 class DisplayRequest(BaseModel):
@@ -272,6 +276,23 @@ async def post_command(request: Request, req: CommandRequest):
     conversation._pending_origin = origin
     conversation._command_buffer.append(text)
     conversation._wake_detected = True  # bypass wake word check in on_silence
+
+    if req.wait_reply:
+        # Synchronous mode: run the turn inline and hand back the reply text.
+        # The watch has no /ws/ui (scope excludes it), so this response IS its
+        # reply channel. The kiosk/satellite delivery inside the turn still
+        # happens exactly as in the async path.
+        try:
+            await asyncio.wait_for(conversation.on_silence(), timeout=90.0)
+        except asyncio.TimeoutError:
+            return {"status": "ok", "reply": "",
+                    "message": "Timed out waiting for the reply"}
+        reply = ""
+        for m in reversed(conversation.history):
+            if m.get("role") == "assistant":
+                reply = (m.get("content") or "").strip()
+                break
+        return {"status": "ok", "reply": reply}
 
     # Process immediately as a background task (like on_silence)
     asyncio.create_task(conversation.on_silence())
