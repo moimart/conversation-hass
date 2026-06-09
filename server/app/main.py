@@ -995,6 +995,27 @@ async def speak_to_satellites(state: AppState, text: str, audio_bytes: bytes | N
     return spoken
 
 
+async def push_announcement(state: AppState, text: str, kind: str = "speak") -> None:
+    """Push a spoken announcement to paired devices whose app is closed.
+
+    The single place speak/timer text reaches closed apps. Every force-speak
+    path (announce_everywhere, the MQTT `speak` entity, /api/speak,
+    speak_verbatim, OpenClaw proactive say) routes its push through here, so a
+    closed phone is notified no matter which path produced the speech — and
+    independent of whether the kiosk/TTS is available. Offline-targeting +
+    fire-and-forget live in PushService.dispatch. No-op until push is
+    configured; never raises."""
+    if getattr(state, "push", None) is None:
+        return
+    text = (text or "").strip()
+    if not text:
+        return
+    try:
+        await state.push.dispatch(state, kind, text, category=kind)
+    except Exception as e:
+        log.debug(f"push_announcement failed: {type(e).__name__}: {e}")
+
+
 async def announce_everywhere(state: AppState, text: str,
                               log_source: str | None = None,
                               alarm: bool = False) -> None:
@@ -1053,14 +1074,9 @@ async def announce_everywhere(state: AppState, text: str,
         except Exception:
             pass
     # Push to paired devices whose app is closed (speak + finished timers ride
-    # this path; timers get their own category/channel). No-op until push is
-    # configured; never let a push failure crash the announce.
-    if getattr(state, "push", None) is not None:
-        try:
-            kind = "timer" if (alarm or log_source == "timer") else "speak"
-            await state.push.dispatch(state, kind, text, category=kind)
-        except Exception as e:
-            log.debug(f"announce push failed: {type(e).__name__}: {e}")
+    # this path; timers get their own category/channel).
+    await push_announcement(state, text,
+                            kind="timer" if (alarm or log_source == "timer") else "speak")
 
 
 # === Route registration ======================================================

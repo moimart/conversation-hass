@@ -83,3 +83,29 @@ async def test_mqtt_speak_reaches_satellite(monkeypatch):
     types = [m["type"] for m in sent]
     assert "response" in types and "tts_play" in types
     assert state.satellite_tts["tS"]["audio"] == b"RIFF....WAVE"
+
+
+@pytest.mark.asyncio
+async def test_mqtt_speak_pushes_to_closed_apps(monkeypatch):
+    """Regression: a force-speak from HA/MQTT must also push to paired apps that
+    are closed. The push lives in push_announcement; `_mqtt_speak` used to skip
+    it entirely (only announce_everywhere pushed), so closed phones never got
+    the spoken text even though they got image notifications."""
+    import server.app.main as srv_main
+    from server.app.mqtt_callbacks import wire
+
+    monkeypatch.setattr(srv_main, "_fetch_ollama_context_length", AsyncMock(return_value=131072))
+
+    state = _state(_WS())
+    state.mqtt_bridge = _bridge()
+    state.push = SimpleNamespace(dispatch=AsyncMock())
+
+    await wire(state, state.mqtt_bridge)
+    await state.mqtt_bridge.on_speak("Dinner is ready")
+
+    # Pushed exactly once as a 'speak' with the verbatim text.
+    state.push.dispatch.assert_awaited_once()
+    args, kwargs = state.push.dispatch.await_args
+    assert args[1] == "speak"            # dispatch(state, kind, text, category=...)
+    assert args[2] == "Dinner is ready"
+    assert kwargs.get("category") == "speak"

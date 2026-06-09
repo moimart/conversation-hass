@@ -174,6 +174,11 @@ def build_local_tools(state) -> LocalToolsClient:
         if not text:
             return "Cannot speak empty text"
 
+        # Reaches paired apps that are closed (household-wide proactive
+        # announcement), regardless of kiosk/TTS availability.
+        from .main import push_announcement
+        await push_announcement(state, text)
+
         if not state.tts_engine:
             return "TTS engine not available"
 

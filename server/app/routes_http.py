@@ -692,12 +692,15 @@ async def post_speak(request: Request, req: SpeakRequest):
     Useful for announcements, notifications, or anything that should be
     vocalized exactly without going through Steve's persona.
     """
-    from .main import _get_state, broadcast_to_ui, speak_to_satellites
+    from .main import _get_state, broadcast_to_ui, speak_to_satellites, push_announcement
     state = _get_state(request.app)
     text = (req.text or "").strip()
 
     if not text:
         return {"status": "error", "message": "Empty text"}
+
+    # Reaches paired apps that are closed, regardless of kiosk/TTS availability.
+    await push_announcement(state, text)
 
     ws = state.audio_websocket
     if not ws:

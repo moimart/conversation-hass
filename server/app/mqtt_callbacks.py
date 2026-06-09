@@ -41,7 +41,14 @@ async def wire(state, bridge) -> None:
         await apply_theme(state, theme)
 
     async def _mqtt_speak(text: str):
-        if not text.strip() or not state.tts_engine:
+        text = (text or "").strip()
+        if not text:
+            return
+        # Reaches paired apps that are closed — independent of kiosk/TTS, so a
+        # force-speak from HA still notifies phones even if the RPi is offline.
+        from .main import push_announcement
+        await push_announcement(state, text)
+        if not state.tts_engine:
             return
         ws = state.audio_websocket
         if not ws:

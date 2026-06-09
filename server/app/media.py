@@ -547,6 +547,12 @@ async def _speak_proactively(
     if not text:
         return True  # media-only push
 
+    # Pure-text proactive say → also push to closed apps. A say carrying an
+    # image already pushes via the image path, so don't double-notify.
+    if not media_urls:
+        from .main import push_announcement
+        await push_announcement(state, text)
+
     # Option A: an attached audio file is the spoken output — show the text
     # but don't also synthesize TTS for it (avoids overlapping audio).
     if audio_media_played:
