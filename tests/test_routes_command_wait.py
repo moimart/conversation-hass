@@ -18,11 +18,13 @@ def _conversation(reply="The lights are off."):
         _pending_origin=None,
         _command_buffer=[],
         _wake_detected=False,
+        origin_at_dispatch="__unset__",
         history=[{"role": "user", "content": "earlier"},
                  {"role": "assistant", "content": "earlier reply"}],
     )
 
     async def on_silence():
+        conv.origin_at_dispatch = conv._pending_origin   # snapshot for assertions
         text = " ".join(conv._command_buffer)
         conv._command_buffer.clear()
         conv.history.append({"role": "user", "content": text})
@@ -30,6 +32,17 @@ def _conversation(reply="The lights are off."):
 
     conv.on_silence = on_silence
     return conv
+
+
+class _Pairing:
+    def __init__(self, tokens):
+        self._t = set(tokens)
+
+    def is_valid_token(self, t):
+        return t in self._t
+
+    def scope_allows(self, t, perm):
+        return True
 
 
 @pytest.fixture
@@ -72,6 +85,27 @@ async def test_default_stays_fire_and_forget(fake_main):
     assert out == {"status": "ok", "message": "Command received"}
     assert "reply" not in out
     await asyncio.sleep(0)   # let the background task run before teardown
+
+
+@pytest.mark.asyncio
+async def test_wait_reply_with_token_is_private(fake_main):
+    """A wait_reply turn from a valid token routes to that token (private —
+    suppresses kiosk/broadcast) even though it isn't a connected satellite."""
+    from server.app.routes_http import post_command, CommandRequest
+    fake_main.pairing = _Pairing({"watch-tok"})
+    req = SimpleNamespace(app=SimpleNamespace(),
+                          headers={"authorization": "Bearer watch-tok"},
+                          query_params={})
+    await post_command(req, CommandRequest(text="lights off", wait_reply=True))
+    assert fake_main.conversation.origin_at_dispatch == "watch-tok"
+
+
+@pytest.mark.asyncio
+async def test_wait_reply_without_token_stays_global(fake_main):
+    """No token (LAN debug) → origin None → global (kiosk) routing, unchanged."""
+    from server.app.routes_http import post_command, CommandRequest
+    await post_command(_req(), CommandRequest(text="lights off", wait_reply=True))
+    assert fake_main.conversation.origin_at_dispatch is None
 
 
 @pytest.mark.asyncio

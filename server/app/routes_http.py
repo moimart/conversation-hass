@@ -237,6 +237,14 @@ async def post_command(request: Request, req: CommandRequest):
     # whose device isn't connected as a satellite falls back to global (None).
     origin = token if (token_valid and token in state.satellite_ws) else None
 
+    # Private turn: a wait_reply caller collects PAL's reply itself over HTTP
+    # (the Apple/Pixel watch — no /ws/ui channel), so the turn must NOT echo to
+    # the kiosk or broadcast. Routing it to its own token suppresses all that
+    # (delivery to a non-connected token is a no-op), exactly like a satellite
+    # turn, while the reply still comes back via the HTTP response.
+    if req.wait_reply and token_valid:
+        origin = token
+
     conversation = state.conversation
     text = req.text.strip()
 
