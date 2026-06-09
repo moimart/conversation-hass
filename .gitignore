@@ -21,3 +21,4 @@ server/runtime/cloud_providers.json
 
 # Firebase Android config (restricted API key; placed locally, injected at build)
 mobile/android/app/google-services.json
+mobile/ios/App/PALWatch/DevConfig.swift
