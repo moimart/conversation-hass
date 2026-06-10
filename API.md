@@ -120,18 +120,22 @@ Full gateway config + rationale: [Satellite gateway](#satellite-gateway-port-876
 Pairing tokens carry a **scope** that bounds what they may do *server-side*
 (the gateway edge only checks validity, so scope is enforced per-route by the
 server). `full` — phones, and every token issued before scopes existed —
-is unrestricted. `watch` — the Apple Watch companion — may use **only**
-`POST /api/command`, `GET /api/pair/status`, and `POST /api/pair/push-register`;
-anything else returns `403` (or close code `4403` on `/ws/ui` — a scoped token
-is never downgraded to a tokenless mirror). Unknown scopes deny everything.
+is unrestricted. `watch` — the Apple Watch + Pixel Watch companions — may use
+**only** `POST /api/command`, `GET /api/pair/status`, and
+`POST /api/pair/push-register`; anything else returns `403` (or close code
+`4403` on `/ws/ui` — a scoped token is never downgraded to a tokenless
+mirror). Unknown scopes deny everything.
 
-A scoped token is minted with **`POST /api/pair/derive`** (LAN-only),
-authorized by an existing **full** token in the `Authorization: Bearer`
-header — the phone vouches for the watch, no code typing on the new device:
+A scoped token is obtained two ways, both LAN-only:
 
-```json
-{ "scope": "watch", "device_name": "Apple Watch" }
-```
+- **`POST /api/pair/redeem`** with `{"code", "device_name", "scope": "watch"}`
+  — the watch self-enrolls by typing the kiosk's 6-digit code (this is what
+  the shipped watch apps do). `scope` defaults to `full`; a client-chosen
+  scope can only *narrow*. Response echoes `scope` + the `gateway_url`.
+- **`POST /api/pair/derive`** with `{"scope": "watch", "device_name"}`,
+  authorized by an existing **full** token in the `Authorization: Bearer`
+  header — the phone vouches for the watch (no code typing). Children can't
+  derive further, and `full` is not derivable.
 
 → `{ "token": "...", "scope": "watch", "server_name": "...", "gateway_url": "..." }`
 (mirrors `/api/pair/redeem`, so the enrollee learns the gateway base for

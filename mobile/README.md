@@ -1,4 +1,4 @@
-# PAL companion app (iOS + Android + watchOS)
+# PAL companion app (iOS + Android + watchOS + Wear OS)
 
 A Capacitor app that pairs a phone as a **satellite** of PAL — not a mirror of
 the kiosk. You talk to PAL by **text** or **voice**; your turn runs in the shared
@@ -109,20 +109,29 @@ Design facts (each one was discovered the hard way — don't re-litigate):
   allowedInputMode:.plain)` presents the input directly and works from the
   SwiftUI lifecycle. watchOS then remembers the **last-used input mode**: once
   the user picks dictation (mic icon) it opens dictation-first thereafter.
-- **Auth = a scoped token.** The watch presents a `watch`-scope pairing token
-  (see `POST /api/pair/derive` in [`API.md`](../API.md)): allowed on
-  `/api/command`, `/api/pair/status`, `/api/pair/push-register`, 403/4403
-  everywhere else, independently revocable. Dev wiring keeps it in
-  `ios/App/PALWatch/DevConfig.swift` — **gitignored** (real secret); copy the
-  shape from `DevConfig.example.swift`. Planned replacement: phone-assisted
-  enrollment over WatchConnectivity into the watch Keychain.
-- **Replies are synchronous.** The watch scope deliberately excludes `/ws/ui`,
-  so it sends `wait_reply: true` and PAL's reply comes back in the same HTTP
-  response (server caps the turn at 90s; the gateway proxy timeout is 100s to
-  accommodate this).
-- **It talks to the gateway base even at home** — exercises the real
-  away-from-home path and avoids an ATS cleartext exception in the generated
-  Info.plist.
+- **Auth = a self-enrolled scoped token.** First launch shows `EnrollView`:
+  enter PAL's LAN URL → *Show code on kiosk* (`POST /api/pair/request`) → type
+  the 6-digit code → *Pair* (`POST /api/pair/redeem` with `scope: "watch"`).
+  The `watch`-scope token + the gateway base PAL returns are persisted in
+  `ConfigStore` (UserDefaults; Keychain hardening is a follow-up). The token is
+  allowed on `/api/command`, `/api/pair/status`, `/api/pair/push-register`,
+  403/4403 everywhere else, independently revocable. Enrollment hits the LAN
+  over cleartext (pairing is LAN-only by design), so the target uses an
+  **explicit `Info.plist`** (`GENERATE_INFOPLIST_FILE=NO`) carrying
+  `NSAppTransportSecurity → NSAllowsLocalNetworking`. Runtime uses the HTTPS
+  gateway.
+- **Replies are synchronous + private.** The watch scope excludes `/ws/ui`, so
+  it sends `wait_reply: true` and PAL's reply returns in the same HTTP response
+  (server caps the turn at 90s; gateway proxy timeout 100s). A `wait_reply`
+  turn routes to its own token, so the **kiosk stays quiet** — like a phone
+  satellite.
+- **Push haptics — free via iPhone mirroring.** The iPhone already has PAL
+  APNs push; watchOS mirrors its notifications to the wrist when the iPhone is
+  locked, so finished timers/announcements buzz the Ultra with no watch code.
+  (Independence from iphone-lock would need native watch APNs — parked.)
+- **Quick-launch = a WidgetKit complication** (`ios/App/PALComplication`, an
+  app-extension embedded in PALWatch): a mic-orb on the watch face that
+  launches the app. Add it via Edit → Complications → PAL.
 
 ### Build & run (watch)
 
@@ -154,9 +163,44 @@ First-time physical-deploy gotchas (in the order you'll hit them):
 4. `WKWatchOnly` and `WKRunsIndependentlyOfCompanionApp` are mutually
    exclusive — defining both fails the install.
 
-Still to come (tracked in the watch plan): WatchConnectivity enrollment,
-home/gateway failover, watch APNs push (timer haptics), complication +
-Action Button quick-launch.
+Parked (tracked in the watch plan): native watch APNs (push independent of
+iPhone-lock), home/gateway failover, optional TTS reply, Keychain hardening.
+
+## Pixel Watch app (Wear OS)
+
+A **native Kotlin/Compose** project at `wear/` (separate Gradle project, clear
+of `cap sync`; same `applicationId` `sh.martinez.pal.companion`). Same hero
+flow as the Apple Watch, but Wear is far easier to iterate: builds with the
+linux SDK, deploys by **adb over WiFi** (no Mac, no provisioning profiles).
+
+- **In-app live recognition works here.** Unlike watchOS, Android exposes
+  `android.speech.SpeechRecognizer`, so the orb stays on screen with a live
+  partial transcript (Path B). `isOnDeviceRecognitionAvailable` is currently
+  false on the Pixel Watch 3 → recognition is network-backed (audio leaves the
+  wrist); falls back to the `ACTION_RECOGNIZE_SPEECH` intent if no backend.
+- **Enrollment** mirrors the Apple Watch (`EnrollScreen`: type the kiosk code →
+  `redeem` scope=watch → persist in `ConfigStore`/SharedPreferences).
+  `usesCleartextTraffic` for the LAN redeem; runtime uses the HTTPS gateway.
+- **Push haptics — native FCM.** The watch registers its own FCM token
+  (`PushRegister` → `/api/pair/push-register`); finished timers buzz the wrist
+  while closed — no server change (it's "another android device" to PAL's
+  `FcmSender`). Channels `timers`/`announcements` match `build_fcm_message`;
+  manifest sets `NO_BRIDGING` so a paired Android phone's PAL notification
+  doesn't double up. Needs `google-services.json` in `wear/app/` (reuse the
+  phone app's — same package; gitignored).
+- **Quick-launch = a Tile** (`PttTileService`): one swipe from the face → a
+  "Talk to PAL" orb → tap launches straight into listening (the
+  `EXTRA_START_PTT` flag the activity arms on first composition).
+
+```bash
+cd wear
+./gradlew :app:assembleDebug
+adb connect <watch-ip>:<port>           # Wireless debugging → pair, then connect
+adb -s <watch-ip>:<port> install -r app/build/outputs/apk/debug/app-debug.apk
+```
+Wear gotchas: the watch must be on the **same subnet** as the dev box; mDNS may
+misreport its IP (trust the watch's own Settings IP, the *port* is right);
+wireless debugging auto-disables when idle and the port rotates.
 
 ## Layout
 ```
@@ -170,7 +214,9 @@ src/platform/          keep-awake/status-bar/splash/resume wrappers
 scripts/               sync-web + build (esbuild)
 www/                   build output (gitignored)
 android/ ios/          native projects (committed after `cap add`)
-ios/App/PALWatch/      native SwiftUI watch app (PTT; DevConfig.swift gitignored)
+ios/App/PALWatch/      native SwiftUI Apple Watch app (PTT + enrollment)
+ios/App/PALComplication/  watch-face complication (WidgetKit app-extension)
+wear/                  native Kotlin/Compose Pixel Watch app (separate gradle)
 ```
 
 ## Notes / follow-ups

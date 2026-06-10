@@ -64,7 +64,7 @@ Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_th
 | **Typed text**                    | `POST /api/command` (or write to HA's `text.<id>_command` entity, or publish to MQTT `hal/<id>/command`) — runs the full LLM round with tools. |
 | **Verbatim announcement**         | `POST /api/speak` (or `text.<id>_speak`, or MQTT `hal/<id>/speak`) — PAL says the exact words you wrote, no LLM in the loop. |
 | **Companion app (satellite)**     | Pair an iOS/Android phone. Text or PTT voice runs in the shared conversation, but that turn's transcript, orb, reply, and voice route **only to your phone** — plus it receives household broadcasts. See [`mobile/`](./mobile/README.md). |
-| **Apple Watch (wrist PTT)**       | Tap the orb on the watch, dictate, and PAL's reply lands back on your wrist — standalone (cellular) via the gateway, with a least-privilege `watch`-scope token. See [`mobile/`](./mobile/README.md#apple-watch-app-palwatch). |
+| **Watch (wrist PTT)**             | Apple Watch or Pixel Watch: tap the orb, dictate, and PAL's reply lands back on your wrist — standalone via the gateway, least-privilege `watch`-scope token, kiosk stays quiet. Timer haptics + quick-launch (Tile / complication). See [`mobile/`](./mobile/README.md#watch-apps). |
 | **Follow-up window**              | After a turn ends, you have ~10 s to reply without repeating the wake word.                                                          |
 | **Always-on mode**                | Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM.                                                           |
 
@@ -108,26 +108,33 @@ work from anywhere, while the AI server itself stays LAN-only:
 Put it behind any TLS ingress — a Cloudflare Tunnel hostname, a reverse proxy,
 or Tailscale Funnel. Allowlist details in [`API.md`](./API.md) and `gateway/`.
 
-### Apple Watch app (push-to-talk)
+### Watch apps (push-to-talk)
 
-A native SwiftUI watchOS app (`mobile/ios/App/PALWatch`) turns the wrist into
-PAL's fastest input: **tap the orb → dictate → PAL runs the command → the
-reply lands on your wrist** with a haptic. It's a **standalone** watch app —
-on a cellular watch it works with no phone present:
+Native watch apps for **Apple Watch** (`mobile/ios/App/PALWatch`, SwiftUI) and
+**Pixel Watch / Wear OS** (`mobile/wear`, Compose) turn the wrist into PAL's
+fastest input: **tap the orb → dictate → PAL runs the command → the reply
+lands on your wrist** with a haptic. Both are **standalone** — on a cellular
+watch they work with no phone present.
 
-- 🎙️ **On-device dictation** — the system dictation screen transcribes on the
-  watch; only the final *text* is sent, audio never leaves your wrist.
-- 🔐 **Scoped token** — the watch holds its own `watch`-scope pairing token
-  (minted by a full token via the LAN-only `POST /api/pair/derive`). It can
-  command PAL, probe its validity, and register for push — *nothing else*
-  (no live mirror, no cloud override, no admin) — and it's revocable on its
-  own without touching the phone.
-- 🌍 **Works anywhere** — it talks to the satellite gateway over HTTPS (the
-  same path as away-from-home phones) and uses `wait_reply` on
-  `POST /api/command`, so PAL's reply comes back in the same request — no
-  WebSocket needed.
+- 🎙️ **Dictation** — the watch transcribes and sends only the final *text*.
+  Apple Watch uses the system dictation screen (watchOS has no in-app
+  recognizer); the Pixel does in-app live recognition (orb-as-mic).
+- 🔐 **Least-privilege, self-enrolled** — each watch types the kiosk's 6-digit
+  code and redeems a `watch`-scope token (`POST /api/pair/redeem`, scope
+  `watch`), persisted on the watch. That token may only command PAL, probe its
+  validity, and register for push — *nothing else* (no live mirror, no cloud
+  override, no admin) — and revokes on its own without touching the phone.
+- 🌍 **Works anywhere** — talks to the satellite gateway over HTTPS and uses
+  `wait_reply` on `POST /api/command`, so PAL's reply returns in the same
+  request (no WebSocket). The turn is **private** — the kiosk stays quiet,
+  exactly like a phone satellite.
+- ⏲️ **Push haptics** — finished timers/announcements buzz the wrist while the
+  app is closed: the Pixel registers its own FCM token; the Apple Watch mirrors
+  the iPhone's PAL notifications.
+- ⚡ **Quick-launch** — a Pixel **Tile** (swipe → tap → listening) and an Apple
+  Watch **complication** (tap the face → PAL).
 
-Build & deploy notes (plus the watchOS gotchas): [`mobile/README.md`](./mobile/README.md).
+Build & deploy notes (plus the platform gotchas): [`mobile/README.md`](./mobile/README.md).
 
 ### Push notifications (when the app is closed)
 

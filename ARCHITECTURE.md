@@ -422,18 +422,35 @@ token mints a scoped child via the LAN-only `POST /api/pair/derive` — the
 phone-vouches-for-the-watch enrollment primitive; children can't chain,
 `full` isn't derivable, and each child revokes independently.
 
-### Apple Watch (PALWatch)
+### Watch apps (Apple Watch + Pixel Watch)
 
-A **native SwiftUI** watch app (`mobile/ios/App/PALWatch`) — watchOS has no
-WebView, so none of the Capacitor stack applies. It's standalone
-(`WKWatchOnly`; phone-free on a cellular watch) and intentionally minimal:
-**system dictation** (watchOS ships no Speech framework, so an in-app
-recognizer is impossible — only the final text ever leaves the watch) →
-`POST /api/command` with `wait_reply: true` over the **gateway HTTPS base**
-→ PAL's reply in the same HTTP response + a wrist haptic. `wait_reply`
-exists precisely because the watch scope has no `/ws/ui` reply channel; the
-gateway's proxy timeout is 100 s to cover the turn's 90 s cap. Build/deploy
-gotchas live in `mobile/README.md`.
+Two **native** standalone watch apps — `mobile/ios/App/PALWatch` (SwiftUI) and
+`mobile/wear` (Kotlin/Compose, a separate Gradle project). No Capacitor/WebView
+on either platform. Shared flow: **dictation → `POST /api/command`
+(`wait_reply: true`) over the gateway HTTPS base → PAL's reply in the same HTTP
+response + a wrist haptic.** `wait_reply` exists because the `watch` scope has
+no `/ws/ui` reply channel; the gateway proxy timeout is 100 s to cover the
+turn's 90 s cap, and the turn routes to its own token so the **kiosk stays
+quiet** (like a satellite).
+
+- **Dictation:** Apple Watch uses the system dictation screen (watchOS ships no
+  Speech framework, so no in-app recognizer — audio leaves only as final text);
+  the Pixel does in-app live recognition (`SpeechRecognizer`, network-backed on
+  the Pixel Watch 3 today).
+- **Enrollment:** each watch self-enrolls by typing the kiosk's 6-digit code →
+  `POST /api/pair/redeem` with `scope: "watch"` (LAN-only, cleartext — hence
+  the iOS ATS exception / Wear `usesCleartextTraffic`), persisting the scoped
+  token on the watch.
+- **Push haptics:** the Pixel registers its own FCM token (`/api/pair/push-register`)
+  — "another android device" to `FcmSender`, no server change, `NO_BRIDGING` to
+  avoid doubling; the Apple Watch gets PAL pushes free via iPhone notification
+  mirroring.
+- **Quick-launch:** a Pixel **Tile** (swipe → tap → listening) and an Apple
+  Watch **complication** (`mobile/ios/App/PALComplication`, a WidgetKit
+  app-extension embedded in PALWatch).
+
+Build/deploy gotchas (watchOS portal registration + tunnel flakiness; Wear adb
+quirks) live in `mobile/README.md`.
 
 ---
 
@@ -640,7 +657,9 @@ conversation-hass/
 ├── mobile/                                         # PAL companion app (Capacitor; iOS + Android + watchOS)
 │   ├── src/                                        # boot.ts, config/, onboarding/, overlay/, platform/ (push.ts)
 │   ├── android/  ios/                              # native (FCM google-services.json; iOS NSE target)
-│   ├── ios/App/PALWatch/                           # native SwiftUI watch app (PTT; DevConfig.swift gitignored)
+│   ├── ios/App/PALWatch/                           # native SwiftUI Apple Watch app (PTT + enrollment)
+│   ├── ios/App/PALComplication/                    # watch-face complication (WidgetKit app-extension)
+│   ├── wear/                                       # native Kotlin/Compose Pixel Watch app (separate gradle)
 │   └── scripts/                                    # build.mjs + sync-web.mjs (copies rpi/web → www)
 │
 ├── desktop/                                        # Rust/GTK4 desktop command app
