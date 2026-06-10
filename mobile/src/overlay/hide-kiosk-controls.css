@@ -82,7 +82,7 @@ body.show-conversation-log .clog-title { font-size: 16px !important; }
    collide with the system clock at the top, and trim it so it doesn't dominate
    the phone (the kiosk clock is sized for a big panel). */
 #display-root .clock-display {
-    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 4px) !important;
+    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 14px) !important;
     left: 18px !important;
 }
 #display-root .clock-time { font-size: 42px !important; }
