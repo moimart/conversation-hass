@@ -13,7 +13,10 @@ export async function configurePlatform(): Promise<void> {
   // them, so it's not used here. iOS uses its own status-bar handling. Just
   // clear the top inset (no bar to clear) and keep the screen awake.
   void Capacitor;
-  document.documentElement.style.setProperty("--hal-inset-top", "0px");
+  // Fullscreen → no status bar, so the top controls (clock, activity-log,
+  // settings gear) would otherwise sit flush against the very top edge. Nudge
+  // them down a touch with a small synthetic top inset.
+  document.documentElement.style.setProperty("--hal-inset-top", "14px");
   try { await KeepAwake.keepAwake(); } catch { /* web */ }
 }
 

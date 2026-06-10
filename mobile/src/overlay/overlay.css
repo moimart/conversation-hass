@@ -80,6 +80,11 @@
 /* Conversation-log button — sits left of the gear. */
 .hal-log { right: 54px; }
 
+/* While the conversation-log view is open it has its own ✕ close button in the
+   top-right corner — hide the floating gear + log buttons so they don't sit on
+   top of (and tap-fight with) that ✕. */
+body.show-conversation-log .hal-gear { display: none; }
+
 .hal-sheet-backdrop {
     position: fixed;
     inset: 0;
