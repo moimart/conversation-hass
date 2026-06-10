@@ -56,16 +56,35 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) beginListening() }
 
+    private val notifPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* best-effort; push still registers regardless */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (ConfigStore.isPaired(this)) registerForPush()
         setContent {
             var paired by remember { mutableStateOf(ConfigStore.isPaired(this)) }
             if (paired) {
                 OrbScreen(speech, onTap = ::onOrbTap)
             } else {
-                EnrollScreen(defaultLan = "http://10.20.30.185:8765") { paired = true }
+                EnrollScreen(defaultLan = "http://10.20.30.185:8765") {
+                    paired = true
+                    registerForPush()
+                }
             }
         }
+    }
+
+    /** Create channels, ask for notifications, register the FCM token with PAL. */
+    private fun registerForPush() {
+        PushRegister.ensureChannels(this)
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        PushRegister.register(this)
     }
 
     private fun onOrbTap() {
