@@ -20,14 +20,22 @@ function webViewReportsTopInset(): boolean {
 
 export async function configurePlatform(): Promise<void> {
   try { await StatusBar.setStyle({ style: Style.Dark }); } catch { /* web */ }
-  // The system status bar stays visible in its OWN space; the WebView lays out
-  // BELOW it (overlay OFF). Full-bleed overlay rendered edge-to-edge on Pixel
-  // but on MIUI it became a dead black strip the app didn't use — turning
-  // overlay off makes the bar occupy its strip and the app take the rest. The
-  // bar uses the theme's dark statusBarColor; Style.Dark keeps the icons light.
-  try { await StatusBar.setOverlaysWebView({ overlay: false }); } catch { /* web */ }
-  // Not overlaying → the WebView already starts below the bar, no top inset.
-  document.documentElement.style.setProperty("--hal-inset-top", "0px");
+  // Game-style full-bleed: the WebView fills the WHOLE screen and the system
+  // status bar sits TRANSPARENT on top (icons float over the app, no opaque
+  // strip — the theme's statusBarColor is @transparent). The app pads its top
+  // content below the bar via --hal-inset-top so its own clock isn't under the
+  // system one.
+  try { await StatusBar.setOverlaysWebView({ overlay: true }); } catch { /* web */ }
+  if (!webViewReportsTopInset()) {
+    // env(safe-area-inset-top) is 0 here, so publish the real bar height
+    // (getInfo().height is already dp = CSS px) so the top-edge CSS can clear it.
+    try {
+      const { height, overlays } = await StatusBar.getInfo();
+      if (overlays && height > 0) {
+        document.documentElement.style.setProperty("--hal-inset-top", `${height}px`);
+      }
+    } catch { /* web */ }
+  }
   try { await KeepAwake.keepAwake(); } catch { /* web */ }
 }
 

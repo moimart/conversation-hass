@@ -20,8 +20,13 @@
              one that actually applies on targetSdk 35+ (edge-to-edge); the
              *Color items are defensive for older targets. -->
         <item name="android:windowBackground">@color/palWindowBg</item>
-        <item name="android:statusBarColor">@color/palWindowBg</item>
-        <item name="android:navigationBarColor">@color/palWindowBg</item>
+        <!-- Transparent system bars so the WebView fills the whole screen and
+             the icons float on top (game-style), instead of MIUI painting an
+             opaque dark strip. windowBackground stays dark so any uncovered
+             pixel is dark, never the white-letterbox bug. -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 
 
