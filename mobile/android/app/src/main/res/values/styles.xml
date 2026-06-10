@@ -20,13 +20,12 @@
              one that actually applies on targetSdk 35+ (edge-to-edge); the
              *Color items are defensive for older targets. -->
         <item name="android:windowBackground">@color/palWindowBg</item>
-        <!-- Transparent system bars so the WebView fills the whole screen and
-             the icons float on top (game-style), instead of MIUI painting an
-             opaque dark strip. windowBackground stays dark so any uncovered
-             pixel is dark, never the white-letterbox bug. -->
+        <!-- Fullscreen is owned natively (MainActivity immersive sticky). Keep
+             the bars transparent so nothing flashes a colored strip before the
+             native hide takes effect; windowBackground stays dark so uncovered
+             pixels are never the white-letterbox bug. -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 
 

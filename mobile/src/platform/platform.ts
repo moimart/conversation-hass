@@ -2,40 +2,18 @@
 // a plugin is unavailable) so the same code runs in a browser during dev.
 
 import { KeepAwake } from "@capacitor-community/keep-awake";
-import { StatusBar, Style } from "@capacitor/status-bar";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 
-/** Android WebView ≥ 140 maps system-bar insets into env(safe-area-inset-*);
- * older ones report 0 when there's no display cutout — e.g. the Pixel Tablet
- * on Android 14 ships WebView 120 — so the app chrome would collide with the
- * OS clock / battery icons. (140 is the same cutoff Capacitor's SystemBars
- * plugin uses.) iOS/web always report safe areas correctly via env(). */
-function webViewReportsTopInset(): boolean {
-  if (Capacitor.getPlatform() !== "android") return true;
-  const major = parseInt(/Chrome\/(\d+)/.exec(navigator.userAgent)?.[1] ?? "0", 10);
-  return major >= 140;
-}
-
 export async function configurePlatform(): Promise<void> {
-  try { await StatusBar.setStyle({ style: Style.Dark }); } catch { /* web */ }
-  // Game-style full-bleed: the WebView fills the WHOLE screen and the system
-  // status bar sits TRANSPARENT on top (icons float over the app, no opaque
-  // strip — the theme's statusBarColor is @transparent). The app pads its top
-  // content below the bar via --hal-inset-top so its own clock isn't under the
-  // system one.
-  try { await StatusBar.setOverlaysWebView({ overlay: true }); } catch { /* web */ }
-  if (!webViewReportsTopInset()) {
-    // env(safe-area-inset-top) is 0 here, so publish the real bar height
-    // (getInfo().height is already dp = CSS px) so the top-edge CSS can clear it.
-    try {
-      const { height, overlays } = await StatusBar.getInfo();
-      if (overlays && height > 0) {
-        document.documentElement.style.setProperty("--hal-inset-top", `${height}px`);
-      }
-    } catch { /* web */ }
-  }
+  // Fullscreen is owned NATIVELY (immersive sticky in MainActivity on Android,
+  // which hides BOTH system bars and draws into the cutout — like a game). The
+  // Capacitor status-bar plugin can only recolor/inset the bars, never remove
+  // them, so it's not used here. iOS uses its own status-bar handling. Just
+  // clear the top inset (no bar to clear) and keep the screen awake.
+  void Capacitor;
+  document.documentElement.style.setProperty("--hal-inset-top", "0px");
   try { await KeepAwake.keepAwake(); } catch { /* web */ }
 }
 
