@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0943B5DBF0345A75FD8FAF95 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA21238DF781256934B686CA /* Foundation.framework */; };
 		18F0240892DAB7A62597AD36 /* EnrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F400B844048D60FADBB71CCD /* EnrollView.swift */; };
 		19957089898BCAC6BD1B1CB8 /* PALClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 322ADCA3DA52CAF16F017F2D /* PALClient.swift */; };
 		2150636A706B70A2A880541D /* PALWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7336BB422165C50E2357CA3D /* PALWatchApp.swift */; };
@@ -24,12 +25,21 @@
 		6E9EF5EAA89054766FABEB97 /* NotificationServiceExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 61B182AEF6E390C5B5A1331E /* NotificationServiceExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		98886CF76B47338CE45B08C4 /* DevConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89BCB100620C0224DE95C9F2 /* DevConfig.swift */; };
 		A5790889B612C9971C5B98BF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73452A7586CE8D422F6A5182 /* ContentView.swift */; };
+		B2319E4F58DEAA5AD9A35BEF /* PALComplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91D4C0F4B4434768E8D2D957 /* PALComplication.swift */; };
 		C01E7EBB255ADBFE718C269A /* PairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8382A5F7276CF4088C1145 /* PairingClient.swift */; };
 		C117E658A64AC443F78B1317 /* SpeechManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1274699DFA9878E3842406D7 /* SpeechManager.swift */; };
 		EDD4AF27D8D2CF3D36428484 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA21238DF781256934B686CA /* Foundation.framework */; };
+		FD1D4C95CA84D22FCBA7B03D /* PALComplication.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B31F7B9F8BCF44385B3EACB5 /* PALComplication.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		77EAD3CE9381BD70ED24AC49 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2B5D15CFA98D0CE07AA88939;
+			remoteInfo = PALComplication;
+		};
 		D3EE7F5D2AA760A0144CE590 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
@@ -49,6 +59,17 @@
 				6E9EF5EAA89054766FABEB97 /* NotificationServiceExtension.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		71EF109FCA272CAF7CF5BC08 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				FD1D4C95CA84D22FCBA7B03D /* PALComplication.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -73,9 +94,12 @@
 		73452A7586CE8D422F6A5182 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		89BCB100620C0224DE95C9F2 /* DevConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevConfig.swift; sourceTree = "<group>"; };
 		8D86FC8E8CAEDF6B5A25E472 /* PALWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PALWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		91D4C0F4B4434768E8D2D957 /* PALComplication.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PALComplication.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		99ED08189603AF00484C1D50 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9F0D43D58B5F2E35BBCB2A82 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AD8382A5F7276CF4088C1145 /* PairingClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
+		B31F7B9F8BCF44385B3EACB5 /* PALComplication.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PALComplication.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D98F5FA55853680841571280 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		EA21238DF781256934B686CA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		F400B844048D60FADBB71CCD /* EnrollView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EnrollView.swift; sourceTree = "<group>"; };
@@ -87,6 +111,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A53C9E85AC0584EE54D79A4E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0943B5DBF0345A75FD8FAF95 /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -109,6 +141,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		01263FEFAF3BD2476D87F31C /* PALComplication */ = {
+			isa = PBXGroup;
+			children = (
+				91D4C0F4B4434768E8D2D957 /* PALComplication.swift */,
+				99ED08189603AF00484C1D50 /* Info.plist */,
+			);
+			name = PALComplication;
+			path = PALComplication;
+			sourceTree = "<group>";
+		};
 		32EE525579AFF568365AFD1B /* NotificationServiceExtension */ = {
 			isa = PBXGroup;
 			children = (
@@ -128,6 +170,7 @@
 				D318C0618F2BA6572A4C6B38 /* Frameworks */,
 				32EE525579AFF568365AFD1B /* NotificationServiceExtension */,
 				AD55659B5AD12891C5F571CB /* PALWatch */,
+				01263FEFAF3BD2476D87F31C /* PALComplication */,
 			);
 			sourceTree = "<group>";
 		};
@@ -137,6 +180,7 @@
 				504EC3041FED79650016851F /* App.app */,
 				61B182AEF6E390C5B5A1331E /* NotificationServiceExtension.appex */,
 				8D86FC8E8CAEDF6B5A25E472 /* PALWatch.app */,
+				B31F7B9F8BCF44385B3EACB5 /* PALComplication.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -201,6 +245,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		2B5D15CFA98D0CE07AA88939 /* PALComplication */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1E8735816A0DEAE481744722 /* Build configuration list for PBXNativeTarget "PALComplication" */;
+			buildPhases = (
+				DC3BCBAF7EF77AB26BA8FEAC /* Sources */,
+				A53C9E85AC0584EE54D79A4E /* Frameworks */,
+				65CD299DD9DC1582F8B65E60 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PALComplication;
+			productName = PALComplication;
+			productReference = B31F7B9F8BCF44385B3EACB5 /* PALComplication.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		504EC3031FED79650016851F /* App */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */;
@@ -247,10 +308,12 @@
 				D6077E47A1E41CA40AE88D94 /* Sources */,
 				BEC01D1C80252F5F36A17AE1 /* Frameworks */,
 				0D2581E87A03A4B7C8ABD066 /* Resources */,
+				71EF109FCA272CAF7CF5BC08 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				5108F7235503725E204E383A /* PBXTargetDependency */,
 			);
 			name = PALWatch;
 			productName = PALWatch;
@@ -292,6 +355,7 @@
 				504EC3031FED79650016851F /* App */,
 				7F0E1B124772A8748B1574AF /* NotificationServiceExtension */,
 				95858D8F9D881FE62C68EA25 /* PALWatch */,
+				2B5D15CFA98D0CE07AA88939 /* PALComplication */,
 			);
 		};
 /* End PBXProject section */
@@ -321,6 +385,13 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		65CD299DD9DC1582F8B65E60 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -358,6 +429,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DC3BCBAF7EF77AB26BA8FEAC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B2319E4F58DEAA5AD9A35BEF /* PALComplication.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -366,6 +445,12 @@
 			name = NotificationServiceExtension;
 			target = 7F0E1B124772A8748B1574AF /* NotificationServiceExtension */;
 			targetProxy = D3EE7F5D2AA760A0144CE590 /* PBXContainerItemProxy */;
+		};
+		5108F7235503725E204E383A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = PALComplication;
+			target = 2B5D15CFA98D0CE07AA88939 /* PALComplication */;
+			targetProxy = 77EAD3CE9381BD70ED24AC49 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -389,6 +474,64 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		15E516185F30831B7A89E634 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 39E4GQM8LC;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PALComplication/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PAL;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.martinez.pal.companion.watchkitapp.complication;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		32FCE93F40A4C32B41138E4D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 39E4GQM8LC;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PALComplication/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PAL;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.martinez.pal.companion.watchkitapp.complication;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
 		504EC3141FED79650016851F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
@@ -653,6 +796,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		1E8735816A0DEAE481744722 /* Build configuration list for PBXNativeTarget "PALComplication" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				32FCE93F40A4C32B41138E4D /* Release */,
+				15E516185F30831B7A89E634 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		2027C14BB3222DF47CCFE9FC /* Build configuration list for PBXNativeTarget "NotificationServiceExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
