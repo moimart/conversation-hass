@@ -32,6 +32,19 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".PttTileService"
+            android:exported="true"
+            android:label="PAL"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/tile_preview" />
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

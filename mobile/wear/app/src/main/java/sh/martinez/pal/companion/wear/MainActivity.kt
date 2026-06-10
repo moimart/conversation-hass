@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.wear.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,8 @@ import androidx.compose.ui.unit.sp
  * backend exists. The diagnostics line is the spike verdict.
  */
 class MainActivity : ComponentActivity() {
+
+    companion object { const val EXTRA_START_PTT = "start_ptt" }
 
     private val speech: SpeechManager by viewModels()
 
@@ -63,9 +66,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (ConfigStore.isPaired(this)) registerForPush()
+        // Launched from the Tile/complication → arm PTT immediately (once).
+        val autoPtt = intent?.getStringExtra(EXTRA_START_PTT) == "1"
         setContent {
             var paired by remember { mutableStateOf(ConfigStore.isPaired(this)) }
             if (paired) {
+                LaunchedEffect(Unit) { if (autoPtt) onOrbTap() }
                 OrbScreen(speech, onTap = ::onOrbTap)
             } else {
                 EnrollScreen(defaultLan = "http://10.20.30.185:8765") {
