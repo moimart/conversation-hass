@@ -30,6 +30,7 @@
 		B2319E4F58DEAA5AD9A35BEF /* PALComplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91D4C0F4B4434768E8D2D957 /* PALComplication.swift */; };
 		C01E7EBB255ADBFE718C269A /* PairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8382A5F7276CF4088C1145 /* PairingClient.swift */; };
 		C117E658A64AC443F78B1317 /* SpeechManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1274699DFA9878E3842406D7 /* SpeechManager.swift */; };
+		DB2D87EBB8E77E081223C8D0 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 170CCD0CFC80A3BC56E41D23 /* MainViewController.swift */; };
 		EDD4AF27D8D2CF3D36428484 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA21238DF781256934B686CA /* Foundation.framework */; };
 		FD1D4C95CA84D22FCBA7B03D /* PALComplication.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B31F7B9F8BCF44385B3EACB5 /* PALComplication.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -80,6 +81,7 @@
 		074F4A18703FFAACFF6BE367 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0B586887DF7FDC930AD287DB /* ConfigStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigStore.swift; sourceTree = "<group>"; };
 		1274699DFA9878E3842406D7 /* SpeechManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpeechManager.swift; sourceTree = "<group>"; };
+		170CCD0CFC80A3BC56E41D23 /* MainViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		322ADCA3DA52CAF16F017F2D /* PALClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PALClient.swift; sourceTree = "<group>"; };
 		3F22BB3E657A001453BCB02F /* NotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
@@ -201,6 +203,7 @@
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 				C1653EBFF3C3E9E8F20FFE70 /* PalDiscoveryPlugin.swift */,
+				170CCD0CFC80A3BC56E41D23 /* MainViewController.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -418,6 +421,7 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				622FAB3C52AA110FDA68FA8C /* PalDiscoveryPlugin.swift in Sources */,
+				DB2D87EBB8E77E081223C8D0 /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -486,7 +490,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -515,7 +519,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -656,7 +660,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -680,7 +684,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/AppRelease.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -701,7 +705,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				ENABLE_PREVIEWS = YES;
@@ -733,7 +737,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = NotificationServiceExtension/Info.plist;
@@ -754,7 +758,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = NotificationServiceExtension/Info.plist;
@@ -773,7 +777,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				ENABLE_PREVIEWS = YES;
