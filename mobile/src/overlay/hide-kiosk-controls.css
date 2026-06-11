@@ -88,6 +88,9 @@ body.show-conversation-log .clog-title { font-size: 16px !important; }
 #display-root .clock-time { font-size: 42px !important; }
 #display-root .clock-date { font-size: 13px !important; }
 
+/* The command (what you said/typed) gets the same boxed treatment as PAL's
+   reply below — a theme-derived translucent scrim + blur so it reads clearly
+   over the orb, matching the response panel. */
 #display-root .transcript-container {
     position: fixed !important;
     left: 14px !important;
@@ -99,6 +102,21 @@ body.show-conversation-log .clog-title { font-size: 16px !important; }
     max-height: 16vh !important;
     overflow-y: auto !important;
     margin: 0 !important;
+    z-index: 7 !important;                        /* above the orb (6), like the reply */
+    background: rgba(8, 10, 14, 0.82) !important;
+    background: color-mix(in srgb, var(--bg) 86%, transparent) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-color: color-mix(in srgb, var(--text) 16%, transparent) !important;
+    border-radius: 14px !important;
+    padding: 12px 14px !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+#display-root .transcript-scroll {
+    font-size: 16px !important;
+    line-height: 1.5 !important;
 }
 /* PAL's reply panel: long replies used to climb up BEHIND the orb (the orb is
    re-anchored at z-index 6 above the kiosk's z-index-1 panel). Keep the panel
