@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +45,14 @@ fun EnrollScreen(defaultLan: String, onPaired: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
+
+    // Best-effort LAN autodiscovery: while the field still holds the untouched
+    // default, replace it with the ai-server found on the network.
+    LaunchedEffect(Unit) {
+        WearDiscovery.discover(ctx) { url ->
+            if (lan == defaultLan) { lan = url; status = "found PAL on your network" }
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().background(Color.Black)

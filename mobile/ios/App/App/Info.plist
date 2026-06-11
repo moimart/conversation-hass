@@ -29,6 +29,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>PAL finds your home server on the local network so you don't have to type its address.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_pal._tcp</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>HAL uses the microphone for voice commands.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

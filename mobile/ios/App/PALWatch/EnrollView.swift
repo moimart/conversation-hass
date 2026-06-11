@@ -4,6 +4,7 @@ import SwiftUI
 /// redeem it scoped=watch, persist. Pairing is LAN-only by design.
 struct EnrollView: View {
     let onPaired: () -> Void
+    private let defaultLan: String
 
     @State private var lan: String
     @State private var code = ""
@@ -12,6 +13,7 @@ struct EnrollView: View {
 
     init(defaultLan: String, onPaired: @escaping () -> Void) {
         self.onPaired = onPaired
+        self.defaultLan = defaultLan
         _lan = State(initialValue: defaultLan)
     }
 
@@ -45,6 +47,15 @@ struct EnrollView: View {
                 }
             }
             .padding(.horizontal, 8)
+        }
+        .onAppear {
+            // Best-effort LAN autodiscovery: while the field still holds the
+            // untouched default, replace it with the server found on the network.
+            Discovery.findServer { url in
+                guard let url, lan == defaultLan else { return }
+                lan = url
+                status = "found PAL on your network"
+            }
         }
     }
 
