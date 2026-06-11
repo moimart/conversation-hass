@@ -22,7 +22,9 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		622FAB3C52AA110FDA68FA8C /* PalDiscoveryPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1653EBFF3C3E9E8F20FFE70 /* PalDiscoveryPlugin.swift */; };
 		6E9EF5EAA89054766FABEB97 /* NotificationServiceExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 61B182AEF6E390C5B5A1331E /* NotificationServiceExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7A346DF616DD0755CB9C429B /* Discovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B7E005E27EFC4A968069780 /* Discovery.swift */; };
 		98886CF76B47338CE45B08C4 /* DevConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89BCB100620C0224DE95C9F2 /* DevConfig.swift */; };
 		A5790889B612C9971C5B98BF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73452A7586CE8D422F6A5182 /* ContentView.swift */; };
 		B2319E4F58DEAA5AD9A35BEF /* PALComplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91D4C0F4B4434768E8D2D957 /* PALComplication.swift */; };
@@ -97,9 +99,11 @@
 		91D4C0F4B4434768E8D2D957 /* PALComplication.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PALComplication.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		99ED08189603AF00484C1D50 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9B7E005E27EFC4A968069780 /* Discovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Discovery.swift; sourceTree = "<group>"; };
 		9F0D43D58B5F2E35BBCB2A82 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AD8382A5F7276CF4088C1145 /* PairingClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
 		B31F7B9F8BCF44385B3EACB5 /* PALComplication.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PALComplication.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1653EBFF3C3E9E8F20FFE70 /* PalDiscoveryPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PalDiscoveryPlugin.swift; sourceTree = "<group>"; };
 		D98F5FA55853680841571280 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		EA21238DF781256934B686CA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		F400B844048D60FADBB71CCD /* EnrollView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EnrollView.swift; sourceTree = "<group>"; };
@@ -196,6 +200,7 @@
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				C1653EBFF3C3E9E8F20FFE70 /* PalDiscoveryPlugin.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -220,6 +225,7 @@
 				AD8382A5F7276CF4088C1145 /* PairingClient.swift */,
 				F400B844048D60FADBB71CCD /* EnrollView.swift */,
 				9F0D43D58B5F2E35BBCB2A82 /* Info.plist */,
+				9B7E005E27EFC4A968069780 /* Discovery.swift */,
 			);
 			name = PALWatch;
 			path = PALWatch;
@@ -411,6 +417,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				622FAB3C52AA110FDA68FA8C /* PalDiscoveryPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -426,6 +433,7 @@
 				4F102CBA62ED175313DC0089 /* ConfigStore.swift in Sources */,
 				C01E7EBB255ADBFE718C269A /* PairingClient.swift in Sources */,
 				18F0240892DAB7A62597AD36 /* EnrollView.swift in Sources */,
+				7A346DF616DD0755CB9C429B /* Discovery.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -478,7 +486,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -490,7 +498,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sh.martinez.pal.companion.watchkitapp.complication;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.martinez.pal.companion.watchkitapp.complications;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -507,7 +515,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -519,7 +527,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sh.martinez.pal.companion.watchkitapp.complication;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.martinez.pal.companion.watchkitapp.complications;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -648,7 +656,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -672,7 +680,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/AppRelease.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -693,7 +701,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				ENABLE_PREVIEWS = YES;
@@ -725,7 +733,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = NotificationServiceExtension/Info.plist;
@@ -746,7 +754,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = NotificationServiceExtension/Info.plist;
@@ -765,7 +773,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 39E4GQM8LC;
 				ENABLE_PREVIEWS = YES;
