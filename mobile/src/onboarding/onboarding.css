@@ -59,3 +59,19 @@
     cursor: pointer;
 }
 .hal-ob-err { color: #ff6b6b; font-size: 14px; min-height: 18px; }
+
+/* LAN autodiscovery: the "Searching…" line and, on a hit, a tappable chip that
+   fills the field with the discovered server. */
+.hal-ob-found { font-size: 14px; opacity: 0.7; min-height: 18px; }
+.hal-ob-found-chip {
+    width: 100%;
+    text-align: left;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(120, 162, 255, 0.45);
+    background: rgba(47, 109, 246, 0.12);
+    color: #cfe0ff;
+    font-size: 14px;
+    cursor: pointer;
+}
+.hal-ob-found-chip:active { background: rgba(47, 109, 246, 0.22); }

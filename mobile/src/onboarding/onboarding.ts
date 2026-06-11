@@ -4,6 +4,7 @@
 import { type HalConfig } from "../config/hal-config";
 import { DEFAULT_SERVER_BASE_URL, isDemoUrl } from "../config/demo-config";
 import { checkServer, redeemCode } from "./pairing";
+import { discoverServer } from "./discover";
 
 function deviceName(): string {
   const ua = navigator.userAgent;
@@ -32,11 +33,36 @@ export function runOnboarding(): Promise<HalConfig> {
         <input class="hal-ob-input" id="ob-url" type="url" inputmode="url"
                autocapitalize="off" autocorrect="off" spellcheck="false"
                value="${DEFAULT_SERVER_BASE_URL}" placeholder="http://10.20.30.185:8765" />
+        <div class="hal-ob-found" id="ob-found" hidden></div>
         <div class="hal-ob-err" id="ob-err"></div>
         <button class="hal-ob-btn" id="ob-next">Continue</button>`;
       const urlEl = card.querySelector<HTMLInputElement>("#ob-url")!;
       const errEl = card.querySelector<HTMLDivElement>("#ob-err")!;
+      const foundEl = card.querySelector<HTMLDivElement>("#ob-found")!;
       const nextEl = card.querySelector<HTMLButtonElement>("#ob-next")!;
+
+      // Best-effort LAN autodiscovery: while the user reads the screen, browse
+      // for the ai-server's mDNS advert and, IF the field is still the untouched
+      // default, prefill it + offer a one-tap "Found …" suggestion. Never clobber
+      // anything the user has started typing; silent no-op off-network/on web.
+      let userEdited = false;
+      urlEl.addEventListener("input", () => { userEdited = true; foundEl.hidden = true; });
+      foundEl.textContent = "Searching for PAL on your network…";
+      foundEl.hidden = false;
+      void discoverServer().then((found) => {
+        if (!found) { foundEl.hidden = true; return; }
+        const untouched = !userEdited && urlEl.value.trim() === DEFAULT_SERVER_BASE_URL;
+        if (untouched) urlEl.value = found.url;
+        foundEl.innerHTML = "";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "hal-ob-found-chip";
+        btn.textContent = `Found ${found.name} at ${found.url}`;
+        btn.addEventListener("click", () => { urlEl.value = found.url; userEdited = true; });
+        foundEl.appendChild(btn);
+        foundEl.hidden = false;
+      });
+
       nextEl.addEventListener("click", async () => {
         const raw = urlEl.value.trim().replace(/\/+$/, "");
         if (!/^https?:\/\//.test(raw)) { errEl.textContent = "Start with http:// or https://"; return; }
