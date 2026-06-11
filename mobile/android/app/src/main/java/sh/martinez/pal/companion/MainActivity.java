@@ -2,9 +2,9 @@ package sh.martinez.pal.companion;
 
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 
-import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -35,13 +35,24 @@ public class MainActivity extends BridgeActivity {
 
         // Capacitor insets the WebView below the status/cutout area, leaving the
         // window background visible there. Consume the system-bar + cutout
-        // insets so the WebView fills truly edge-to-edge; keep only a bottom
-        // pad for the on-screen keyboard.
+        // insets so the WebView fills truly edge-to-edge; for the on-screen
+        // keyboard, SHRINK the WebView (bottom margin) rather than pad it —
+        // padding a Chromium WebView doesn't reflow its layout viewport, so a
+        // `position:fixed; bottom:0` input stays hidden behind the keyboard.
+        // A real height change makes the WebView re-measure and the input rides
+        // up above the keyboard.
         final View web = getBridge().getWebView();
         if (web != null) {
             ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
-                Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-                v.setPadding(0, 0, 0, ime.bottom);
+                int imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+                ViewGroup.LayoutParams params = v.getLayoutParams();
+                if (params instanceof ViewGroup.MarginLayoutParams) {
+                    ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) params;
+                    if (mlp.bottomMargin != imeBottom) {
+                        mlp.bottomMargin = imeBottom;
+                        v.setLayoutParams(mlp);
+                    }
+                }
                 return WindowInsetsCompat.CONSUMED;
             });
             ViewCompat.requestApplyInsets(web);
