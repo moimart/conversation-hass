@@ -104,6 +104,22 @@ services:
     volumes:
       - go2rtc-data:/config
 
+  # mDNS advertiser so satellites auto-discover the ai-server on the LAN. Host-
+  # networked because the bridge-networked ai-server can't push multicast to the
+  # LAN. See server/mdns/. (Build target; GHCR compose pulls hal-mdns:latest.)
+  pal-mdns:
+    build:
+      context: ./server/mdns
+      dockerfile: Dockerfile
+    image: conversation-hass-pal-mdns:latest
+    container_name: hal-pal-mdns
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - HAL_DEVICE_NAME=${HAL_DEVICE_NAME:-HAL}
+      - PAL_MDNS_PORT=${PAL_MDNS_PORT:-8765}
+      - PAL_MDNS_VER=${PAL_MDNS_VER:-1}
+
   shodh-memory:
     image: varunshodh/shodh-memory:latest
     container_name: hal-shodh-memory

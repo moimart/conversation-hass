@@ -100,6 +100,20 @@ services:
     volumes:
       - go2rtc-data:/config
 
+  # mDNS advertiser so satellites (phone + watches) auto-discover the ai-server
+  # on the LAN and prefill its URL during onboarding. Host-networked because the
+  # bridge-networked ai-server can't push multicast to the LAN. See server/mdns/.
+  pal-mdns:
+    image: ghcr.io/moimart/conversation-hass/hal-mdns:latest
+    container_name: hal-pal-mdns
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - HAL_DEVICE_NAME=${HAL_DEVICE_NAME:-HAL}
+      - PAL_MDNS_PORT=${PAL_MDNS_PORT:-8765}
+      - PAL_MDNS_VER=${PAL_MDNS_VER:-1}
+      # PAL_MDNS_IP=  # optional override; auto-detects the LAN IP otherwise
+
   shodh-memory:
     image: varunshodh/shodh-memory:latest
     container_name: hal-shodh-memory
