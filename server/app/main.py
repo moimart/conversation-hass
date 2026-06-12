@@ -84,6 +84,10 @@ class AppState:
     model_options: list = field(default_factory=list)
     themes: object | None = None  # ThemeRegistry
     theme_scheduler_task: object | None = None
+    # Weather under the clock: last-pushed weather_update message (for dedupe +
+    # replay to (re)connecting clients) and the poller task.
+    current_weather: dict | None = None
+    weather_task: object | None = None
     mqtt_bridge: MQTTBridge | None = None
     tts_volume: float = 0.7  # cached, mirrors RPi state
     last_snapshot: bytes | None = None  # latest JPEG from the RPi
@@ -750,6 +754,11 @@ async def lifespan(app: FastAPI):
     else:
         state.theme_scheduler_task = None
 
+    # Weather under the clock — runs always; no-op (hidden) until a weather
+    # entity is configured and the toggle is on.
+    from . import weather as _weather
+    state.weather_task = asyncio.create_task(_weather.weather_poller(state))
+
     # Display auto-off loop — runs always. The poll itself is cheap; it
     # only acts when display_auto_off_seconds > 0.
     state.display_auto_off_task = asyncio.create_task(_display_auto_off_loop(state))
@@ -808,6 +817,8 @@ async def lifespan(app: FastAPI):
     # Shutdown
     if getattr(state, "theme_scheduler_task", None):
         state.theme_scheduler_task.cancel()
+    if getattr(state, "weather_task", None):
+        state.weather_task.cancel()
     if state.active_stream:
         await _stop_active_stream(state, notify_kiosk=False)
     if isinstance(state.ha_ws, HAWSClient):

@@ -118,6 +118,29 @@ def test_photo_frame_video_mode_coerced_from_env(tmp_path, monkeypatch):
     assert values["photo_frame_video_url"] == "http://nas/loop.mp4"
 
 
+def test_weather_keys_default_and_persist(tmp_path, monkeypatch):
+    monkeypatch.delenv("WEATHER_ENTITY", raising=False)
+    monkeypatch.delenv("WEATHER_ENABLED", raising=False)
+    cfg = RuntimeConfig(str(tmp_path / "config.json"))
+    values = cfg.load()
+    # Defaults: no entity, shown by default.
+    assert values["weather_entity"] == ""
+    assert values["weather_enabled"] is True
+    # Persist round-trip.
+    cfg.set("weather_entity", "weather.home")
+    cfg.set("weather_enabled", False)
+    cfg2 = RuntimeConfig(str(tmp_path / "config.json"))
+    reloaded = cfg2.load()
+    assert reloaded["weather_entity"] == "weather.home"
+    assert reloaded["weather_enabled"] is False
+
+
+def test_weather_enabled_coerced_from_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEATHER_ENABLED", "off")
+    cfg = RuntimeConfig(str(tmp_path / "config.json"))
+    assert cfg.load()["weather_enabled"] is False
+
+
 def test_photo_frame_show_clock_defaults_on(tmp_path, monkeypatch):
     # Default must be ON (clock shown during photo mode) when unset.
     monkeypatch.delenv("PHOTO_FRAME_SHOW_CLOCK", raising=False)

@@ -20,6 +20,13 @@
     <div class="clock-display" id="clock">
         <div class="clock-time" id="clock-time">--:--</div>
         <div class="clock-date" id="clock-date">---</div>
+        <!-- Weather under the clock. Hidden until the server pushes a
+             weather_update (no weather entity configured → stays hidden). -->
+        <div class="weather-display" id="weather" hidden>
+            <span class="weather-temp" id="weather-temp"></span>
+            <span class="weather-icon" id="weather-icon"></span>
+            <span class="weather-cond" id="weather-cond"></span>
+        </div>
     </div>
 
     <div id="app">

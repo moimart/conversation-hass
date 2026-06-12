@@ -765,6 +765,41 @@ body.ptt-active .eye-container {
     opacity: 0.75;
 }
 
+/* === Weather (under the clock) === */
+.weather-display {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.weather-display[hidden] { display: none; }
+.weather-temp {
+    /* Bigger than the date (14px), smaller than the time (56px). */
+    font-size: 30px;
+    font-weight: 600;
+    color: var(--text);
+    opacity: 0.92;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+.weather-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--accent);   /* icons use currentColor → follow the theme */
+}
+.weather-icon svg { width: 30px; height: 30px; display: block; }
+.weather-cond {
+    /* The condition word: small, after the icon. */
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    opacity: 0.75;
+    width: 100%;            /* drop to its own line under temp + icon */
+    margin-top: 2px;
+}
+
 /* === Theme picker === */
 .theme-picker {
     position: fixed;

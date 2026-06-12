@@ -87,6 +87,12 @@ body.show-conversation-log .clog-title { font-size: 16px !important; }
 }
 #display-root .clock-time { font-size: 42px !important; }
 #display-root .clock-date { font-size: 13px !important; }
+/* Weather scales down with the smaller mobile clock (it inherits the clock's
+   safe-area offset since it lives inside .clock-display). */
+#display-root .weather-display { margin-top: 6px !important; }
+#display-root .weather-temp { font-size: 22px !important; }
+#display-root .weather-icon svg { width: 22px !important; height: 22px !important; }
+#display-root .weather-cond { font-size: 12px !important; }
 
 /* The command (what you said/typed) gets the same boxed treatment as PAL's
    reply below — a theme-derived translucent scrim + blur so it reads clearly

@@ -476,6 +476,14 @@ async def ui_endpoint(websocket: WebSocket):
     except Exception:
         pass
 
+    # Weather under the clock shows on EVERY surface (kiosk + satellites), so
+    # replay the last weather_update to any freshly-connected client.
+    if state.current_weather:
+        try:
+            await websocket.send_json(state.current_weather)
+        except Exception:
+            pass
+
     # Satellites also get the household's ACTIVE visuals replayed (live stream /
     # snapshot / video / calendar). Mobile websockets flap (background, VPN,
     # cellular) — without this, a force action fired during a gap is lost.

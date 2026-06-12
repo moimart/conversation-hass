@@ -745,6 +745,9 @@
                 // never sent tts_play anyway (it's a device-targeted message).
                 if (window.HALSatelliteAudio) window.HALSatelliteAudio.play(msg.url, msg.mime);
                 break;
+            case "weather_update":
+                applyWeather(msg);
+                break;
             default:
                 console.log("Unknown message:", msg);
         }
@@ -1293,6 +1296,53 @@
         updateClock();
         setInterval(updateClock, 60000);
     }, msToNextMinute);
+
+    // --- Weather (under the clock) ---
+    // Inline SVGs keyed by icon name; stroke/fill use currentColor so they
+    // inherit the theme accent (.weather-icon color).
+    const WEATHER_ICONS = {
+        sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.4" y1="4.4" x2="6.2" y2="6.2"/><line x1="17.8" y1="17.8" x2="19.6" y2="19.6"/><line x1="4.4" y1="19.6" x2="6.2" y2="17.8"/><line x1="17.8" y1="6.2" x2="19.6" y2="4.4"/></svg>',
+        moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 10.2 4.2a6.2 6.2 0 0 0 9.8 10.3z"/></svg>',
+        partly: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1.5" x2="8" y2="3"/><line x1="1.5" y1="8" x2="3" y2="8"/><line x1="3.5" y1="3.5" x2="4.6" y2="4.6"/><line x1="12.5" y1="3.5" x2="11.4" y2="4.6"/><path d="M17.5 21H8a4 4 0 0 1-.5-7.97A5 5 0 0 1 17 14a3.5 3.5 0 0 1 .5 7z"/></svg>',
+        cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H7a4.5 4.5 0 0 1-.5-8.97A6 6 0 0 1 18 11a4 4 0 0 1-.5 8z"/></svg>',
+        rain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 14H7a4.5 4.5 0 0 1-.5-8.97A6 6 0 0 1 18 6a4 4 0 0 1-.5 8z"/><line x1="8" y1="18" x2="7" y2="21"/><line x1="12" y1="18" x2="11" y2="21"/><line x1="16" y1="18" x2="15" y2="21"/></svg>',
+        storm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 13H7a4.5 4.5 0 0 1-.5-8.97A6 6 0 0 1 18 5a4 4 0 0 1-.5 8z"/><polygon points="12,15 9.5,19 11.5,19 10,23 14.5,17.5 12.5,17.5 14,15" fill="currentColor" stroke="none"/></svg>',
+    };
+    // HA condition string → {icon key, human label}.
+    function weatherFor(condition) {
+        switch (String(condition || "").toLowerCase()) {
+            case "sunny": return { icon: "sun", label: "Sunny" };
+            case "clear-night": return { icon: "moon", label: "Clear" };
+            case "partlycloudy": return { icon: "partly", label: "Partly cloudy" };
+            case "cloudy": case "fog": case "windy": case "windy-variant": case "exceptional":
+                return { icon: "cloud", label: condition === "fog" ? "Fog" : "Cloudy" };
+            case "rainy": return { icon: "rain", label: "Rainy" };
+            case "pouring": return { icon: "rain", label: "Pouring" };
+            case "hail": return { icon: "rain", label: "Hail" };
+            case "snowy": return { icon: "rain", label: "Snowy" };
+            case "snowy-rainy": return { icon: "rain", label: "Sleet" };
+            case "lightning": case "lightning-rainy": return { icon: "storm", label: "Storm" };
+            default: {
+                const c = String(condition || "");
+                return { icon: "cloud", label: c ? c.charAt(0).toUpperCase() + c.slice(1) : "" };
+            }
+        }
+    }
+    function applyWeather(msg) {
+        const box = document.getElementById("weather");
+        if (!box) return;
+        if (!msg || msg.show === false) { box.hidden = true; return; }
+        const tempEl = document.getElementById("weather-temp");
+        const iconEl = document.getElementById("weather-icon");
+        const condEl = document.getElementById("weather-cond");
+        const w = weatherFor(msg.condition);
+        if (tempEl && msg.temp !== undefined && msg.temp !== null) {
+            tempEl.textContent = `${Math.round(Number(msg.temp))}${msg.unit || "°"}`;
+        }
+        if (iconEl) iconEl.innerHTML = WEATHER_ICONS[w.icon] || WEATHER_ICONS.cloud;
+        if (condEl) condEl.textContent = w.label;
+        box.hidden = false;
+    }
 
     // --- Init ---
     setVolume(0.7);

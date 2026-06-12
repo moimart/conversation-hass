@@ -237,6 +237,17 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
         parse=_switch_parse, serialize=_switch_serialize,
     ),
     ConfigEntity(
+        key="weather_entity", platform="text", name="Weather Entity",
+        icon="mdi:weather-partly-cloudy", extra={"mode": "text"},
+        serialize=lambda v: v or "",
+    ),
+    ConfigEntity(
+        key="weather_enabled", platform="switch", name="Show Weather",
+        icon="mdi:weather-cloudy-clock", default=True,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        parse=_switch_parse, serialize=_switch_serialize,
+    ),
+    ConfigEntity(
         key="display_auto_off_seconds", platform="number",
         name="Display Auto-off Seconds", icon="mdi:monitor-off", default=0,
         extra={"min": 0, "max": 7200, "step": 30, "unit_of_measurement": "s"},

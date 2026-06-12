@@ -1323,6 +1323,32 @@
     }
   ],
   [
+    "homeassistant/switch/hal-default/config_weather_enabled/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/weather_enabled/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:weather-cloudy-clock",
+      "name": "Show Weather",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/weather_enabled/state",
+      "unique_id": "hal-default_config_weather_enabled"
+    }
+  ],
+  [
     "homeassistant/switch/hal-default/display/config",
     {
       "availability": [
@@ -1593,6 +1619,31 @@
       "name": "Wake Word",
       "state_topic": "hal/hal-default/config/wake_word/state",
       "unique_id": "hal-default_config_wake_word"
+    }
+  ],
+  [
+    "homeassistant/text/hal-default/config_weather_entity/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/weather_entity/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:weather-partly-cloudy",
+      "mode": "text",
+      "name": "Weather Entity",
+      "state_topic": "hal/hal-default/config/weather_entity/state",
+      "unique_id": "hal-default_config_weather_entity"
     }
   ],
   [
