@@ -12,6 +12,7 @@ small JSON file under the runtime dir so they survive restarts.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -218,6 +219,27 @@ class PairingManager:
             return None
         entry = self._tokens.get(token)
         return entry.get("device_name") if entry else None
+
+    @staticmethod
+    def public_id(token: str | None) -> str | None:
+        """A stable, non-secret PUBLIC address for a device, derived from its
+        token: sha256(token)[:16]. Stable across restarts, collision-resistant,
+        and NOT reversible to the secret token — so it can be handed to other
+        clients (the intercom directory) as the call-routing address without
+        leaking the bearer credential."""
+        if not token:
+            return None
+        return hashlib.sha256(token.encode()).hexdigest()[:16]
+
+    def token_for_public_id(self, public_id: str | None) -> str | None:
+        """Resolve a public_id back to the secret token (server-side only), or
+        None. O(devices) — fine for a household."""
+        if not public_id:
+            return None
+        for token in self._tokens:
+            if hashlib.sha256(token.encode()).hexdigest()[:16] == public_id:
+                return token
+        return None
 
     def revoke(self, token: str) -> bool:
         if token in self._tokens:

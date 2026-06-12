@@ -843,6 +843,20 @@ async def list_themes_endpoint(request: Request):
     return {"themes": [t.to_public() for t in state.themes.themes]}
 
 
+@router.get("/api/intercom/devices")
+async def get_intercom_devices(request: Request):
+    """The intercom directory: callable devices (excluding the requester) by
+    their non-secret public id, with online + can_video. Caller must be a
+    connected satellite; never exposes a token."""
+    from .main import _get_state
+    from . import intercom
+    state = _get_state(request.app)
+    token = _connected_satellite_token(state, request)
+    if token is None:
+        return Response(status_code=401)
+    return {"devices": intercom.directory(state, exclude_token=token)}
+
+
 @router.get("/themes/{name}/{filename}")
 async def get_theme_file(request: Request, name: str, filename: str):
     """Serve a theme's static asset (theme.css or effect.js)."""

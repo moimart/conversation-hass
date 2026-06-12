@@ -535,6 +535,11 @@ async def ui_endpoint(websocket: WebSocket):
                         asyncio.create_task(_forward_kiosk_candidate(
                             state, session_id, msg, reply_ws=websocket,
                         ))
+            elif mtype and mtype.startswith("intercom_") and is_satellite:
+                # 1:1 intercom call signaling — the server is a dumb relay between
+                # the two paired participants (see intercom.py). Media is P2P.
+                from . import intercom
+                await intercom.handle_signal(state, token, msg)
     except WebSocketDisconnect:
         pass
     finally:
@@ -547,6 +552,12 @@ async def ui_endpoint(websocket: WebSocket):
             if state.satellite_ws.get(tok) is websocket:
                 state.satellite_ws.pop(tok, None)
             state.satellite_tts.pop(tok, None)
+            # Tear down any live call this device was in and hang up its peer.
+            try:
+                from . import intercom
+                await intercom.end_sessions_for_token(state, tok, reason="disconnect")
+            except Exception as e:
+                log.debug(f"intercom cleanup failed: {e}")
             if tok in state.satellite_photo_sessions:
                 try:
                     from .photo_frame import stop_photo_frame_for_device

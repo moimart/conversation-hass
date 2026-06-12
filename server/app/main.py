@@ -75,6 +75,7 @@ class AppState:
     satellite_ws_tokens: dict = field(default_factory=dict)   # WebSocket -> token (O(1) cleanup)
     satellite_tts: dict = field(default_factory=dict)         # token -> {audio, mime, ts, seq}
     satellite_photo_sessions: dict = field(default_factory=dict)  # token -> PhotoFrameSession
+    intercom_sessions: dict = field(default_factory=dict)     # session_id -> {caller, callee, state, ...}
     current_theme: str = "dark"
     theme_day: str = "birch"
     theme_night: str = "dark"

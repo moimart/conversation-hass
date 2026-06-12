@@ -74,6 +74,9 @@ _ALLOWLIST = [
     ("GET",  r"^/api/cloud_llm$",                        True,  False),
     ("POST", r"^/api/cloud_llm$",                        True,  False),
     ("POST", r"^/api/pair/push-register$",              True,  False),
+    # Intercom directory (token-gated). Call SIGNALING rides the already-proxied
+    # /ws/ui socket; media is peer-to-peer (TURN), never through the gateway.
+    ("GET",  r"^/api/intercom/devices$",                True,  False),
     # Push image: signature-gated by the SERVER (short-lived HMAC), so the
     # gateway exposes it tokenless — the .jpg anchor keeps the surface tight.
     ("GET",  r"^/api/push/image/\d+\.jpg$",             False, False),
