@@ -822,6 +822,102 @@ body.photo-frame-active .weather-icon {
         drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
 }
 
+/* === Intercom (1:1 A/V calls) === */
+/* Audio-wave on the orb: drawn when the remote party sends no video. Sits over
+   the iris but under the glass bezel reflection. */
+#intercom-wave {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 86%;
+    height: 86%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    z-index: 2;
+}
+#intercom-wave.visible { opacity: 1; }
+
+#intercom-ui {
+    position: fixed;
+    inset: 0;
+    z-index: 2147481800;          /* above the orb + input bar, below onboarding */
+    pointer-events: none;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    font-family: 'Inter', system-ui, sans-serif;
+}
+#intercom-ui > * { pointer-events: auto; }
+
+/* Incoming-call card (centered). */
+.ic-ring {
+    margin: auto;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+    border-radius: 22px;
+    padding: 28px 32px;
+    text-align: center;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
+.ic-ring-name { font-size: 26px; font-weight: 700; color: var(--text); }
+.ic-ring-sub { font-size: 14px; color: var(--accent); margin-top: 4px; letter-spacing: 0.4px; }
+.ic-ring-actions { display: flex; gap: 36px; justify-content: center; margin-top: 26px; }
+
+/* In-call control bar (bottom). */
+.ic-bar {
+    margin: 0 0 calc(24px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+.ic-peer {
+    font-size: 15px;
+    color: var(--text);
+    opacity: 0.85;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    padding: 4px 14px;
+    border-radius: 14px;
+}
+.ic-controls { display: flex; gap: 18px; align-items: center; }
+
+.ic-btn {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    background: rgba(255, 255, 255, 0.14);
+    transition: transform 0.08s, background 0.15s;
+}
+.ic-btn:active { transform: scale(0.92); }
+.ic-btn.off { background: rgba(255, 255, 255, 0.32); }
+.ic-accept { background: #2ecc71; }
+.ic-decline, .ic-end { background: #e74c3c; }
+.ic-mic, .ic-cam { width: 50px; height: 50px; }
+
+.ic-toast {
+    margin: auto;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+    border-radius: 16px;
+    padding: 16px 24px;
+    color: var(--text);
+    font-size: 16px;
+}
+
 /* === Theme picker === */
 .theme-picker {
     position: fixed;

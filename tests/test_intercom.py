@@ -232,6 +232,23 @@ async def test_disconnect_ends_call_and_hangs_up_peer(sent):
     assert "s1" not in state.intercom_sessions
 
 
+def test_resolve_target():
+    state = _state(online=("A", "B"))
+    # exact name (case-insensitive), excluding the caller
+    assert intercom.resolve_target(state, "Bob phone", exclude_token="A")[0] == pid("B")
+    assert intercom.resolve_target(state, "bob phone", exclude_token="A")[0] == pid("B")
+    # "the " prefix + substring
+    assert intercom.resolve_target(state, "the bob", exclude_token="A")[0] == pid("B")
+    # kiosk by generic word + by name
+    assert intercom.resolve_target(state, "kiosk", exclude_token="A")[0] == intercom.KIOSK_ID
+    # caller excluded, watch excluded → unknown
+    assert intercom.resolve_target(state, "Alice phone", exclude_token="A") is None
+    assert intercom.resolve_target(state, "Carol watch", exclude_token="A") is None
+    # online flag flows through
+    assert intercom.resolve_target(state, "Bob phone", exclude_token="A")[2] is True
+    assert intercom.resolve_target(state, "nobody", exclude_token="A") is None
+
+
 @pytest.mark.asyncio
 async def test_signaling_for_unknown_session_is_noop(sent):
     state = _state(online=("A", "B"))

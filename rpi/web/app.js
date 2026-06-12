@@ -639,6 +639,19 @@
                 // stream_start that opens the session already preempts.
                 handleSignal(msg);
                 break;
+            case "intercom_call_start":      // server → this (caller) device: begin a call
+            case "intercom_invite":          // incoming call → ring
+            case "intercom_ringing":
+            case "intercom_accept":
+            case "intercom_decline":
+            case "intercom_busy":
+            case "intercom_unavailable":
+            case "intercom_offer":
+            case "intercom_answer":
+            case "intercom_candidate":
+            case "intercom_hangup":
+                handleIntercom(msg);
+                break;
             case "play_video":
                 withPhotoFramePreempt(() => withCalendarPreempt(() => playVideo(msg)));
                 break;
@@ -1350,6 +1363,356 @@
         box.hidden = false;
         document.body.classList.add("hal-weather-shown");
     }
+
+    // ====================================================================
+    // Intercom: 1:1 A/V calls between paired devices. The server (intercom.py)
+    // only relays signaling; media is peer-to-peer WebRTC. The remote party
+    // renders on the orb — their video if they send it, else an audio-wave.
+    // Reuses the #eye-stream <video>/.stream-active path from the live stream.
+    // ====================================================================
+    let icPC = null;            // RTCPeerConnection
+    let icSession = null;       // current session_id
+    let icRole = null;          // "caller" | "callee"
+    let icLocal = null;         // local MediaStream (mic + maybe cam)
+    let icRemote = null;        // remote MediaStream
+    let icIce = [];             // ICE servers handed down by the server
+    let icPeerName = "";
+    let icWantVideo = true;     // do WE intend to send video (have a camera & it's on)
+    let icMicMuted = false;
+    let icWaveRAF = null, icWaveCtx = null, icAnalyser = null, icAudioCtx = null;
+
+    function icSend(obj) {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+    }
+    function icRandId() {
+        return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+    }
+
+    async function icGetMedia() {
+        // Try audio + front camera; fall back to audio-only if there's no camera.
+        try {
+            return await navigator.mediaDevices.getUserMedia({
+                audio: true, video: { facingMode: "user" },
+            });
+        } catch (e) {
+            icWantVideo = false;
+            return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        }
+    }
+
+    function icBuildPC() {
+        const pc = new RTCPeerConnection(icIce.length ? { iceServers: icIce } : undefined);
+        icPC = pc;
+        // Send our tracks; ensure we can RECEIVE video even with no camera.
+        let haveVideo = false;
+        if (icLocal) {
+            icLocal.getTracks().forEach((t) => {
+                pc.addTrack(t, icLocal);
+                if (t.kind === "video") haveVideo = true;
+            });
+        }
+        if (!haveVideo) pc.addTransceiver("video", { direction: "recvonly" });
+        icRemote = new MediaStream();
+        pc.ontrack = (ev) => {
+            icRemote.addTrack(ev.track);
+            icRenderRemote();
+        };
+        pc.onicecandidate = (ev) => {
+            if (!ev.candidate) return;
+            icSend({ type: "intercom_candidate", session_id: icSession,
+                candidate: ev.candidate.candidate, sdpMid: ev.candidate.sdpMid,
+                sdpMLineIndex: ev.candidate.sdpMLineIndex });
+        };
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === "connected") icSetCallClass("in-call");
+            else if (pc.connectionState === "failed" || pc.connectionState === "closed") icHangup("failed");
+        };
+        return pc;
+    }
+
+    function icRenderRemote() {
+        const video = document.getElementById("eye-stream");
+        const container = document.querySelector(".eye-container");
+        if (!video || !container || !icRemote) return;
+        const hasVideo = icRemote.getVideoTracks().some(
+            (t) => t.readyState === "live" && t.enabled);
+        if (hasVideo) {
+            icStopWave();
+            video.srcObject = icRemote;
+            video.muted = false;          // we want to HEAR the remote party
+            video.play().catch(() => {});
+            container.classList.add("camera-active", "stream-active");
+        } else {
+            // No remote video → show the audio-wave driven by the remote audio.
+            container.classList.remove("stream-active");
+            if (!cameraTimer) container.classList.remove("camera-active");
+            icStartWave();
+            // Still need to HEAR the remote audio (no <video> sink shown): pipe
+            // the remote stream through a hidden, unmuted audio element.
+            icEnsureAudioSink();
+        }
+    }
+
+    let icAudioSink = null;
+    function icEnsureAudioSink() {
+        if (!icAudioSink) {
+            icAudioSink = document.createElement("audio");
+            icAudioSink.autoplay = true;
+            icAudioSink.style.display = "none";
+            document.body.appendChild(icAudioSink);
+        }
+        if (icAudioSink.srcObject !== icRemote) icAudioSink.srcObject = icRemote;
+        icAudioSink.play().catch(() => {});
+    }
+
+    // --- audio-wave on the orb (remote voice, when there's no remote video) ---
+    function icStartWave() {
+        if (!icRemote || icWaveRAF) return;
+        let canvas = document.getElementById("intercom-wave");
+        if (!canvas) {
+            canvas = document.createElement("canvas");
+            canvas.id = "intercom-wave";
+            const container = document.querySelector(".eye-container");
+            (container || document.body).appendChild(canvas);
+        }
+        canvas.width = 320; canvas.height = 320;
+        icWaveCtx = canvas.getContext("2d");
+        try {
+            icAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const src = icAudioCtx.createMediaStreamSource(icRemote);
+            icAnalyser = icAudioCtx.createAnalyser();
+            icAnalyser.fftSize = 1024;
+            src.connect(icAnalyser);   // analyser only — do NOT connect to destination
+        } catch (e) { /* no analyser → static ring */ }
+        canvas.classList.add("visible");
+        const buf = icAnalyser ? new Uint8Array(icAnalyser.fftSize) : null;
+        const draw = () => {
+            icWaveRAF = requestAnimationFrame(draw);
+            const c = icWaveCtx, w = canvas.width, h = canvas.height;
+            c.clearRect(0, 0, w, h);
+            const cx = w / 2, cy = h / 2, base = w * 0.32;
+            let amp = 0;
+            if (icAnalyser && buf) {
+                icAnalyser.getByteTimeDomainData(buf);
+                let sum = 0;
+                for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+                amp = Math.sqrt(sum / buf.length);   // RMS 0..1
+            }
+            const accent = getComputedStyle(document.body).getPropertyValue("--accent").trim() || "#ff8050";
+            // A pulsing ring whose radius + line-width ride the voice amplitude.
+            c.beginPath();
+            const r = base * (1 + amp * 0.6);
+            c.arc(cx, cy, r, 0, Math.PI * 2);
+            c.strokeStyle = accent;
+            c.globalAlpha = 0.5 + amp * 0.5;
+            c.lineWidth = 2 + amp * 10;
+            c.stroke();
+            // A second, time-domain wave ring for texture.
+            if (icAnalyser && buf) {
+                c.beginPath();
+                for (let i = 0; i < buf.length; i += 8) {
+                    const a = (i / buf.length) * Math.PI * 2;
+                    const rr = base * 0.7 + ((buf[i] - 128) / 128) * base * 0.25;
+                    const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+                    i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+                }
+                c.closePath();
+                c.globalAlpha = 0.35;
+                c.lineWidth = 2;
+                c.stroke();
+            }
+            c.globalAlpha = 1;
+        };
+        draw();
+    }
+    function icStopWave() {
+        if (icWaveRAF) { cancelAnimationFrame(icWaveRAF); icWaveRAF = null; }
+        const canvas = document.getElementById("intercom-wave");
+        if (canvas) canvas.classList.remove("visible");
+        if (icAudioCtx) { try { icAudioCtx.close(); } catch (e) {} icAudioCtx = null; }
+        icAnalyser = null;
+    }
+
+    function icSetCallClass(name) {
+        document.body.classList.remove("intercom-calling", "intercom-ringing", "intercom-in-call");
+        if (name) document.body.classList.add("intercom-" + name);
+    }
+
+    // --- call-control / ring UI (built on demand, like the mirror overlay) ---
+    function icUI() {
+        let root = document.getElementById("intercom-ui");
+        if (!root) {
+            root = document.createElement("div");
+            root.id = "intercom-ui";
+            document.body.appendChild(root);
+        }
+        return root;
+    }
+    function icBtn(cls, label, svg, onClick) {
+        const b = document.createElement("button");
+        b.className = "ic-btn " + cls;
+        b.setAttribute("aria-label", label);
+        b.innerHTML = svg;
+        b.addEventListener("click", onClick);
+        return b;
+    }
+    const IC_PHONE_DOWN = '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a.9.9 0 0 1-1.27-.04L.29 13.08a.9.9 0 0 1 0-1.27C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.81a.9.9 0 0 1 0 1.27l-2.62 2.35a.9.9 0 0 1-1.27.04 12.4 12.4 0 0 0-2.66-1.85.99.99 0 0 1-.56-.9v-3.1A15.7 15.7 0 0 0 12 9z"/></svg>';
+    const IC_PHONE_UP = '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M6.62 10.79a15.5 15.5 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.24.2 2.45.57 3.57a1 1 0 0 1-.24 1.02l-2.21 2.2z"/></svg>';
+    const IC_MIC = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>';
+    const IC_CAM = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
+
+    function icShowIncoming(name) {
+        const root = icUI(); root.innerHTML = "";
+        const card = document.createElement("div");
+        card.className = "ic-ring";
+        card.innerHTML = '<div class="ic-ring-name">' + (name || "Someone") +
+            '</div><div class="ic-ring-sub">Incoming call…</div>';
+        const row = document.createElement("div"); row.className = "ic-ring-actions";
+        row.appendChild(icBtn("ic-decline", "Decline", IC_PHONE_DOWN, () => icDecline()));
+        row.appendChild(icBtn("ic-accept", "Accept", IC_PHONE_UP, () => icAccept()));
+        card.appendChild(row); root.appendChild(card);
+        icSetCallClass("ringing");
+    }
+    function icShowInCall(name, calling) {
+        const root = icUI(); root.innerHTML = "";
+        const bar = document.createElement("div"); bar.className = "ic-bar";
+        const label = document.createElement("div"); label.className = "ic-peer";
+        label.textContent = (calling ? "Calling " : "") + (name || "");
+        bar.appendChild(label);
+        const ctr = document.createElement("div"); ctr.className = "ic-controls";
+        const micBtn = icBtn("ic-mic", "Mute", IC_MIC, () => {
+            icMicMuted = !icMicMuted;
+            if (icLocal) icLocal.getAudioTracks().forEach((t) => (t.enabled = !icMicMuted));
+            micBtn.classList.toggle("off", icMicMuted);
+        });
+        ctr.appendChild(micBtn);
+        if (icWantVideo) {
+            const camBtn = icBtn("ic-cam", "Camera", IC_CAM, () => {
+                if (!icLocal) return;
+                const vt = icLocal.getVideoTracks()[0];
+                if (vt) { vt.enabled = !vt.enabled; camBtn.classList.toggle("off", !vt.enabled); }
+            });
+            ctr.appendChild(camBtn);
+        }
+        ctr.appendChild(icBtn("ic-end", "Hang up", IC_PHONE_DOWN, () => icHangup("local")));
+        bar.appendChild(ctr); root.appendChild(bar);
+        icSetCallClass(calling ? "calling" : "in-call");
+    }
+    function icClearUI() {
+        const root = document.getElementById("intercom-ui");
+        if (root) root.innerHTML = "";
+        icSetCallClass(null);
+    }
+
+    function icToast(text) {
+        const root = icUI(); root.innerHTML =
+            '<div class="ic-toast">' + text + '</div>';
+        setTimeout(() => { if (icSession === null) icClearUI(); }, 2600);
+    }
+
+    // --- lifecycle ---
+    async function icStartOutgoing(toId, toName) {
+        if (icSession) return;            // one call at a time
+        icRole = "caller"; icWantVideo = true; icMicMuted = false;
+        icSession = icRandId(); icPeerName = toName || "";
+        try { icLocal = await icGetMedia(); }
+        catch (e) { icSession = null; icToast("Couldn't access mic/camera"); return; }
+        icBuildPC();
+        icShowInCall(toName, true);       // "Calling <name>…"
+        icSend({ type: "intercom_invite", to: toId, session_id: icSession,
+            media: { audio: true, video: icWantVideo } });
+    }
+
+    async function icAccept() {
+        if (!icSession) return;
+        icRole = "callee"; icMicMuted = false; icWantVideo = true;
+        try { icLocal = await icGetMedia(); }
+        catch (e) { icDecline(); return; }
+        icBuildPC();
+        icShowInCall(icPeerName, false);
+        icSend({ type: "intercom_accept", session_id: icSession });
+    }
+    function icDecline() {
+        if (!icSession) return;
+        icSend({ type: "intercom_decline", session_id: icSession });
+        icTeardown();
+    }
+    function icHangup(reason) {
+        if (icSession) icSend({ type: "intercom_hangup", session_id: icSession });
+        icTeardown();
+    }
+    function icTeardown() {
+        icStopWave();
+        if (icPC) { try { icPC.close(); } catch (e) {} icPC = null; }
+        if (icLocal) { icLocal.getTracks().forEach((t) => t.stop()); icLocal = null; }
+        if (icAudioSink) { try { icAudioSink.srcObject = null; icAudioSink.remove(); } catch (e) {} icAudioSink = null; }
+        const video = document.getElementById("eye-stream");
+        const container = document.querySelector(".eye-container");
+        if (video) { try { video.srcObject = null; } catch (e) {} }
+        if (container) { container.classList.remove("stream-active");
+            if (!cameraTimer) container.classList.remove("camera-active"); }
+        icRemote = null; icSession = null; icRole = null; icPeerName = "";
+        icClearUI();
+    }
+
+    async function handleIntercom(msg) {
+        const t = msg.type;
+        if (t === "intercom_call_start") {            // we are the caller; begin
+            icStartOutgoing(msg.to, msg.to_name);
+            return;
+        }
+        if (t === "intercom_invite") {                // incoming call
+            if (icSession) { icSend({ type: "intercom_decline", session_id: msg.session_id }); return; }
+            icSession = msg.session_id; icRole = "callee";
+            icPeerName = msg.from_name || "Someone";
+            icIce = msg.ice_servers || [];
+            icShowIncoming(icPeerName);
+            return;
+        }
+        if (!icSession || msg.session_id !== icSession) {
+            if (t === "intercom_hangup") icTeardown();
+            return;
+        }
+        if (t === "intercom_ringing") {
+            icIce = msg.ice_servers || icIce;
+        } else if (t === "intercom_busy") {
+            icToastEnd("Busy");
+        } else if (t === "intercom_unavailable") {
+            icToastEnd("Unavailable");
+        } else if (t === "intercom_decline") {
+            icToastEnd("Call declined");
+        } else if (t === "intercom_accept") {
+            // Callee accepted → caller makes the offer.
+            try {
+                const offer = await icPC.createOffer();
+                await icPC.setLocalDescription(offer);
+                icSend({ type: "intercom_offer", session_id: icSession, sdp: offer.sdp });
+            } catch (e) { icHangup("offer-failed"); }
+        } else if (t === "intercom_offer" && msg.sdp) {
+            try {
+                await icPC.setRemoteDescription({ type: "offer", sdp: msg.sdp });
+                const ans = await icPC.createAnswer();
+                await icPC.setLocalDescription(ans);
+                icSend({ type: "intercom_answer", session_id: icSession, sdp: ans.sdp });
+            } catch (e) { icHangup("answer-failed"); }
+        } else if (t === "intercom_answer" && msg.sdp) {
+            try { await icPC.setRemoteDescription({ type: "answer", sdp: msg.sdp }); }
+            catch (e) { /* ignore */ }
+        } else if (t === "intercom_candidate" && msg.candidate) {
+            try {
+                await icPC.addIceCandidate({ candidate: msg.candidate,
+                    sdpMid: msg.sdpMid || null,
+                    sdpMLineIndex: msg.sdpMLineIndex == null ? null : msg.sdpMLineIndex });
+            } catch (e) { /* ignore */ }
+        } else if (t === "intercom_hangup") {
+            icTeardown();
+        }
+    }
+    function icToastEnd(text) {
+        const keep = icSession; icTeardown(); if (keep) icToast(text);
+    }
+    // Expose for tests / external triggers.
+    window.HALIntercom = { call: icStartOutgoing, hangup: icHangup };
 
     // --- Init ---
     setVolume(0.7);

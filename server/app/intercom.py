@@ -120,6 +120,41 @@ def directory(state, *, exclude_token: str | None = None) -> list[dict]:
     return out
 
 
+def resolve_target(state, name: str, *, exclude_token: str | None = None):
+    """Fuzzy-resolve a spoken target ("the kitchen", "Bob's phone", "kiosk") to a
+    callable device. Returns (id, name, online) or None. Exact (case-insensitive)
+    name wins over a substring match; the kiosk matches its name or "kiosk"."""
+    q = (name or "").strip().lower()
+    for prefix in ("the ", "my ", "a "):
+        if q.startswith(prefix):
+            q = q[len(prefix):]
+    q = q.removesuffix("'s phone").removesuffix("s phone").strip()
+    if not q:
+        return None
+
+    candidates = []  # (id, name, online)
+    pairing = getattr(state, "pairing", None)
+    connected = getattr(state, "satellite_ws", {}) or {}
+    if pairing is not None:
+        for token, entry in pairing._tokens.items():
+            if token == exclude_token or entry.get("scope") == "watch":
+                continue
+            candidates.append((pairing.public_id(token),
+                               entry.get("device_name") or "Device",
+                               token in connected))
+    kiosk_name = os.environ.get("HAL_DEVICE_NAME", "Kiosk")
+    candidates.append((KIOSK_ID, kiosk_name,
+                       getattr(state, "audio_websocket", None) is not None))
+
+    # The kiosk also answers to the generic word "kiosk".
+    exact = [c for c in candidates if c[1].lower() == q
+             or (c[0] == KIOSK_ID and q == "kiosk")]
+    if exact:
+        return exact[0]
+    partial = [c for c in candidates if q in c[1].lower()]
+    return partial[0] if len(partial) == 1 else None
+
+
 # --- signaling relay --------------------------------------------------------
 
 async def handle_signal(state, from_token: str, msg: dict) -> None:

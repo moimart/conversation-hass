@@ -486,6 +486,43 @@ def build_local_tools(state) -> LocalToolsClient:
         stream_rtsp,
     )
 
+    async def call_device(args: dict) -> str:
+        """Start a 1:1 intercom call from the device the user is speaking on to
+        another paired device. The caller's own device does the WebRTC capture;
+        the server just tells it to begin (then relays signaling, see intercom.py)."""
+        from . import intercom
+        from .main import send_to_device
+        target = (args.get("target") or "").strip()
+        if not target:
+            return "Who would you like to call?"
+        origin = getattr(state.conversation, "_turn_origin", None)
+        if origin is None:
+            # A voice turn on the kiosk itself — kiosk-as-caller lands in a later phase.
+            return "Calling from here isn't available yet — try it from your phone."
+        match = intercom.resolve_target(state, target, exclude_token=origin)
+        if match is None:
+            return f"I couldn't find a device called '{target}'."
+        callee_id, callee_name, online = match
+        if not online:
+            return f"{callee_name} isn't reachable right now."
+        await send_to_device(state, origin, {
+            "type": "intercom_call_start", "to": callee_id, "to_name": callee_name,
+        })
+        return f"Calling {callee_name}…"
+
+    tools.register(
+        "intercom_call",
+        "Place a 1:1 intercom audio/video call from the user's current device to another paired device in the home (a phone, tablet, or the kiosk). Use when the user says things like 'call the kitchen', 'call Bob's phone', or 'video call the living room'. `target` is the spoken device name.",
+        {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "Name of the device/room to call, e.g. 'the kitchen', 'Bob's phone', 'kiosk'"},
+            },
+            "required": ["target"],
+        },
+        call_device,
+    )
+
     async def play_video(args: dict) -> str:
         url = (args.get("url") or "").strip()
         if not (url.startswith("http://") or url.startswith("https://")):
