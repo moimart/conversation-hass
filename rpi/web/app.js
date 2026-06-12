@@ -1396,15 +1396,27 @@
         // the Wi-Fi and starve the audio packets (the usual cause of choppy call
         // audio); echo-cancel/noise-suppress the mic.
         const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-        try {
-            return await navigator.mediaDevices.getUserMedia({
-                audio,
-                video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 },
-                         frameRate: { ideal: 24, max: 30 } },
-            });
-        } catch (e) {
+        const audioOnly = () => {
             icWantVideo = false;
-            return await navigator.mediaDevices.getUserMedia({ audio, video: false });
+            return navigator.mediaDevices.getUserMedia({ audio, video: false });
+        };
+        // The kiosk has no camera, and there getUserMedia({video}) HANGS forever
+        // instead of rejecting — which would stall auto-answer. Go straight to
+        // audio-only.
+        if (icIsKiosk()) return audioOnly();
+        try {
+            // Guard any other camera-less device the same way: race the video
+            // request against a short timeout, then fall back to audio-only.
+            return await Promise.race([
+                navigator.mediaDevices.getUserMedia({
+                    audio,
+                    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 },
+                             frameRate: { ideal: 24, max: 30 } },
+                }),
+                new Promise((_, rej) => setTimeout(() => rej(new Error("gum-timeout")), 4000)),
+            ]);
+        } catch (e) {
+            return audioOnly();
         }
     }
 
