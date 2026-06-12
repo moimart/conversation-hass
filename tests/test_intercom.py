@@ -249,6 +249,22 @@ def test_resolve_target():
     assert intercom.resolve_target(state, "nobody", exclude_token="A") is None
 
 
+def test_resolve_target_prefers_online_among_duplicates():
+    # Two devices share the generic name "iPhone"; only one is connected.
+    pairing = _FakePairing({
+        "P": {"device_name": "Pixel", "scope": "full"},
+        "old": {"device_name": "iPhone", "scope": "full"},   # offline (stale)
+        "air": {"device_name": "iPhone", "scope": "full"},   # online
+    })
+    state = SimpleNamespace(
+        pairing=pairing, satellite_ws={"P": object(), "air": object()},
+        intercom_sessions={}, audio_websocket=None,
+        runtime_config=SimpleNamespace(get=lambda k, d=None: d),
+    )
+    got = intercom.resolve_target(state, "iPhone", exclude_token="P")
+    assert got[0] == pid("air") and got[2] is True   # the connected one wins
+
+
 @pytest.mark.asyncio
 async def test_signaling_for_unknown_session_is_noop(sent):
     state = _state(online=("A", "B"))

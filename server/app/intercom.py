@@ -149,10 +149,15 @@ def resolve_target(state, name: str, *, exclude_token: str | None = None):
     # The kiosk also answers to the generic word "kiosk".
     exact = [c for c in candidates if c[1].lower() == q
              or (c[0] == KIOSK_ID and q == "kiosk")]
-    if exact:
-        return exact[0]
     partial = [c for c in candidates if q in c[1].lower()]
-    return partial[0] if len(partial) == 1 else None
+    pool = exact or partial   # exact name wins over a substring match
+    if not pool:
+        return None
+    # Prefer an ONLINE match — device names are often generic/duplicated
+    # ("iPhone", "Android device"), so disambiguate toward the one that can
+    # actually answer right now.
+    online = [c for c in pool if c[2]]
+    return (online or pool)[0]
 
 
 # --- signaling relay --------------------------------------------------------
