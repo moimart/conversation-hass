@@ -1390,13 +1390,19 @@
 
     async function icGetMedia() {
         // Try audio + front camera; fall back to audio-only if there's no camera.
+        // Cap the video at a modest resolution/framerate so it doesn't saturate
+        // the Wi-Fi and starve the audio packets (the usual cause of choppy call
+        // audio); echo-cancel/noise-suppress the mic.
+        const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
         try {
             return await navigator.mediaDevices.getUserMedia({
-                audio: true, video: { facingMode: "user" },
+                audio,
+                video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 },
+                         frameRate: { ideal: 24, max: 30 } },
             });
         } catch (e) {
             icWantVideo = false;
-            return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            return await navigator.mediaDevices.getUserMedia({ audio, video: false });
         }
     }
 
@@ -1433,23 +1439,26 @@
     function icRenderRemote() {
         const video = document.getElementById("eye-stream");
         const container = document.querySelector(".eye-container");
-        if (!video || !container || !icRemote) return;
+        if (!container || !icRemote) return;
+        // Remote AUDIO always plays through a dedicated low-latency <audio>
+        // element — NEVER the <video> element. A <video> syncs its audio to its
+        // frames, so a laggy/heavy video decode (rendering into the masked orb)
+        // would delay and chop the audio. Decoupling keeps voice smooth.
+        icEnsureAudioSink();
         const hasVideo = icRemote.getVideoTracks().some(
             (t) => t.readyState === "live" && t.enabled);
-        if (hasVideo) {
+        if (hasVideo && video) {
             icStopWave();
             video.srcObject = icRemote;
-            video.muted = false;          // we want to HEAR the remote party
+            video.muted = true;           // audio comes from icAudioSink, not here
             video.play().catch(() => {});
             container.classList.add("camera-active", "stream-active");
         } else {
             // No remote video → show the audio-wave driven by the remote audio.
+            if (video) { try { video.srcObject = null; } catch (e) { /* ignore */ } }
             container.classList.remove("stream-active");
             if (!cameraTimer) container.classList.remove("camera-active");
             icStartWave();
-            // Still need to HEAR the remote audio (no <video> sink shown): pipe
-            // the remote stream through a hidden, unmuted audio element.
-            icEnsureAudioSink();
         }
     }
 
