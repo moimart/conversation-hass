@@ -7,6 +7,7 @@ import { clearConfig, type HalConfig } from "../config/hal-config";
 import { sendCommand } from "./command";
 import { startListening, stopListening, isListening } from "./mic";
 import { unlockAudio } from "./satellite-audio";
+import { mountMirror, hasFrontCamera } from "./mirror";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 
 export function mountOverlay(cfg: HalConfig): void {
@@ -69,6 +70,18 @@ export function mountOverlay(cfg: HalConfig): void {
     }
   });
   root.appendChild(logBtn);
+
+  // Mirror (front camera) — sits left of the conversation-log button. Created
+  // hidden; revealed only once hasFrontCamera() confirms the device has one, so
+  // a camera-less device never shows a dead button.
+  const mirrorBtn = document.createElement("button");
+  mirrorBtn.className = "hal-gear hal-mirror";
+  mirrorBtn.setAttribute("aria-label", "Mirror");
+  mirrorBtn.hidden = true;
+  mirrorBtn.innerHTML = mirrorIcon();
+  mirrorBtn.addEventListener("click", () => { void haptic(); void mountMirror(); });
+  root.appendChild(mirrorBtn);
+  void hasFrontCamera().then((ok) => { mirrorBtn.hidden = !ok; });
 
   async function submit() {
     const text = input.value;
@@ -204,6 +217,10 @@ function gearIcon(): string {
 
 function logIcon(): string {
   return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`;
+}
+
+function mirrorIcon(): string {
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
 }
 
 function micIcon(): string {

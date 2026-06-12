@@ -46,4 +46,9 @@
          runtime prompt. -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Front-camera "mirror": web getUserMedia in the WebView; Capacitor's
+         BridgeWebChromeClient.onPermissionRequest does the runtime grant. The
+         front camera is optional so the app still installs on devices without one. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
 </manifest>

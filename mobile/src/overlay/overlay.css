@@ -80,10 +80,57 @@
 /* Conversation-log button — sits left of the gear. */
 .hal-log { right: 54px; }
 
-/* While the conversation-log view is open it has its own ✕ close button in the
-   top-right corner — hide the floating gear + log buttons so they don't sit on
-   top of (and tap-fight with) that ✕. */
-body.show-conversation-log .hal-gear { display: none; }
+/* Mirror (front-camera) button — sits left of the conversation-log button. */
+.hal-mirror { right: 96px; }
+.hal-mirror[hidden] { display: none; }
+
+/* While a fullscreen layer is open (conversation log has its own ✕; the mirror
+   has its own close button) hide the floating gear cluster so they don't sit on
+   top of (and tap-fight with) that close affordance. */
+body.show-conversation-log .hal-gear,
+body.show-mirror .hal-gear { display: none; }
+
+/* Fullscreen front-camera mirror. Above the orb/input bar, below onboarding. */
+.mirror-stage {
+    position: fixed;
+    inset: 0;
+    z-index: 2147481400;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+body.show-mirror .hal-input-bar { display: none; }   /* mirror owns the screen */
+.mirror-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);   /* flip horizontally so it reads like a real mirror */
+}
+.mirror-close {
+    position: fixed;
+    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 8px);
+    right: 12px;
+    z-index: 2147481600;     /* above the stage */
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.4);
+    color: #fff;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.mirror-error {
+    color: rgba(255, 255, 255, 0.85);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 15px;
+    text-align: center;
+    padding: 0 32px;
+}
 
 .hal-sheet-backdrop {
     position: fixed;

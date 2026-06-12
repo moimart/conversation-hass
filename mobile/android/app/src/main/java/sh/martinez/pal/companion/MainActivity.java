@@ -23,6 +23,10 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // App-embedded Capacitor plugins must be registered before the bridge is
+        // created (i.e. before super.onCreate). PalMirror gates the front-camera
+        // "mirror" button by reporting whether a front camera exists.
+        registerPlugin(PalMirrorPlugin.class);
         super.onCreate(savedInstanceState);
         // Draw edge-to-edge, including INTO the camera cutout (must call
         // setAttributes() to actually apply the layout mode, not just mutate

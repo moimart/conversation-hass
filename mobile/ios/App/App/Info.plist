@@ -39,6 +39,8 @@
 	<array>
 		<string>_pal._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>PAL uses the front camera so you can use your device as a mirror.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>HAL uses the microphone for voice commands.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
