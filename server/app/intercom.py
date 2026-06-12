@@ -27,6 +27,10 @@ intercom_busy / intercom_unavailable.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import os
 import time
@@ -37,30 +41,97 @@ KIOSK_ID = "kiosk"
 
 
 # --- ICE configuration ------------------------------------------------------
+# LAN calls connect on host candidates (STUN only). Remote/NAT calls need a TURN
+# relay; its credentials live in a gitignored, hot-reloaded runtime file
+# (runtime/intercom_turn.json, chmod 600) — NEVER in the repo. Three providers:
+#   {"provider":"cloudflare","key_id":"…","api_token":"…","ttl":86400}
+#       → mint short-lived creds from Cloudflare's TURN API (no port-forward;
+#         matches the existing Cloudflare-tunnel setup). Cached until ~expiry.
+#   {"provider":"coturn","urls":["turn:host:3478"],"secret":"…","ttl":86400}
+#       → self-hosted coturn with the TURN REST shared-secret (HMAC) scheme.
+#   {"provider":"static","ice_servers":[…]}  → use the list verbatim.
+# The minted servers are handed to BOTH peers in the invite/ringing payload.
 
 _DEFAULT_STUN = [{"urls": ["stun:stun.l.google.com:19302"]}]
+_TURN_CONFIG_PATH = os.environ.get("INTERCOM_TURN_CONFIG", "runtime/intercom_turn.json")
+_turn_cache: dict = {"mtime": 0.0, "cfg": None, "minted": None, "minted_exp": 0.0}
 
 
-def ice_servers(state) -> list[dict]:
-    """ICE servers handed to both peers. LAN calls connect on host candidates
-    (STUN only); remote/NAT calls need a TURN relay, configured out-of-band (a
-    later phase) via runtime_config 'intercom_ice_servers' (a JSON list) or the
-    INTERCOM_ICE_SERVERS env var. Falls back to public STUN."""
+def _load_turn_cfg():
+    """Hot-reload the TURN config by mtime; None if absent/unreadable."""
+    try:
+        st = os.stat(_TURN_CONFIG_PATH)
+    except OSError:
+        _turn_cache.update(cfg=None, mtime=0.0)
+        return None
+    if st.st_mtime != _turn_cache["mtime"]:
+        try:
+            with open(_TURN_CONFIG_PATH) as f:
+                _turn_cache.update(cfg=json.load(f), mtime=st.st_mtime, minted=None)
+        except Exception as e:
+            log.warning(f"intercom TURN config unreadable: {e}")
+            _turn_cache.update(cfg=None)
+    return _turn_cache["cfg"]
+
+
+def _coturn_ice(cfg) -> list[dict]:
+    urls = cfg.get("urls") or []
+    secret = cfg.get("secret") or ""
+    ttl = int(cfg.get("ttl", 86400))
+    if not urls or not secret:
+        return []
+    username = str(int(time.time()) + ttl)   # TURN REST: username = expiry ts
+    cred = base64.b64encode(
+        hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()).decode()
+    return [{"urls": urls, "username": username, "credential": cred}]
+
+
+async def _cloudflare_ice(cfg):
+    now = time.time()
+    if _turn_cache["minted"] and now < _turn_cache["minted_exp"] - 60:
+        return _turn_cache["minted"]
+    key_id, token = cfg.get("key_id"), cfg.get("api_token")
+    ttl = int(cfg.get("ttl", 86400))
+    if not key_id or not token:
+        return None
+    import httpx
+    url = f"https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/generate"
+    async with httpx.AsyncClient(timeout=8) as client:
+        r = await client.post(url, headers={"Authorization": f"Bearer {token}"},
+                              json={"ttl": ttl})
+        r.raise_for_status()
+        ice = r.json().get("iceServers")
+    minted = [ice] if isinstance(ice, dict) else (ice if isinstance(ice, list) else None)
+    if minted:
+        _turn_cache.update(minted=minted, minted_exp=now + ttl)
+    return minted
+
+
+async def ice_servers(state) -> list[dict]:
+    """ICE servers handed to both peers (always STUN; + TURN if configured)."""
     rc = getattr(state, "runtime_config", None)
     if rc is not None:
-        configured = rc.get("intercom_ice_servers", None)
-        if isinstance(configured, list) and configured:
-            return configured
-    env = os.environ.get("INTERCOM_ICE_SERVERS")
-    if env:
-        import json
-        try:
-            parsed = json.loads(env)
-            if isinstance(parsed, list) and parsed:
-                return parsed
-        except Exception:
-            pass
-    return _DEFAULT_STUN
+        override = rc.get("intercom_ice_servers", None)
+        if isinstance(override, list) and override:
+            return override
+    servers = list(_DEFAULT_STUN)
+    cfg = _load_turn_cfg()
+    if not cfg:
+        return servers
+    provider = cfg.get("provider")
+    try:
+        if provider == "static":
+            ice = cfg.get("ice_servers")
+            return ice if isinstance(ice, list) and ice else servers
+        if provider == "coturn":
+            servers.extend(_coturn_ice(cfg))
+        elif provider == "cloudflare":
+            minted = await _cloudflare_ice(cfg)
+            if minted:
+                servers.extend(minted)
+    except Exception as e:
+        log.warning(f"intercom TURN mint failed: {e}")
+    return servers
 
 
 # --- session registry -------------------------------------------------------
@@ -226,19 +297,20 @@ async def _on_invite(state, from_token: str, msg: dict) -> None:
         "started": time.monotonic(), "media": media,
     }
 
+    ice = await ice_servers(state)
     invite = {
         "type": "intercom_invite",
         "from": state.pairing.public_id(caller) if state.pairing else None,
         "from_name": _device_label(state, caller),
         "session_id": session_id,
         "media": media,
-        "ice_servers": ice_servers(state),
+        "ice_servers": ice,
     }
     delivered = await _send(state, callee, invite)
     if delivered:
         await _send(state, caller, {
             "type": "intercom_ringing", "session_id": session_id,
-            "ice_servers": ice_servers(state),
+            "ice_servers": ice,
         })
     else:
         # Callee not connected. (Offline push to wake a closed app is wired in a
