@@ -105,15 +105,19 @@ async def _read_weather(state) -> dict | None:
 async def refresh_now(state) -> None:
     """Re-read the weather and push it to every display IF it changed. Pushes a
     hide message when disabled/unconfigured. Cached on `state.current_weather`
-    so a (re)connecting client gets it replayed (see routes_ws.ui_endpoint)."""
-    from .main import broadcast_force_action
+    so a (re)connecting client gets it replayed (ui_endpoint for satellites +
+    mirror web UIs, audio_endpoint for the kiosk RPi)."""
+    from .main import broadcast_force_action, _push_to_rpi
 
     msg = await _read_weather(state) or _hide_msg()
     if msg == getattr(state, "current_weather", None):
         return
     state.current_weather = msg
+    # The kiosk display is the RPi (audio_websocket), not a broadcast_to_ui
+    # mirror client — push to BOTH, exactly like a theme change (apply_theme).
     try:
         await broadcast_force_action(state, msg)
+        await _push_to_rpi(state, msg)
     except Exception as e:
         log.debug(f"weather: broadcast failed: {e}")
 

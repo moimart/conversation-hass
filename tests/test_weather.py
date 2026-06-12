@@ -116,7 +116,11 @@ async def test_refresh_pushes_then_dedupes(monkeypatch):
     async def _fake_broadcast(state, msg, **kw):
         pushed.append(msg)
 
+    async def _noop(*a, **k):
+        pass
+
     monkeypatch.setattr("server.app.main.broadcast_force_action", _fake_broadcast)
+    monkeypatch.setattr("server.app.main._push_to_rpi", _noop)
     payload = json.dumps({"data": {"state": "sunny",
                                    "attributes": {"temperature": 25, "temperature_unit": "°C"}}})
     state = _state(payload)
@@ -136,7 +140,11 @@ async def test_refresh_hides_when_disabled(monkeypatch):
     async def _fake_broadcast(state, msg, **kw):
         pushed.append(msg)
 
+    async def _noop(*a, **k):
+        pass
+
     monkeypatch.setattr("server.app.main.broadcast_force_action", _fake_broadcast)
+    monkeypatch.setattr("server.app.main._push_to_rpi", _noop)
     state = _state("ignored", enabled=False)
     await weather.refresh_now(state)
     assert pushed == [{"type": "weather_update", "show": False}]
