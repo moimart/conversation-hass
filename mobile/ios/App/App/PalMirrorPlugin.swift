@@ -19,11 +19,20 @@ public class PalMirrorPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     @objc func hasFrontCamera(_ call: CAPPluginCall) {
+        // Enumerate every front-position video device type (TrueDepth-only front
+        // cameras don't match .builtInWideAngleCamera alone), and fall back to the
+        // default front-camera lookup. Device discovery does not require camera
+        // authorization, so this answers "does the hardware exist?" before any
+        // permission prompt.
+        var types: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera, .builtInTrueDepthCamera]
+        if #available(iOS 15.4, *) { types.append(.builtInLiDARDepthCamera) }
         let session = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera],
+            deviceTypes: types,
             mediaType: .video,
             position: .front
         )
-        call.resolve(["present": !session.devices.isEmpty])
+        let present = !session.devices.isEmpty
+            || AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) != nil
+        call.resolve(["present": present])
     }
 }
