@@ -238,6 +238,8 @@ async def handle_signal(state, from_token: str, msg: dict) -> None:
     """Route one intercom message from a satellite (identified by from_token).
     Validates participation; never echoes back to the sender."""
     mtype = msg.get("type")
+    _who = "kiosk" if from_token == KIOSK_ID else (str(from_token)[:6] if from_token else "?")
+    log.info(f"[intercom] signal {mtype} from {_who} session={msg.get('session_id')}")
     if mtype == "intercom_invite":
         await _on_invite(state, from_token, msg)
         return
@@ -307,7 +309,10 @@ async def _on_invite(state, from_token: str, msg: dict) -> None:
         "media": media,
         "ice_servers": ice,
     }
+    _cw = "kiosk" if callee == KIOSK_ID else str(callee)[:6]
     delivered = await _send(state, callee, invite)
+    log.info(f"[intercom] invite → {_cw} delivered={delivered} "
+             f"(audio_ws={'up' if getattr(state, 'audio_websocket', None) else 'down'})")
     if delivered:
         await _send(state, caller, {
             "type": "intercom_ringing", "session_id": session_id,
