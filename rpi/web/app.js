@@ -1544,6 +1544,11 @@
         icAnalyser = null;
     }
 
+    // The kiosk has no HAL_CONFIG (phones inject it). It's no-touch and its
+    // display is rotated by the orientation wrapper, so it shows NO call chrome —
+    // a call is conveyed entirely by the orb (which lives inside that wrapper).
+    function icIsKiosk() { return !window.HAL_CONFIG; }
+
     function icSetCallClass(name) {
         document.body.classList.remove("intercom-calling", "intercom-ringing", "intercom-in-call");
         if (name) document.body.classList.add("intercom-" + name);
@@ -1573,6 +1578,7 @@
     const IC_CAM = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
 
     function icShowIncoming(name) {
+        if (icIsKiosk()) return;          // kiosk auto-answers; no ring chrome
         const root = icUI(); root.innerHTML = "";
         const card = document.createElement("div");
         card.className = "ic-ring";
@@ -1585,6 +1591,7 @@
         icSetCallClass("ringing");
     }
     function icShowInCall(name, calling) {
+        if (icIsKiosk()) { icSetCallClass(calling ? "calling" : "in-call"); return; }
         const root = icUI(); root.innerHTML = "";
         const bar = document.createElement("div"); bar.className = "ic-bar";
         const label = document.createElement("div"); label.className = "ic-peer";
@@ -1616,6 +1623,7 @@
     }
 
     function icToast(text) {
+        if (icIsKiosk()) return;          // no call chrome on the kiosk
         const root = icUI(); root.innerHTML =
             '<div class="ic-toast">' + text + '</div>';
         setTimeout(() => { if (icSession === null) icClearUI(); }, 2600);
@@ -1677,14 +1685,13 @@
             icSession = msg.session_id; icRole = "callee";
             icPeerName = msg.from_name || "Someone";
             icIce = msg.ice_servers || [];
-            icShowIncoming(icPeerName);
-            // The kiosk has no touch — auto-answer after a brief ring so the
-            // household can just talk. (Phones wait for the Accept tap.)
-            if (!window.HAL_CONFIG) {
-                const sid = msg.session_id;
-                setTimeout(() => {
-                    if (icSession === sid && icRole === "callee" && !icPC) void icAccept();
-                }, 1500);
+            if (icIsKiosk()) {
+                // Kiosk: no touch, no answering UI — auto-answer immediately
+                // (a busy kiosk already declined above). The call shows only on
+                // the orb, which lives in the orientation wrapper and rotates.
+                void icAccept();
+            } else {
+                icShowIncoming(icPeerName);   // phones ring with Accept/Decline
             }
             return;
         }
