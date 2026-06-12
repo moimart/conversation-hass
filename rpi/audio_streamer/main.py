@@ -504,6 +504,11 @@ class AudioManager:
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
             "show_photo_frame_video", "set_photo_frame_clock",
             "show_pairing_code", "hide_pairing_code",
+            "intercom_call_start", "intercom_invite", "intercom_ringing",
+            "intercom_accept", "intercom_decline", "intercom_busy",
+            "intercom_unavailable", "intercom_offer", "intercom_answer",
+            "intercom_candidate", "intercom_hangup",
+            "intercom_voice_accept", "intercom_voice_hangup",
         ):
             await self.broadcast_to_ui(msg)
 
@@ -716,6 +721,13 @@ class AudioManager:
                                 await self._server_ws.send(json.dumps(data))
                             except Exception as e:
                                 log.debug(f"webrtc_signal upstream forward failed: {e}")
+                    elif msg_type.startswith("intercom_"):
+                        # Kiosk → server intercom call signaling. Forward as-is.
+                        if self._server_ws:
+                            try:
+                                await self._server_ws.send(json.dumps(data))
+                            except Exception as e:
+                                log.debug(f"intercom upstream forward failed: {e}")
                     elif msg_type == "photo_frame_dismissed":
                         # Kiosk auto-dismissed the photo frame (user
                         # interaction or state change). Forward upstream so

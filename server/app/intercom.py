@@ -213,9 +213,10 @@ def resolve_target(state, name: str, *, exclude_token: str | None = None):
             candidates.append((pairing.public_id(token),
                                entry.get("device_name") or "Device",
                                token in connected))
-    kiosk_name = os.environ.get("HAL_DEVICE_NAME", "Kiosk")
-    candidates.append((KIOSK_ID, kiosk_name,
-                       getattr(state, "audio_websocket", None) is not None))
+    if exclude_token != KIOSK_ID:
+        kiosk_name = os.environ.get("HAL_DEVICE_NAME", "Kiosk")
+        candidates.append((KIOSK_ID, kiosk_name,
+                           getattr(state, "audio_websocket", None) is not None))
 
     # The kiosk also answers to the generic word "kiosk".
     exact = [c for c in candidates if c[1].lower() == q
@@ -339,12 +340,11 @@ async def end_sessions_for_token(state, token: str, *, reason: str = "disconnect
 
 
 async def _send(state, token: str, msg: dict) -> bool:
-    """Deliver to a participant. Satellites go over /ws/ui (send_to_device); the
-    kiosk path (audio_websocket bridge) is wired in a later phase."""
+    """Deliver to a participant: satellites over /ws/ui (send_to_device), the
+    kiosk over the RPi audio_websocket bridge (_push_to_rpi → the audio_streamer
+    forwards intercom_* to the kiosk Chromium)."""
     if token == KIOSK_ID:
-        # Phase 3: route to the kiosk via _push_to_rpi + the audio_streamer
-        # forward allowlist. Not yet wired.
-        log.debug("intercom: kiosk delivery not yet wired (%s)", msg.get("type"))
-        return False
+        from .main import _push_to_rpi
+        return bool(await _push_to_rpi(state, msg))
     from .main import send_to_device
     return await send_to_device(state, token, msg)

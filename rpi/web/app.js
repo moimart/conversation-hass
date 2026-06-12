@@ -650,6 +650,8 @@
             case "intercom_answer":
             case "intercom_candidate":
             case "intercom_hangup":
+            case "intercom_voice_accept":     // voice "answer" (no-touch devices)
+            case "intercom_voice_hangup":     // voice "hang up"
                 handleIntercom(msg);
                 break;
             case "play_video":
@@ -1676,6 +1678,22 @@
             icPeerName = msg.from_name || "Someone";
             icIce = msg.ice_servers || [];
             icShowIncoming(icPeerName);
+            // The kiosk has no touch — auto-answer after a brief ring so the
+            // household can just talk. (Phones wait for the Accept tap.)
+            if (!window.HAL_CONFIG) {
+                const sid = msg.session_id;
+                setTimeout(() => {
+                    if (icSession === sid && icRole === "callee" && !icPC) void icAccept();
+                }, 1500);
+            }
+            return;
+        }
+        if (t === "intercom_voice_accept") {          // voice "answer"
+            if (icSession && icRole === "callee" && !icPC) void icAccept();
+            return;
+        }
+        if (t === "intercom_voice_hangup") {          // voice "hang up"
+            icHangup("voice");
             return;
         }
         if (!icSession || msg.session_id !== icSession) {

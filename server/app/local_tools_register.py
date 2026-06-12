@@ -489,25 +489,26 @@ def build_local_tools(state) -> LocalToolsClient:
     async def call_device(args: dict) -> str:
         """Start a 1:1 intercom call from the device the user is speaking on to
         another paired device. The caller's own device does the WebRTC capture;
-        the server just tells it to begin (then relays signaling, see intercom.py)."""
+        the server just tells it to begin (then relays signaling, see intercom.py).
+        A voice turn with no satellite origin is the kiosk itself."""
         from . import intercom
-        from .main import send_to_device
+        from .main import send_to_device, _push_to_rpi
         target = (args.get("target") or "").strip()
         if not target:
             return "Who would you like to call?"
         origin = getattr(state.conversation, "_turn_origin", None)
-        if origin is None:
-            # A voice turn on the kiosk itself — kiosk-as-caller lands in a later phase.
-            return "Calling from here isn't available yet — try it from your phone."
-        match = intercom.resolve_target(state, target, exclude_token=origin)
+        caller = origin if origin is not None else intercom.KIOSK_ID
+        match = intercom.resolve_target(state, target, exclude_token=caller)
         if match is None:
             return f"I couldn't find a device called '{target}'."
         callee_id, callee_name, online = match
         if not online:
             return f"{callee_name} isn't reachable right now."
-        await send_to_device(state, origin, {
-            "type": "intercom_call_start", "to": callee_id, "to_name": callee_name,
-        })
+        start = {"type": "intercom_call_start", "to": callee_id, "to_name": callee_name}
+        if caller == intercom.KIOSK_ID:
+            await _push_to_rpi(state, start)
+        else:
+            await send_to_device(state, caller, start)
         return f"Calling {callee_name}…"
 
     tools.register(
@@ -521,6 +522,26 @@ def build_local_tools(state) -> LocalToolsClient:
             "required": ["target"],
         },
         call_device,
+    )
+
+    async def end_call(_args: dict) -> str:
+        """Hang up the intercom call on the user's current device (voice 'hang up'
+        — the kiosk has no touch). Targets the speaking device; harmless if none."""
+        from . import intercom
+        from .main import send_to_device, _push_to_rpi
+        origin = getattr(state.conversation, "_turn_origin", None)
+        msg = {"type": "intercom_voice_hangup"}
+        if origin is None:
+            await _push_to_rpi(state, msg)
+        else:
+            await send_to_device(state, origin, msg)
+        return "Call ended."
+
+    tools.register(
+        "intercom_hangup",
+        "Hang up / end the active intercom call on the user's current device. Use for 'hang up', 'end the call', 'stop the call'.",
+        {"type": "object", "properties": {}},
+        end_call,
     )
 
     async def play_video(args: dict) -> str:

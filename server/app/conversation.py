@@ -146,6 +146,15 @@ def _intercom_call_intent(match: "re.Match[str]", text: str) -> IntentHint | Non
     )
 
 
+def _intercom_hangup_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
+    return IntentHint(
+        tool="intercom_hangup",
+        sentence=("This is a device command: call the `intercom_hangup` tool NOW "
+                  "to end the active call. Reply only with a one-line confirmation."),
+        guard_args={},
+    )
+
+
 def _pair_phone_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
     return IntentHint(
         tool="pair_phone",
@@ -169,6 +178,9 @@ _INTENT_HINTS: list = [
         r"|\b(connect|set\s*up|register)\b.{0,25}\b(phone|companion|mobile app|companion app)\b",  # "set up the companion app"
         re.I),
      _pair_phone_intent),
+    # Intercom: hang up before call so "end the call" never starts one.
+    (re.compile(r"\b(hang\s*up|end|stop|drop)\b.{0,12}\b(the\s+)?call\b|\bhang\s*up\b", re.I),
+     _intercom_hangup_intent),
     # Intercom: "call the kitchen", "video call the iphone", "ring the living room".
     (re.compile(r"^\s*(?:please\s+)?(?:make a |start a )?(?:video[\s-]?)?(?:call|ring)\s+(?P<target>.+?)\s*[.!?]*$", re.I),
      _intercom_call_intent),

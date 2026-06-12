@@ -39,6 +39,9 @@ from server.app.conversation import (
     ("video call the iphone", "intercom_call", {"target": "the iphone"}),
     ("ring the living room", "intercom_call", {"target": "the living room"}),
     ("call to the android device", "intercom_call", {"target": "the android device"}),
+    ("hang up", "intercom_hangup", {}),
+    ("end the call", "intercom_hangup", {}),
+    ("stop the call", "intercom_hangup", {}),
 ])
 def test_intent_matches_with_guard(text, tool, guard_args):
     hint = _match_intent_hint(text)

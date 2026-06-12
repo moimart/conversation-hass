@@ -376,6 +376,12 @@ async def audio_endpoint(websocket: WebSocket):
                         ):
                             asyncio.create_task(_forward_kiosk_candidate(state, session_id, msg))
 
+                elif msg_type and msg_type.startswith("intercom_"):
+                    # Kiosk → server intercom call signaling (forwarded up by the
+                    # audio_streamer). The kiosk is the reserved KIOSK_ID participant.
+                    from . import intercom
+                    await intercom.handle_signal(state, intercom.KIOSK_ID, msg)
+
     except (WebSocketDisconnect, RuntimeError):
         log.info("Audio client disconnected")
     except Exception as e:
