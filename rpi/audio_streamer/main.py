@@ -90,6 +90,9 @@ class AudioManager:
 
         # UI clients
         self.ui_clients: set[web.WebSocketResponse] = set()
+        # Last weather_update from the server, cached so a (re)connecting kiosk
+        # page gets it immediately (it has no localStorage copy like the theme).
+        self.last_weather: dict | None = None
 
         # Sendspin coordination: when a Sendspin stream is active on
         # the local daemon, hardware volume buttons target the MA
@@ -501,8 +504,12 @@ class AudioManager:
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
             "show_photo_frame_video", "set_photo_frame_clock",
             "show_pairing_code", "hide_pairing_code",
-            "weather_update",
         ):
+            await self.broadcast_to_ui(msg)
+
+        elif msg_type == "weather_update":
+            # Cache so a (re)connecting kiosk page gets it replayed on connect.
+            self.last_weather = msg
             await self.broadcast_to_ui(msg)
 
         elif msg_type == "photo_frame_video_sync":
@@ -675,6 +682,8 @@ class AudioManager:
         # Send current state to new client
         await ws.send_json({"type": "mute_sync", "muted": self.mic_muted})
         await ws.send_json({"type": "volume_sync", "level": self.tts_volume})
+        if self.last_weather:
+            await ws.send_json(self.last_weather)
 
         try:
             async for msg in ws:
