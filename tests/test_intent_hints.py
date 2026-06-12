@@ -35,6 +35,10 @@ from server.app.conversation import (
     ("pair the companion app", "pair_phone", {}),
     ("connect my phone", "pair_phone", {}),
     ("set up the companion app", "pair_phone", {}),
+    ("call the kitchen", "intercom_call", {"target": "the kitchen"}),
+    ("video call the iphone", "intercom_call", {"target": "the iphone"}),
+    ("ring the living room", "intercom_call", {"target": "the living room"}),
+    ("call to the android device", "intercom_call", {"target": "the android device"}),
 ])
 def test_intent_matches_with_guard(text, tool, guard_args):
     hint = _match_intent_hint(text)
@@ -65,6 +69,9 @@ def test_timer_without_duration_hints_but_does_not_guard():
     "add a device to home assistant",   # NOT pairing the companion phone
     "pair my headphones",               # bluetooth, not the PAL app
     "set up an automation",
+    "call me back later",               # NOT an intercom call
+    "what do you call this",            # "call" mid-sentence, not a command
+    "call it off",                      # stopword target
 ])
 def test_normal_turns_get_no_hint(text):
     assert _match_intent_hint(text) is None

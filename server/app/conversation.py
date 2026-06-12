@@ -122,6 +122,30 @@ def _hide_log_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
     )
 
 
+_CALL_STOPWORDS = {
+    "back", "you", "you back", "me back", "off", "it off", "again", "later",
+    "out", "in sick", "it a day", "it quits",
+}
+
+
+def _intercom_call_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
+    target = (match.group("target") or "").strip()
+    target = re.sub(r"^to\s+", "", target, flags=re.I).strip()  # "call to the kitchen"
+    # Drop trailing filler so "call me back later" → "me back" (a stopword).
+    target = re.sub(r"\s+(later|again|now|please|soon|today|tonight)$", "", target, flags=re.I).strip()
+    if not target or target.lower() in _CALL_STOPWORDS:
+        return None
+    # The target is resolved (fuzzy, online-preferred) inside the intercom_call
+    # tool; an unknown name returns a polite "couldn't find" rather than failing.
+    return IntentHint(
+        tool="intercom_call",
+        sentence=(f"This is a device command: the user wants to place an intercom "
+                  f"call to '{target}'. Call the `intercom_call` tool NOW with "
+                  f"target='{target}'. Reply only with a one-line confirmation."),
+        guard_args={"target": target},
+    )
+
+
 def _pair_phone_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
     return IntentHint(
         tool="pair_phone",
@@ -145,6 +169,9 @@ _INTENT_HINTS: list = [
         r"|\b(connect|set\s*up|register)\b.{0,25}\b(phone|companion|mobile app|companion app)\b",  # "set up the companion app"
         re.I),
      _pair_phone_intent),
+    # Intercom: "call the kitchen", "video call the iphone", "ring the living room".
+    (re.compile(r"^\s*(?:please\s+)?(?:make a |start a )?(?:video[\s-]?)?(?:call|ring)\s+(?P<target>.+?)\s*[.!?]*$", re.I),
+     _intercom_call_intent),
     (re.compile(r"\b(cancel|stop|clear|delete|remove)\b.{0,30}\btimers?\b", re.I),
      _timer_cancel_intent),
     (re.compile(
