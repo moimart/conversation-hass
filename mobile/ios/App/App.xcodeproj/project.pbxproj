@@ -25,6 +25,7 @@
 		622FAB3C52AA110FDA68FA8C /* PalDiscoveryPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1653EBFF3C3E9E8F20FFE70 /* PalDiscoveryPlugin.swift */; };
 		6E9EF5EAA89054766FABEB97 /* NotificationServiceExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 61B182AEF6E390C5B5A1331E /* NotificationServiceExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A346DF616DD0755CB9C429B /* Discovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B7E005E27EFC4A968069780 /* Discovery.swift */; };
+		8AA1039361258398F5EE98CD /* PalMirrorPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC80E4CFCBFEDED3EEE40A2B /* PalMirrorPlugin.swift */; };
 		98886CF76B47338CE45B08C4 /* DevConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89BCB100620C0224DE95C9F2 /* DevConfig.swift */; };
 		A5790889B612C9971C5B98BF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73452A7586CE8D422F6A5182 /* ContentView.swift */; };
 		B2319E4F58DEAA5AD9A35BEF /* PALComplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91D4C0F4B4434768E8D2D957 /* PALComplication.swift */; };
@@ -105,6 +106,7 @@
 		9F0D43D58B5F2E35BBCB2A82 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AD8382A5F7276CF4088C1145 /* PairingClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
 		B31F7B9F8BCF44385B3EACB5 /* PALComplication.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PALComplication.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		BC80E4CFCBFEDED3EEE40A2B /* PalMirrorPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PalMirrorPlugin.swift; path = PalMirrorPlugin.swift; sourceTree = "<group>"; };
 		C1653EBFF3C3E9E8F20FFE70 /* PalDiscoveryPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PalDiscoveryPlugin.swift; sourceTree = "<group>"; };
 		D98F5FA55853680841571280 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		EA21238DF781256934B686CA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -204,6 +206,7 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 				C1653EBFF3C3E9E8F20FFE70 /* PalDiscoveryPlugin.swift */,
 				170CCD0CFC80A3BC56E41D23 /* MainViewController.swift */,
+				BC80E4CFCBFEDED3EEE40A2B /* PalMirrorPlugin.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -422,6 +425,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				622FAB3C52AA110FDA68FA8C /* PalDiscoveryPlugin.swift in Sources */,
 				DB2D87EBB8E77E081223C8D0 /* MainViewController.swift in Sources */,
+				8AA1039361258398F5EE98CD /* PalMirrorPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
