@@ -1331,7 +1331,13 @@
     function applyWeather(msg) {
         const box = document.getElementById("weather");
         if (!box) return;
-        if (!msg || msg.show === false) { box.hidden = true; return; }
+        if (!msg || msg.show === false) {
+            box.hidden = true;
+            // Mobile uses this to know whether to drop the command box below the
+            // weather (vs sit a little higher when there's no weather).
+            document.body.classList.remove("hal-weather-shown");
+            return;
+        }
         const tempEl = document.getElementById("weather-temp");
         const iconEl = document.getElementById("weather-icon");
         const condEl = document.getElementById("weather-cond");
@@ -1342,6 +1348,7 @@
         if (iconEl) iconEl.innerHTML = WEATHER_ICONS[w.icon] || WEATHER_ICONS.cloud;
         if (condEl) condEl.textContent = w.label;
         box.hidden = false;
+        document.body.classList.add("hal-weather-shown");
     }
 
     // --- Init ---

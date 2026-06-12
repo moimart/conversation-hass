@@ -101,11 +101,15 @@ body.show-conversation-log .clog-title { font-size: 16px !important; }
     position: fixed !important;
     left: 14px !important;
     right: 14px !important;
-    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 78px) !important;
+    /* Sit just below the clock+date when there's no weather. With weather a
+       `body.hal-weather-shown` rule (below) pushes it down past the readout. */
+    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 72px) !important;
     bottom: auto !important;
     width: auto !important;
     max-width: none !important;
-    max-height: 16vh !important;
+    /* Tall enough to show several lines before it scrolls; grows downward over
+       the orb (it sits above it, z-index 7). */
+    max-height: 30vh !important;
     overflow-y: auto !important;
     margin: 0 !important;
     z-index: 7 !important;                        /* above the orb (6), like the reply */
@@ -123,6 +127,11 @@ body.show-conversation-log .clog-title { font-size: 16px !important; }
 #display-root .transcript-scroll {
     font-size: 16px !important;
     line-height: 1.5 !important;
+}
+/* When the weather readout is showing, the clock block is taller — drop the
+   command box below it so they don't overlap (set by applyWeather in app.js). */
+body.hal-weather-shown #display-root .transcript-container {
+    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 124px) !important;
 }
 /* PAL's reply panel: long replies used to climb up BEHIND the orb (the orb is
    re-anchored at z-index 6 above the kiosk's z-index-1 panel). Keep the panel
