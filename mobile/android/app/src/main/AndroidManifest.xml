@@ -51,4 +51,6 @@
          front camera is optional so the app still installs on devices without one. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+    <!-- WebRTC audio in the WebView (intercom calls). -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 </manifest>

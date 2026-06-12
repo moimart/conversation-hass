@@ -4,6 +4,8 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.webkit.PermissionRequest;
+import android.webkit.WebView;
 
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -11,6 +13,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 
 /**
  * Full-screen immersive, the way games do it: hide BOTH system bars (status +
@@ -46,6 +49,19 @@ public class MainActivity extends BridgeActivity {
         // A real height change makes the WebView re-measure and the input rides
         // up above the keyboard.
         final View web = getBridge().getWebView();
+        if (web instanceof WebView) {
+            // getUserMedia in the WebView (intercom calls, mirror) needs the
+            // web-layer capture permission GRANTED — the default Capacitor chrome
+            // client leaves audio capture denied (NotAllowedError), so we grant
+            // camera/mic requests here. The OS-level runtime perms (CAMERA /
+            // RECORD_AUDIO) are declared in the manifest and prompted separately.
+            ((WebView) web).setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
+                @Override
+                public void onPermissionRequest(final PermissionRequest request) {
+                    runOnUiThread(() -> request.grant(request.getResources()));
+                }
+            });
+        }
         if (web != null) {
             ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
                 int imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
