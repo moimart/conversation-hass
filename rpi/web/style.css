@@ -791,8 +791,9 @@ body.ptt-active .eye-container {
 .weather-icon {
     display: inline-flex;
     align-items: center;
-    color: var(--text);   /* icons use currentColor → follow the theme text */
-    /* Halo around the icon to match the text. */
+    color: var(--accent);   /* icon in the theme accent (currentColor) */
+    /* Halo around the icon to match the text — keeps it legible over a
+       photo-frame image. */
     filter:
         drop-shadow(0 0 2px rgba(0, 0, 0, 0.95))
         drop-shadow(0 0 6px rgba(0, 0, 0, 0.85))
@@ -800,11 +801,11 @@ body.ptt-active .eye-container {
 }
 .weather-icon svg { width: 30px; height: 30px; display: block; stroke-width: 2.4; }
 .weather-cond {
-    /* The condition word: small, after the icon. */
+    /* The condition word: small, after the icon, in the theme accent. */
     font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.5px;
-    color: var(--text);
+    color: var(--accent);
     opacity: 0.95;
     width: 100%;            /* drop to its own line under temp + icon */
     margin-top: 2px;
