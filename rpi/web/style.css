@@ -779,10 +779,12 @@ body.ptt-active .eye-container {
    white letters are added ONLY in photo-frame mode (below), where the readout
    sits over an arbitrary photo and needs to stay legible. */
 .weather-temp {
-    /* Bigger than the date (14px), smaller than the time (56px). */
+    /* Bigger than the date (14px), smaller than the time (56px). The degrees
+       follow the clock TIME's colors: var(--text) here, white in photo-frame
+       mode (the override below) — same as .clock-time. */
     font-size: 30px;
     font-weight: 700;
-    color: var(--accent);
+    color: var(--text);
     opacity: 1;
     font-variant-numeric: tabular-nums;
     line-height: 1;
