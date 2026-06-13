@@ -29,6 +29,7 @@ import asyncio
 import fractions
 import io
 import logging
+import time
 
 import av
 import pyaudio
@@ -40,30 +41,45 @@ from aiortc import (
 )
 from aiortc.sdp import candidate_from_sdp
 
+try:                                  # runtime: `python -m audio_streamer.main`
+    from .intercom_reframe import MicReframer
+except ImportError:                   # tests: `rpi.audio_streamer.intercom_peer`
+    from intercom_reframe import MicReframer
+
 log = logging.getLogger("hal.intercom_peer")
 
 CALL_RATE = 48000          # WebRTC/Opus works at 48 kHz; the Anker supports it
+MAX_QUEUE_MS = 200         # cap queued mic audio (drop oldest) to bound latency
 
 
 class _MicTrack(MediaStreamTrack):
-    """Outbound mic: pulls raw s16-mono frames (at the streamer's capture rate)
-    from a queue the streamer fills; aiortc resamples to 48 kHz Opus."""
+    """Outbound mic. The streamer captures big (~256 ms) chunks sized for the
+    wake-word/STT path; sending one whole makes aiortc burst ~13 Opus packets
+    then go silent — choppy for the receiver. So we RE-SLICE into 20 ms frames
+    and pace recv() to wall-clock, so packets leave evenly (MicReframer). aiortc
+    resamples the 20 ms frames to 48 kHz Opus."""
     kind = "audio"
 
     def __init__(self, queue: asyncio.Queue, rate: int):
         super().__init__()
         self._queue = queue
         self._rate = rate
-        self._pts = 0
+        self._rf = MicReframer(rate)
 
     async def recv(self) -> av.AudioFrame:
-        data = await self._queue.get()           # paced by real-time mic capture
-        frame = av.AudioFrame(format="s16", layout="mono", samples=len(data) // 2)
-        frame.planes[0].update(data)
+        rf = self._rf
+        while not rf.ready():
+            rf.push(await self._queue.get())     # paced by real-time mic capture
+        chunk = rf.pop_frame()
+        delay = rf.delay_for(time.monotonic())   # smooth a buffered burst
+        if delay > 0:
+            await asyncio.sleep(delay)
+        frame = av.AudioFrame(format="s16", layout="mono", samples=rf.frame_samples)
+        frame.planes[0].update(chunk)
         frame.sample_rate = self._rate
-        frame.pts = self._pts
+        frame.pts = rf.pts
         frame.time_base = fractions.Fraction(1, self._rate)
-        self._pts += frame.samples
+        rf.advance()
         return frame
 
 
@@ -89,9 +105,16 @@ class IntercomPeer:
         q = self._mic_queue
         if q is None:
             return
-        if q.qsize() > 25:                       # ~0.5s — drop stale to bound latency
+        # Bound queued audio to ~MAX_QUEUE_MS (drop OLDEST) so latency stays small
+        # if the encoder briefly stalls. Each item is one capture chunk; size the
+        # cap by its real duration, not a frame count (_MicTrack re-paces these
+        # into 20 ms frames, so the queue normally holds ~1 chunk).
+        rate = getattr(self._streamer, "device_rate", 0) or 16000
+        chunk_ms = (len(pcm_s16_mono) / 2) / rate * 1000 if rate else 0
+        keep = max(1, int(MAX_QUEUE_MS / chunk_ms)) if chunk_ms else 25
+        while q.qsize() >= keep:
             try: q.get_nowait()
-            except Exception: pass
+            except Exception: break
         try: q.put_nowait(pcm_s16_mono)
         except Exception: pass
 
