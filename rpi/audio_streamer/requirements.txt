@@ -5,3 +5,4 @@ numpy==1.26.4
 evdev==1.7.1
 aiortc==1.14.0
 av==16.1.0
+Pillow==10.4.0

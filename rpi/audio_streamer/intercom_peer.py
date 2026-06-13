@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import fractions
+import io
 import logging
 
 import av
@@ -66,15 +67,17 @@ class IntercomPeer:
     """One active kiosk call. Owned by the AudioStreamer; driven by intercom_*
     signaling from the server and a `send` callback that ships signaling back up."""
 
-    def __init__(self, streamer, send_up):
+    def __init__(self, streamer, send_up, show_frame=None):
         self._streamer = streamer
         self._send_up = send_up                  # async fn(dict) → server (/ws/audio)
+        self._show_frame = show_frame            # async fn(jpeg_bytes) → kiosk orb
         self.session_id: str | None = None
         self.role: str | None = None             # "caller" | "callee"
         self._pc: RTCPeerConnection | None = None
         self._mic_queue: asyncio.Queue | None = None
         self._out_stream = None
         self._play_task: asyncio.Task | None = None
+        self._video_task: asyncio.Task | None = None
         self._closing = False
 
     # --- streamer hook: feed a captured mic frame (called while in_call) -------
@@ -187,6 +190,8 @@ class IntercomPeer:
         def _on_track(track):
             if track.kind == "audio":
                 self._play_task = asyncio.ensure_future(self._play(track))
+            elif track.kind == "video" and self._show_frame is not None:
+                self._video_task = asyncio.ensure_future(self._pipe_video(track))
 
         @self._pc.on("connectionstatechange")
         async def _on_state():
@@ -221,6 +226,27 @@ class IntercomPeer:
         except Exception as e:
             log.debug(f"intercom play ended: {e}")
 
+    async def _pipe_video(self, track) -> None:
+        """Decode the caller's video and push a few JPEG frames/sec to the kiosk
+        orb (the existing show_camera path). Throttled + downscaled to keep RPi
+        CPU low; aiortc still decodes every frame so the pipeline keeps flowing."""
+        loop = asyncio.get_event_loop()
+        n = 0
+        while not self._closing:
+            try:
+                frame = await track.recv()
+            except Exception:
+                break
+            n += 1
+            if n % 4:                       # ~6 fps from a 24 fps sender
+                continue
+            try:
+                jpeg = await loop.run_in_executor(None, _frame_to_jpeg, frame)
+                if jpeg:
+                    await self._show_frame(jpeg)
+            except Exception as e:
+                log.debug(f"video frame failed: {e}")
+
     def _safe_write(self, data: bytes) -> None:
         try:
             if self._out_stream is not None:
@@ -241,6 +267,8 @@ class IntercomPeer:
             pass
         if self._play_task:
             self._play_task.cancel()
+        if self._video_task:
+            self._video_task.cancel()
         if self._out_stream is not None:
             try:
                 self._out_stream.stop_stream(); self._out_stream.close()
@@ -259,6 +287,20 @@ class IntercomPeer:
         except Exception:
             pass
         log.info(f"intercom peer closed (session={sid})")
+
+
+def _frame_to_jpeg(frame, max_w: int = 360, quality: int = 70) -> bytes | None:
+    """av.VideoFrame → downscaled JPEG bytes (via Pillow). None on failure."""
+    try:
+        img = frame.to_image()                  # PIL Image (RGB)
+        if img.width > max_w:
+            img = img.resize((max_w, max(1, round(max_w * img.height / img.width))))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        return buf.getvalue()
+    except Exception as e:
+        log.debug(f"jpeg encode failed: {e}")
+        return None
 
 
 def _rand_id() -> str:

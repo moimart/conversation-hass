@@ -265,8 +265,17 @@ class AudioManager:
             except Exception as e:
                 log.error(f"intercom unavailable (aiortc import failed): {e}")
                 return
-            self.intercom_peer = intercom_peer.IntercomPeer(self, self._send_intercom_up)
+            self.intercom_peer = intercom_peer.IntercomPeer(
+                self, self._send_intercom_up, self._show_call_frame)
         await self.intercom_peer.handle(msg)
+
+    async def _show_call_frame(self, jpeg: bytes):
+        """Push one decoded call video frame to the kiosk orb (show_camera path)."""
+        import base64
+        await self.broadcast_to_ui({
+            "type": "show_camera", "mime": "image/jpeg", "duration_s": 4,
+            "image": base64.b64encode(jpeg).decode(),
+        })
 
     async def _send_intercom_up(self, msg: dict):
         """Ship the call peer's signaling up to the AI server over /ws/audio."""
