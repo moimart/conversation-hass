@@ -272,3 +272,44 @@ async def test_signaling_for_unknown_session_is_noop(sent):
         "type": "intercom_offer", "session_id": "nope", "sdp": "x",
     })
     assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_mint_sends_browser_user_agent(monkeypatch):
+    """Cloudflare's edge bot-protection 403s (error 1010) the httpx/urllib
+    default User-Agent, so the TURN mint MUST present a browser-like UA — else
+    it silently never mints and remote calls fall back to STUN-only."""
+    import httpx
+
+    captured = {}
+
+    class _FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"iceServers": {"urls": ["turn:turn.cloudflare.com:3478"],
+                                   "username": "u", "credential": "c"}}
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            captured["headers"] = headers or {}
+            return _FakeResp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+    # Bypass the mint cache so the request actually fires.
+    intercom._turn_cache.update(minted=None, minted_exp=0.0)
+
+    minted = await intercom._cloudflare_ice({"key_id": "k", "api_token": "t"})
+    assert minted  # non-empty -> mint succeeded
+    ua = captured["headers"].get("User-Agent", "")
+    assert ua and "python" not in ua.lower()

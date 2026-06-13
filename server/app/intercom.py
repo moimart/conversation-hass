@@ -101,9 +101,13 @@ async def _cloudflare_ice(cfg):
         return None
     import httpx
     url = f"https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/generate"
+    # Cloudflare's edge bot-protection 403s (error 1010) requests whose
+    # User-Agent looks like a script (the httpx/urllib defaults), so the mint
+    # must present a browser-like UA — without it TURN silently never mints and
+    # remote calls fall back to STUN-only (no relay → no media).
+    headers = {"Authorization": f"Bearer {token}", "User-Agent": "Mozilla/5.0"}
     async with httpx.AsyncClient(timeout=8) as client:
-        r = await client.post(url, headers={"Authorization": f"Bearer {token}"},
-                              json={"ttl": ttl})
+        r = await client.post(url, headers=headers, json={"ttl": ttl})
         r.raise_for_status()
         ice = r.json().get("iceServers")
     minted = [ice] if isinstance(ice, dict) else (ice if isinstance(ice, list) else None)
