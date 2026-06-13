@@ -1434,6 +1434,8 @@
         if (!haveVideo) pc.addTransceiver("video", { direction: "recvonly" });
         icRemote = new MediaStream();
         pc.ontrack = (ev) => {
+            console.log("[ic] ontrack kind=" + ev.track.kind + " id=" + ev.track.id +
+                " enabled=" + ev.track.enabled + " muted=" + ev.track.muted);
             icRemote.addTrack(ev.track);
             icRenderRemote();
         };
@@ -1497,7 +1499,10 @@
             icAudioSink.srcObject = new MediaStream(aTracks);
             icAudioSink._aid = aTracks[0].id;
         }
-        icAudioSink.play().catch(() => {});
+        icAudioSink.play().then(
+            () => console.log("[ic] audio sink playing, tracks=" + aTracks.length +
+                " trackEnabled=" + aTracks[0].enabled + " trackMuted=" + aTracks[0].muted),
+            (e) => console.log("[ic] audio sink play FAILED: " + e.name + " " + e.message));
     }
 
     // --- audio-wave on the orb (remote voice, when there's no remote video) ---
