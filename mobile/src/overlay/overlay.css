@@ -156,6 +156,21 @@ body.show-mirror .hal-input-bar { display: none; }   /* mirror owns the screen *
     color: #fff;
 }
 .hal-sheet-title { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.5; }
+.hal-sheet-namerow { display: flex; gap: 8px; align-items: center; }
+.hal-name-input {
+    flex: 1;
+    min-width: 0;
+    height: 46px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font-size: 16px;          /* >=16px so iOS doesn't zoom on focus */
+    outline: none;
+}
+.hal-name-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+.hal-name-save { flex: 0 0 auto; width: auto; padding: 0 18px; height: 46px; }
 .hal-sheet-sub { font-size: 14px; opacity: 0.75; word-break: break-all; margin-bottom: 6px; }
 .hal-sheet-btn {
     height: 50px;

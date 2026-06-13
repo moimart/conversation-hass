@@ -74,6 +74,7 @@ _ALLOWLIST = [
     ("GET",  r"^/api/cloud_llm$",                        True,  False),
     ("POST", r"^/api/cloud_llm$",                        True,  False),
     ("POST", r"^/api/pair/push-register$",              True,  False),
+    ("POST", r"^/api/pair/rename$",                     True,  False),
     # Intercom directory (token-gated). Call SIGNALING rides the already-proxied
     # /ws/ui socket; media is peer-to-peer (TURN), never through the gateway.
     ("GET",  r"^/api/intercom/devices$",                True,  False),

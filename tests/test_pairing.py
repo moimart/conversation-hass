@@ -269,8 +269,32 @@ async def test_pair_status_valid_and_invalid(pmod, fake_main):
     token = fake_main.state.pairing.redeem(code, "x")
     ok = await pmod.pair_status(SimpleNamespace(app=SimpleNamespace(),
                                                 headers={"authorization": f"Bearer {token}"}))
-    assert ok == {"valid": True}
+    assert ok == {"valid": True, "device_name": "x"}
     bad = await pmod.pair_status(SimpleNamespace(app=SimpleNamespace(), headers={}))
+    assert bad.status_code == 401
+
+
+def test_rename(pmod):
+    mgr = pmod.PairingManager()
+    token = mgr.redeem(mgr.create_code()[0], "iPhone")
+    assert mgr.rename(token, "  Kitchen  ") is True
+    assert mgr.device_name(token) == "Kitchen"      # trimmed
+    assert mgr.rename(token, "") is False           # empty rejected
+    assert mgr.device_name(token) == "Kitchen"      # unchanged
+    assert mgr.rename("nope", "X") is False          # unknown token
+
+
+@pytest.mark.asyncio
+async def test_pair_rename_endpoint(pmod, fake_main):
+    token = fake_main.state.pairing.redeem(fake_main.state.pairing.create_code()[0], "iPhone")
+    out = await pmod.pair_rename(
+        SimpleNamespace(app=SimpleNamespace(), headers={"authorization": f"Bearer {token}"}),
+        pmod.RenameRequest(name="Maria's phone"))
+    assert out == {"ok": True, "device_name": "Maria's phone"}
+    assert fake_main.state.pairing.device_name(token) == "Maria's phone"
+    # unauthorized
+    bad = await pmod.pair_rename(SimpleNamespace(app=SimpleNamespace(), headers={}),
+                                 pmod.RenameRequest(name="x"))
     assert bad.status_code == 401
 
 
@@ -406,7 +430,7 @@ async def test_watch_token_can_use_status_and_push_register(pmod, fake_main):
 
     ok = await pmod.pair_status(SimpleNamespace(
         app=SimpleNamespace(), headers={"authorization": f"Bearer {watch}"}))
-    assert ok == {"valid": True}
+    assert ok == {"valid": True, "device_name": "Apple Watch"}
 
     reg = await pmod.pair_push_register(
         SimpleNamespace(app=SimpleNamespace(),

@@ -248,6 +248,20 @@ class PairingManager:
             return True
         return False
 
+    def rename(self, token: str | None, new_name: str) -> bool:
+        """Set the friendly device_name for a token (self-service from the app).
+        Lets the user give each device a unique, memorable name — iOS reports
+        'iPhone' for EVERY device (privacy), so defaults collide and the intercom
+        directory/voice-call ('call the kitchen') can't tell them apart."""
+        entry = self._tokens.get(token) if token else None
+        name = (new_name or "").strip()[:64]
+        if entry is None or not name:
+            return False
+        entry["device_name"] = name
+        self._save()
+        log.info(f"device renamed → {name!r}")
+        return True
+
     def revoke_by_device_name(self, device_name: str) -> int:
         """Revoke every token whose device_name matches (case-insensitive).
         Returns the count removed. Lets an admin deauthorize a phone by its
@@ -400,12 +414,32 @@ async def pair_redeem(request: Request, req: RedeemRequest):
 
 @router.get("/api/pair/status")
 async def pair_status(request: Request):
-    """Probe whether a Bearer token is still valid (used at app launch)."""
+    """Probe whether a Bearer token is still valid (used at app launch). Returns
+    the device's current name so the settings sheet can prefill the rename field."""
     from .main import _get_state
     state = _get_state(request.app)
-    if state.pairing.is_valid_token(extract_bearer(request)):
-        return {"valid": True}
+    token = extract_bearer(request)
+    if state.pairing.is_valid_token(token):
+        return {"valid": True, "device_name": state.pairing.device_name(token) or ""}
     return _json_error({"valid": False}, 401)
+
+
+class RenameRequest(BaseModel):
+    name: str
+
+
+@router.post("/api/pair/rename")
+async def pair_rename(request: Request, req: RenameRequest):
+    """Rename THIS device (the caller's own token). Each device names itself, so
+    'iPhone'/'Android device' defaults can be made unique + memorable."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    token = extract_bearer(request)
+    if not (token and state.pairing.is_valid_token(token)):
+        return _json_error({"error": "unauthorized"}, 401)
+    if state.pairing.rename(token, req.name):
+        return {"ok": True, "device_name": state.pairing.device_name(token)}
+    return _json_error({"error": "bad_name"}, 400)
 
 
 class RevokeRequest(BaseModel):

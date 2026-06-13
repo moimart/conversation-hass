@@ -138,7 +138,14 @@ function showSettings(cfg: HalConfig): void {
   back.className = "hal-sheet-backdrop";
   back.innerHTML = `
     <div class="hal-sheet">
-      <div class="hal-sheet-title">Connection</div>
+      <div class="hal-sheet-title">This device</div>
+      <div class="hal-sheet-namerow">
+        <input class="hal-name-input" id="hal-name-input" type="text" maxlength="64"
+               placeholder="Device name (e.g. Kitchen)" autocomplete="off" autocapitalize="words" />
+        <button class="hal-sheet-btn hal-name-save" id="hal-name-save">Save</button>
+      </div>
+      <div class="hal-sheet-row-sub" id="hal-name-hint">Used when someone calls this device.</div>
+      <div class="hal-sheet-title" style="margin-top:14px">Connection</div>
       <div class="hal-sheet-sub">${cfg.serverName ? cfg.serverName + " · " : ""}${cfg.serverBaseUrl}</div>
       <div class="hal-sheet-row" id="hal-cloud-row" hidden>
         <div class="hal-sheet-row-text">
@@ -158,7 +165,46 @@ function showSettings(cfg: HalConfig): void {
     await clearConfig();
     location.reload();   // boot.ts re-runs with no config → onboarding (code entry)
   });
+  void mountDeviceRename(cfg, back);
   void mountCloudToggle(cfg, back);
+}
+
+// Self-rename: each device names itself (authenticated by its own token). iOS
+// reports "iPhone" for every device, so the intercom directory + voice calls
+// ("call the kitchen") need user-chosen names to tell devices apart.
+async function mountDeviceRename(cfg: HalConfig, back: HTMLElement): Promise<void> {
+  const input = back.querySelector<HTMLInputElement>("#hal-name-input");
+  const save = back.querySelector<HTMLButtonElement>("#hal-name-save");
+  const hint = back.querySelector<HTMLElement>("#hal-name-hint");
+  if (!input || !save) return;
+  const headers = {
+    "Content-Type": "application/json",
+    ...(cfg.token ? { Authorization: `Bearer ${cfg.token}` } : {}),
+  };
+  // Prefill with the current name (pair/status now returns device_name).
+  try {
+    const res = await fetch(`${cfg.serverBaseUrl}/api/pair/status`, { headers });
+    if (res.ok) {
+      const s = await res.json();
+      if (s.device_name) input.value = s.device_name;
+    }
+  } catch { /* offline — leave blank */ }
+  save.addEventListener("click", async () => {
+    const name = input.value.trim();
+    if (!name) return;
+    save.disabled = true;
+    try {
+      const res = await fetch(`${cfg.serverBaseUrl}/api/pair/rename`, {
+        method: "POST", headers, body: JSON.stringify({ name }),
+      });
+      if (hint) hint.textContent = res.ok ? `Saved — this device is now “${name}”.`
+                                          : "Couldn't save the name.";
+    } catch {
+      if (hint) hint.textContent = "Couldn't reach the server.";
+    } finally {
+      save.disabled = false;
+    }
+  });
 }
 
 // "Cloud LLM" switch (the server calls it the cloud override). Only shown when
