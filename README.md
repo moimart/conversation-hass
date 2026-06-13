@@ -87,6 +87,30 @@ Each phone also gets its own idle **photo-frame** screensaver, dismissed automat
 
 Build & install steps (Android + iOS, Capacitor): [`mobile/README.md`](./mobile/README.md).
 
+### Intercom (call between your devices)
+
+Paired devices can **call each other** — 1:1 audio/video, peer-to-peer (WebRTC).
+Say **"call the kitchen"** (any device's name) and it rings; the remote party's
+**video renders on the orb**, or their voice drives an **audio-wave** when there's
+no camera. Each side shows only the *other* participant (camera-on ↔ camera-off
+falls out naturally — the camera-less side sees video, the other sees the wave).
+
+- 📇 **Addressed by name** — every device has a unique, persistent address
+  (`sha256(token)`, never the secret token). Name each one from its settings
+  ("Kitchen", "Maria's phone") so duplicate defaults don't collide — iOS reports
+  *every* device as "iPhone". "call the hub" reaches the home display.
+- 🛰️ **The hub answers hands-free** — the PAL display unit ("hub") auto-answers
+  and shows the caller on its orb. It's a **native WebRTC endpoint** (`aiortc`
+  inside the audio_streamer, which owns the speaker/mic) — a kiosk browser can't
+  do full-duplex call audio on shared hardware.
+- 🗣️ **Voice-controlled** — "call X" / "hang up" fire reliably on either the
+  local or the agentic (OpenClaw) engine path.
+- 🌐 **LAN-direct, remote-capable** — on home Wi-Fi calls connect peer-to-peer
+  with no relay; off-network they use a TURN server (e.g. Cloudflare TURN) set in
+  `server/runtime/intercom_turn.json` (hot-reloaded). The server only relays
+  **signaling** over the existing `/ws/ui` socket — call media never flows
+  through it.
+
 ### Remote access (optional satellite gateway)
 
 By default a phone reaches PAL only on your LAN (or a VPN like Tailscale). The
