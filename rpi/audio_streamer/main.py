@@ -105,6 +105,11 @@ class AudioManager:
         # ma_volume_adjust messages.
         self._server_ws = None
 
+        # Intercom call (native WebRTC via aiortc): while in_call the single mic
+        # stream feeds the call peer instead of the server (wake-word paused).
+        self.in_call: bool = False
+        self.intercom_peer = None
+
         # Display power backend (DPMS). Picks wlr-randr / xset /
         # vcgencmd at startup depending on which the host exposes.
         # None means no backend was usable — the server will see the
@@ -238,6 +243,55 @@ class AudioManager:
             stream.close()
         except Exception:
             pass
+
+    # --- Intercom calls (native WebRTC via aiortc) ---
+
+    async def _handle_intercom(self, msg: dict):
+        """Route an intercom_* signaling message to the kiosk's aiortc call peer
+        (created on the first call_start/invite). aiortc imports are heavy, so
+        they're deferred to here — a missing dep never breaks the streamer."""
+        mtype = msg.get("type")
+        if self.intercom_peer is None:
+            if mtype not in ("intercom_call_start", "intercom_invite"):
+                return  # stray signal for no active call
+            try:
+                import intercom_peer
+            except Exception as e:
+                log.error(f"intercom unavailable (aiortc import failed): {e}")
+                return
+            self.intercom_peer = intercom_peer.IntercomPeer(self, self._send_intercom_up)
+        await self.intercom_peer.handle(msg)
+
+    async def _send_intercom_up(self, msg: dict):
+        """Ship the call peer's signaling up to the AI server over /ws/audio."""
+        ws = self._server_ws
+        if ws is None:
+            return
+        try:
+            await ws.send(json.dumps(msg))
+        except Exception as e:
+            log.debug(f"intercom upstream send failed: {e}")
+
+    def enter_call(self, peer):
+        """Called by the peer when a call's media is up: route the mic to the
+        call (the send_audio loop stops shipping to the server)."""
+        self.intercom_peer = peer
+        self.in_call = True
+        log.info("intercom: in call — wake-word capture paused, mic routed to call")
+
+    def leave_call(self, peer):
+        if self.intercom_peer is peer:
+            self.intercom_peer = None
+        self.in_call = False
+        log.info("intercom: call ended — wake-word capture resumed")
+
+    def open_call_output(self, rate: int) -> pyaudio.Stream:
+        """A dedicated PyAudio output stream for call playback (mono s16)."""
+        dev = self.find_output_device()
+        return self.pa.open(
+            format=pyaudio.paInt16, channels=1, rate=rate,
+            output=True, output_device_index=dev, frames_per_buffer=960,
+        )
 
     # --- Audio processing ---
 
@@ -504,13 +558,12 @@ class AudioManager:
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
             "show_photo_frame_video", "set_photo_frame_clock",
             "show_pairing_code", "hide_pairing_code",
-            "intercom_call_start", "intercom_invite", "intercom_ringing",
-            "intercom_accept", "intercom_decline", "intercom_busy",
-            "intercom_unavailable", "intercom_offer", "intercom_answer",
-            "intercom_candidate", "intercom_hangup",
-            "intercom_voice_accept", "intercom_voice_hangup",
         ):
             await self.broadcast_to_ui(msg)
+
+        elif msg_type.startswith("intercom_"):
+            # Kiosk call audio is handled NATIVELY here (aiortc), not in Chromium.
+            await self._handle_intercom(msg)
 
         elif msg_type == "weather_update":
             # Cache so a (re)connecting kiosk page gets it replayed on connect.
@@ -598,6 +651,12 @@ class AudioManager:
 
                             if self.needs_downmix:
                                 audio_data = self.downmix_to_mono(audio_data)
+
+                            # In a call, the mic feeds the WebRTC peer instead of
+                            # the server's wake-word/STT pipeline.
+                            if self.in_call and self.intercom_peer is not None:
+                                self.intercom_peer.feed_mic(audio_data)
+                                continue
 
                             await ws.send(audio_data)
                             chunks_sent += 1
