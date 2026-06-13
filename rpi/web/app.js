@@ -1446,10 +1446,27 @@
                 sdpMLineIndex: ev.candidate.sdpMLineIndex });
         };
         pc.onconnectionstatechange = () => {
-            if (pc.connectionState === "connected") icSetCallClass("in-call");
-            else if (pc.connectionState === "failed" || pc.connectionState === "closed") icHangup("failed");
+            if (pc.connectionState === "connected") {
+                icSetCallClass("in-call");
+                setTimeout(() => icLogStats(pc), 3500);   // diagnostic
+            } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+                icHangup("failed");
+            }
         };
         return pc;
+    }
+    async function icLogStats(pc) {
+        try {
+            const stats = await pc.getStats();
+            stats.forEach((r) => {
+                if (r.type === "inbound-rtp")
+                    console.log("[ic] inbound " + r.kind + " packets=" + r.packetsReceived +
+                        " bytes=" + r.bytesReceived + " level=" + r.audioLevel);
+                if (r.type === "outbound-rtp")
+                    console.log("[ic] outbound " + r.kind + " packets=" + r.packetsSent +
+                        " bytes=" + r.bytesSent);
+            });
+        } catch (e) { console.log("[ic] stats err " + e.message); }
     }
 
     function icRenderRemote() {
