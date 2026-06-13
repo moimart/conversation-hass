@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["model_get_selection_in_range","model_is_selected","model_select_all","model_select_item","model_select_range","model_set_selection","model_unselect_all","model_unselect_item","model_unselect_range"],"mod":["sealed"],"trait":["SelectionModelImpl","SelectionModelImplExt"]};

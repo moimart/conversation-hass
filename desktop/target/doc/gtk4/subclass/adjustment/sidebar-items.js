@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["adjustment_changed","adjustment_value_changed"],"mod":["sealed"],"trait":["AdjustmentImpl","AdjustmentImplExt"]};

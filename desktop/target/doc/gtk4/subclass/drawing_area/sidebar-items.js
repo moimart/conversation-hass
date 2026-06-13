@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["drawing_area_resize"],"mod":["sealed"],"trait":["DrawingAreaImpl","DrawingAreaImplExt"]};

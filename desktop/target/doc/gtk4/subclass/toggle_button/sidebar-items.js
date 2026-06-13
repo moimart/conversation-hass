@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["toggle_button_toggled"],"mod":["sealed"],"trait":["ToggleButtonImpl","ToggleButtonImplExt"]};

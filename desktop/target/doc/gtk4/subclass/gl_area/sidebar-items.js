@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["gl_area_create_context","gl_area_render","gl_area_resize"],"mod":["sealed"],"trait":["GLAreaImpl","GLAreaImplExt"]};

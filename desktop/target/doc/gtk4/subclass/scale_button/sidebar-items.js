@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["scale_button_value_changed"],"mod":["sealed"],"trait":["ScaleButtonImpl","ScaleButtonImplExt"]};

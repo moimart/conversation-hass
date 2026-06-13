@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["sealed"],"struct":["FileChooser"],"trait":["FileChooserExt"]};

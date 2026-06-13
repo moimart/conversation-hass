@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["cell_area_context_allocate","cell_area_context_get_preferred_height_for_width","cell_area_context_get_preferred_width_for_height","cell_area_context_reset"],"mod":["sealed"],"trait":["CellAreaContextImpl","CellAreaContextImplExt"]};

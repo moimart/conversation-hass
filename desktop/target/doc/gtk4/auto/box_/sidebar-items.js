@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["sealed"],"struct":["Box","BoxBuilder"],"trait":["BoxExt"]};

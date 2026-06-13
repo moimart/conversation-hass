@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["combo_box_changed","combo_box_format_entry_text"],"mod":["sealed"],"trait":["ComboBoxImpl","ComboBoxImplExt"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["tree_model_filter_modify","tree_model_filter_visible"],"mod":["sealed"],"trait":["TreeModelFilterImpl","TreeModelFilterImplExt"]};

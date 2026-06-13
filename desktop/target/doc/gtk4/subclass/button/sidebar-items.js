@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["button_activate","button_clicked"],"mod":["sealed"],"trait":["ButtonImpl","ButtonImplExt"]};

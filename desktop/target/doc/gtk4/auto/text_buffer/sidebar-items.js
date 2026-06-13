@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["sealed"],"struct":["TextBuffer","TextBufferBuilder"],"trait":["TextBufferExt"]};

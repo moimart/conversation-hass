@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["entry_activate"],"mod":["sealed"],"trait":["EntryImpl","EntryImplExt"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["sealed"],"struct":["GLArea","GLAreaBuilder"],"trait":["GLAreaExt"]};

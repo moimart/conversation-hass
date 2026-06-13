@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["editable_changed","editable_delete_text","editable_do_delete_text","editable_do_insert_text","editable_get_delegate","editable_get_selection_bounds","editable_get_text","editable_insert_text","editable_set_selection_bounds"],"mod":["sealed"],"trait":["EditableImpl","EditableImplExt"]};

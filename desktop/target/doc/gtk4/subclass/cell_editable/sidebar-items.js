@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["cell_editable_editing_done","cell_editable_remove_widget","cell_editable_start_editing"],"mod":["sealed"],"trait":["CellEditableImpl","CellEditableImplExt"]};

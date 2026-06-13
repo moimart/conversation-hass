@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["actionable_get_action_name","actionable_get_action_target_value","actionable_set_action_name","actionable_set_action_target_value"],"mod":["sealed"],"trait":["ActionableImpl","ActionableImplExt"]};

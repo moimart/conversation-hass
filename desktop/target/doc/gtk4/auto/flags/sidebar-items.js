@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["ApplicationInhibitFlags","BuilderClosureFlags","CellRendererState","DebugFlags","DialogFlags","EventControllerScrollFlags","FontChooserLevel","IconLookupFlags","InputHints","PickFlags","PopoverMenuFlags","PrintCapabilities","ShortcutActionFlags","StateFlags","StyleContextPrintFlags","TextSearchFlags","TreeModelFlags"]};

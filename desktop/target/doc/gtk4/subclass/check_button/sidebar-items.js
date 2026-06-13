@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["check_button_toggled"],"mod":["sealed"],"trait":["CheckButtonImpl","CheckButtonImplExt"]};

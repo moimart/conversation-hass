@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["dialog_close","dialog_response"],"mod":["sealed"],"trait":["DialogImpl","DialogImplExt"]};

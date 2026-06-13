@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["color_chooser_add_palette","color_chooser_color_activated","color_chooser_get_rgba","color_chooser_set_rgba"],"mod":["sealed"],"trait":["ColorChooserImpl","ColorChooserImplExt"]};

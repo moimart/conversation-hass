@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["tree_drag_source_drag_data_delete","tree_drag_source_drag_data_get","tree_drag_source_row_draggable"],"mod":["sealed"],"trait":["TreeDragSourceImpl","TreeDragSourceImplExt"]};

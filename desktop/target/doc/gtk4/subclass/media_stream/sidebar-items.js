@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["media_stream_pause","media_stream_play","media_stream_realize","media_stream_seek","media_stream_unrealize","media_stream_update_audio"],"mod":["sealed"],"trait":["MediaStreamImpl","MediaStreamImplExt"]};

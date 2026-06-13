@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["scale_get_layout_offsets"],"mod":["sealed"],"trait":["ScaleImpl","ScaleImplExt"]};

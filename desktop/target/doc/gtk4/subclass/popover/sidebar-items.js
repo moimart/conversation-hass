@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["popover_activate_default","popover_closed"],"mod":["sealed"],"trait":["PopoverImpl","PopoverImplExt"]};

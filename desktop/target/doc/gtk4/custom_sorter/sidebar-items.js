@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["destroy_closure","trampoline"]};

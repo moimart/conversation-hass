@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["tree_drag_dest_drag_data_received","tree_drag_dest_row_drop_possible"],"mod":["sealed"],"trait":["TreeDragDestImpl","TreeDragDestImplExt"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["application_window_added","application_window_removed"],"mod":["sealed"],"trait":["GtkApplicationImpl","GtkApplicationImplExt"]};

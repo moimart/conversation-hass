@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["clear_action_entry","copy_into_action_entry","init_action_entry"],"struct":["PadActionEntry"]};

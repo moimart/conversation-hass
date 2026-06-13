@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["sealed"],"struct":["Application","ApplicationBuilder"],"trait":["GtkApplicationExt"]};

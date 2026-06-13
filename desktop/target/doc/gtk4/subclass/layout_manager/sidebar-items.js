@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["layout_manager_allocate","layout_manager_create_layout_child","layout_manager_get_request_mode","layout_manager_measure","layout_manager_root","layout_manager_unroot"],"mod":["sealed"],"trait":["LayoutManagerImpl","LayoutManagerImplExt"]};

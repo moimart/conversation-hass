@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Property","Relation","State"],"mod":["sealed"],"trait":["AccessibleExtManual"]};
