@@ -301,11 +301,13 @@ class AudioManager:
         log.info("intercom: call ended — wake-word capture resumed")
 
     def open_call_output(self, rate: int) -> pyaudio.Stream:
-        """A dedicated PyAudio output stream for call playback (mono s16)."""
+        """A dedicated PyAudio output stream for call playback (mono s16). A larger
+        device buffer (~100 ms) cushions playback against the CPU hiccups from
+        decoding the caller's video, so audio doesn't underrun/glitch."""
         dev = self.find_output_device()
         return self.pa.open(
             format=pyaudio.paInt16, channels=1, rate=rate,
-            output=True, output_device_index=dev, frames_per_buffer=960,
+            output=True, output_device_index=dev, frames_per_buffer=rate // 10,
         )
 
     # --- Audio processing ---

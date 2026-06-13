@@ -206,10 +206,14 @@ class IntercomPeer:
 
     async def _play(self, track) -> None:
         """Play the remote audio track to the speaker via a dedicated PyAudio
-        output stream, resampled to the device rate."""
+        output stream, resampled to the device rate. The blocking device writes
+        run on a DEDICATED thread so they're never queued behind video/JPEG work
+        (which would underrun the speaker and chop the call)."""
+        import concurrent.futures
         out_rate = CALL_RATE
         resampler = av.AudioResampler(format="s16", layout="mono", rate=out_rate)
         loop = asyncio.get_event_loop()
+        writer = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         try:
             self._out_stream = self._streamer.open_call_output(out_rate)
         except Exception as e:
@@ -222,30 +226,39 @@ class IntercomPeer:
                     if self._out_stream is None:
                         break
                     data = bytes(rf.planes[0])
-                    await loop.run_in_executor(None, self._safe_write, data)
+                    await loop.run_in_executor(writer, self._safe_write, data)
         except Exception as e:
             log.debug(f"intercom play ended: {e}")
+        finally:
+            writer.shutdown(wait=False)
 
     async def _pipe_video(self, track) -> None:
         """Decode the caller's video and push a few JPEG frames/sec to the kiosk
         orb (the existing show_camera path). Throttled + downscaled to keep RPi
-        CPU low; aiortc still decodes every frame so the pipeline keeps flowing."""
+        CPU low; aiortc still decodes every frame so the pipeline keeps flowing.
+        JPEG encoding runs on a DEDICATED thread so it can't starve the audio
+        playback thread (which would glitch the call)."""
+        import concurrent.futures
         loop = asyncio.get_event_loop()
+        enc = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         n = 0
-        while not self._closing:
-            try:
-                frame = await track.recv()
-            except Exception:
-                break
-            n += 1
-            if n % 4:                       # ~6 fps from a 24 fps sender
-                continue
-            try:
-                jpeg = await loop.run_in_executor(None, _frame_to_jpeg, frame)
-                if jpeg:
-                    await self._show_frame(jpeg)
-            except Exception as e:
-                log.debug(f"video frame failed: {e}")
+        try:
+            while not self._closing:
+                try:
+                    frame = await track.recv()
+                except Exception:
+                    break
+                n += 1
+                if n % 6:                   # ~4 fps from a 24 fps sender
+                    continue
+                try:
+                    jpeg = await loop.run_in_executor(enc, _frame_to_jpeg, frame)
+                    if jpeg:
+                        await self._show_frame(jpeg)
+                except Exception as e:
+                    log.debug(f"video frame failed: {e}")
+        finally:
+            enc.shutdown(wait=False)
 
     def _safe_write(self, data: bytes) -> None:
         try:
