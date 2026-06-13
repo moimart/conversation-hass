@@ -633,7 +633,9 @@ class AudioManager:
                     async def send_audio():
                         nonlocal stream, chunks_sent, last_health
                         while True:
-                            if self.tts_playing or self.mic_muted:
+                            # In a call we always read the mic (to feed the peer);
+                            # the mute flag only gates the wake-word/PAL path.
+                            if self.tts_playing or (self.mic_muted and not self.in_call):
                                 await asyncio.sleep(0.1)
                                 continue
 
