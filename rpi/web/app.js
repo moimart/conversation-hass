@@ -1478,13 +1478,25 @@
 
     let icAudioSink = null;
     function icEnsureAudioSink() {
+        if (!icRemote) return;
+        const aTracks = icRemote.getAudioTracks();
+        if (!aTracks.length) return;          // no remote audio yet — wait for it
         if (!icAudioSink) {
             icAudioSink = document.createElement("audio");
             icAudioSink.autoplay = true;
+            icAudioSink.setAttribute("playsinline", "");
             icAudioSink.style.display = "none";
             document.body.appendChild(icAudioSink);
         }
-        if (icAudioSink.srcObject !== icRemote) icAudioSink.srcObject = icRemote;
+        // Feed the element a DEDICATED audio-only stream and re-assign it when the
+        // remote audio track changes. A media element won't start a track added
+        // to its stream AFTER srcObject was set (e.g. video arrives first, audio
+        // second) — so the kiosk played video but never the audio. Re-assigning
+        // on the audio track id forces playback of the real audio track.
+        if (icAudioSink._aid !== aTracks[0].id) {
+            icAudioSink.srcObject = new MediaStream(aTracks);
+            icAudioSink._aid = aTracks[0].id;
+        }
         icAudioSink.play().catch(() => {});
     }
 
