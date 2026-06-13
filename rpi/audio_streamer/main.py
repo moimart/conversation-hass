@@ -255,7 +255,13 @@ class AudioManager:
             if mtype not in ("intercom_call_start", "intercom_invite"):
                 return  # stray signal for no active call
             try:
-                import intercom_peer
+                # Runs as `python -m audio_streamer.main` (package), so a
+                # top-level `import intercom_peer` can't find it — import it
+                # relative to the package; fall back to absolute for script runs.
+                try:
+                    from . import intercom_peer
+                except ImportError:
+                    import intercom_peer
             except Exception as e:
                 log.error(f"intercom unavailable (aiortc import failed): {e}")
                 return
