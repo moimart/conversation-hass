@@ -1434,8 +1434,6 @@
         if (!haveVideo) pc.addTransceiver("video", { direction: "recvonly" });
         icRemote = new MediaStream();
         pc.ontrack = (ev) => {
-            console.log("[ic] ontrack kind=" + ev.track.kind + " id=" + ev.track.id +
-                " enabled=" + ev.track.enabled + " muted=" + ev.track.muted);
             icRemote.addTrack(ev.track);
             icRenderRemote();
         };
@@ -1446,27 +1444,10 @@
                 sdpMLineIndex: ev.candidate.sdpMLineIndex });
         };
         pc.onconnectionstatechange = () => {
-            if (pc.connectionState === "connected") {
-                icSetCallClass("in-call");
-                setTimeout(() => icLogStats(pc), 3500);   // diagnostic
-            } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-                icHangup("failed");
-            }
+            if (pc.connectionState === "connected") icSetCallClass("in-call");
+            else if (pc.connectionState === "failed" || pc.connectionState === "closed") icHangup("failed");
         };
         return pc;
-    }
-    async function icLogStats(pc) {
-        try {
-            const stats = await pc.getStats();
-            stats.forEach((r) => {
-                if (r.type === "inbound-rtp")
-                    console.log("[ic] inbound " + r.kind + " packets=" + r.packetsReceived +
-                        " bytes=" + r.bytesReceived + " level=" + r.audioLevel);
-                if (r.type === "outbound-rtp")
-                    console.log("[ic] outbound " + r.kind + " packets=" + r.packetsSent +
-                        " bytes=" + r.bytesSent);
-            });
-        } catch (e) { console.log("[ic] stats err " + e.message); }
     }
 
     function icRenderRemote() {
@@ -1526,8 +1507,7 @@
                     icPlaySrc = icPlayCtx.createMediaStreamSource(icAudioSink.srcObject);
                     icPlaySrc.connect(icPlayCtx.destination);
                     if (icPlayCtx.state === "suspended") void icPlayCtx.resume();
-                    console.log("[ic] kiosk webaudio output connected, ctx=" + icPlayCtx.state);
-                } catch (e) { console.log("[ic] webaudio output err " + e.message); }
+                } catch (e) { /* web audio unavailable */ }
             }
         }
         icAudioSink.play().catch(() => {});
