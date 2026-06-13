@@ -1495,7 +1495,7 @@
         }
     }
 
-    let icAudioSink = null;
+    let icAudioSink = null, icPlayCtx = null, icPlaySrc = null;
     function icEnsureAudioSink() {
         if (!icRemote) return;
         const aTracks = icRemote.getAudioTracks();
@@ -1505,21 +1505,32 @@
             icAudioSink.autoplay = true;
             icAudioSink.setAttribute("playsinline", "");
             icAudioSink.style.display = "none";
+            // On the kiosk a plain <audio>/WebRTC element's output goes to a
+            // SILENT device (only Web Audio's AudioContext.destination reaches the
+            // speaker — proven by the audible test tone). So mute the element and
+            // route audio through Web Audio below; the muted element stays as a
+            // keep-alive so Chromium pulls media on the remote track.
+            if (icIsKiosk()) icAudioSink.muted = true;
             document.body.appendChild(icAudioSink);
         }
-        // Feed the element a DEDICATED audio-only stream and re-assign it when the
-        // remote audio track changes. A media element won't start a track added
-        // to its stream AFTER srcObject was set (e.g. video arrives first, audio
-        // second) — so the kiosk played video but never the audio. Re-assigning
-        // on the audio track id forces playback of the real audio track.
+        // Feed the element a DEDICATED audio-only stream, re-assigned when the
+        // remote audio track changes (a media element won't pick up a track added
+        // after srcObject was set — e.g. video arrives first, audio second).
         if (icAudioSink._aid !== aTracks[0].id) {
             icAudioSink.srcObject = new MediaStream(aTracks);
             icAudioSink._aid = aTracks[0].id;
+            if (icIsKiosk()) {
+                try {
+                    if (!icPlayCtx) icPlayCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (icPlaySrc) { try { icPlaySrc.disconnect(); } catch (e) { /* ignore */ } }
+                    icPlaySrc = icPlayCtx.createMediaStreamSource(icAudioSink.srcObject);
+                    icPlaySrc.connect(icPlayCtx.destination);
+                    if (icPlayCtx.state === "suspended") void icPlayCtx.resume();
+                    console.log("[ic] kiosk webaudio output connected, ctx=" + icPlayCtx.state);
+                } catch (e) { console.log("[ic] webaudio output err " + e.message); }
+            }
         }
-        icAudioSink.play().then(
-            () => console.log("[ic] audio sink playing, tracks=" + aTracks.length +
-                " trackEnabled=" + aTracks[0].enabled + " trackMuted=" + aTracks[0].muted),
-            (e) => console.log("[ic] audio sink play FAILED: " + e.name + " " + e.message));
+        icAudioSink.play().catch(() => {});
     }
 
     // --- audio-wave on the orb (remote voice, when there's no remote video) ---
@@ -1710,6 +1721,8 @@
         icStopWave();
         if (icPC) { try { icPC.close(); } catch (e) {} icPC = null; }
         if (icLocal) { icLocal.getTracks().forEach((t) => t.stop()); icLocal = null; }
+        if (icPlaySrc) { try { icPlaySrc.disconnect(); } catch (e) {} icPlaySrc = null; }
+        if (icPlayCtx) { try { icPlayCtx.close(); } catch (e) {} icPlayCtx = null; }
         if (icAudioSink) { try { icAudioSink.srcObject = null; icAudioSink.remove(); } catch (e) {} icAudioSink = null; }
         const video = document.getElementById("eye-stream");
         const container = document.querySelector(".eye-container");
