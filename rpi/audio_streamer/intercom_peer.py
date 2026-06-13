@@ -1,5 +1,9 @@
 """Native WebRTC endpoint for kiosk intercom calls (aiortc).
 
+NAMING: in the code the PAL display unit is the "kiosk" (KIOSK_ID, the RPi +
+audio_streamer + Chromium); to USERS and in the intercom directory it's the
+"hub" ("call the hub"). Same device — internal name "kiosk", external name "hub".
+
 The kiosk's *call audio* can't go through Chromium — Chromium's WebRTC audio
 can't share the Anker speaker/mic with this RPi's audio stack (confirmed: audio
 arrives but never reaches the speaker, and the mic never goes out). So the

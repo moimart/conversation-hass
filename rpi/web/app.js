@@ -1581,9 +1581,10 @@
         icAnalyser = null;
     }
 
-    // The kiosk has no HAL_CONFIG (phones inject it). It's no-touch and its
-    // display is rotated by the orientation wrapper, so it shows NO call chrome —
-    // a call is conveyed entirely by the orb (which lives inside that wrapper).
+    // The kiosk (the PAL display unit — externally the "hub") has no HAL_CONFIG
+    // (phones inject it). It's no-touch and its display is rotated by the
+    // orientation wrapper, so it shows NO call chrome — a call is conveyed
+    // entirely by the orb (which lives inside that wrapper).
     function icIsKiosk() { return !window.HAL_CONFIG; }
 
     function icSetCallClass(name) {

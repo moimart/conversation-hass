@@ -63,7 +63,9 @@ class AppState:
     memory_client: MemoryClient | None = None
     wake_chime: bytes | None = None
     ui_clients: set = field(default_factory=set)
-    audio_websocket: WebSocket | None = None  # RPi audio client
+    # The kiosk (RPi audio client) — the PAL display unit, called the "hub"
+    # externally (intercom directory / "call the hub"). Internal name: kiosk.
+    audio_websocket: WebSocket | None = None  # RPi audio client / the hub
     mic_muted: bool = False  # cached from RPi
     local_tools: object | None = None  # LocalToolsClient
     pairing: object | None = None  # pairing.PairingManager (mobile device tokens)

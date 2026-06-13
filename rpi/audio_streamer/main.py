@@ -1,4 +1,8 @@
-"""RPi audio streamer: captures mic -> WebSocket -> AI server, plays back TTS."""
+"""RPi audio streamer: captures mic -> WebSocket -> AI server, plays back TTS.
+
+This process IS the "kiosk" (the PAL display unit) — internally named "kiosk"
+throughout the code; to users / in the intercom directory it's the "hub".
+"""
 
 import asyncio
 import io

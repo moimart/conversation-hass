@@ -15,7 +15,8 @@ router = APIRouter()
 @router.websocket("/ws/audio")
 async def audio_endpoint(websocket: WebSocket):
     """
-    Main audio WebSocket for the RPi audio streamer.
+    Main audio WebSocket for the RPi audio streamer — i.e. the kiosk (the PAL
+    display unit; externally the "hub"). "kiosk" is the internal name throughout.
 
     Receives: raw PCM 16-bit LE audio chunks
     Sends:    JSON messages (transcription, state) and binary (TTS audio)
