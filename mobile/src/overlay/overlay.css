@@ -90,6 +90,16 @@
 body.show-conversation-log .hal-gear,
 body.show-mirror .hal-gear { display: none; }
 
+/* During an intercom call (ringing / calling / connected) the call card owns
+   the bottom of the screen — hide the text-input bar and the floating gear
+   cluster so the mute/video/hangup controls stand alone and nothing collides. */
+body.intercom-ringing .hal-input-bar,
+body.intercom-calling .hal-input-bar,
+body.intercom-in-call .hal-input-bar,
+body.intercom-ringing .hal-gear,
+body.intercom-calling .hal-gear,
+body.intercom-in-call .hal-gear { display: none; }
+
 /* Fullscreen front-camera mirror. Above the orb/input bar, below onboarding. */
 .mirror-stage {
     position: fixed;

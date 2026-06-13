@@ -868,21 +868,30 @@ body.photo-frame-active .weather-icon {
 .ic-ring-sub { font-size: 14px; color: var(--accent); margin-top: 4px; letter-spacing: 0.4px; }
 .ic-ring-actions { display: flex; gap: 36px; justify-content: center; margin-top: 26px; }
 
-/* In-call control bar (bottom). */
+/* In-call control bar (bottom). Its own card — like the command/response
+   panels — so the mute/video/hangup controls stand out and never collide with
+   the input bar or other chrome behind them. */
 .ic-bar {
     margin: 0 0 calc(24px + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+    border-radius: 24px;
+    padding: 18px 24px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
 }
 .ic-peer {
+    /* Title inside the card — no pill of its own (the card is the box now). */
     font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
     color: var(--text);
-    opacity: 0.85;
-    background: color-mix(in srgb, var(--bg) 70%, transparent);
-    padding: 4px 14px;
-    border-radius: 14px;
+    opacity: 0.9;
 }
 .ic-controls { display: flex; gap: 18px; align-items: center; }
 
