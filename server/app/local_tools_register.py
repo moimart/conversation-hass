@@ -490,7 +490,7 @@ def build_local_tools(state) -> LocalToolsClient:
         """Start a 1:1 intercom call from the device the user is speaking on to
         another paired device. The caller's own device does the WebRTC capture;
         the server just tells it to begin (then relays signaling, see intercom.py).
-        A voice turn with no satellite origin is the kiosk itself."""
+        A voice turn with no satellite origin is the hub itself."""
         from . import intercom
         from .main import send_to_device, _push_to_rpi
         target = (args.get("target") or "").strip()
@@ -513,11 +513,11 @@ def build_local_tools(state) -> LocalToolsClient:
 
     tools.register(
         "intercom_call",
-        "Place a 1:1 intercom audio/video call from the user's current device to another paired device in the home (a phone, tablet, or the kiosk). Use when the user says things like 'call the kitchen', 'call Bob's phone', or 'video call the living room'. `target` is the spoken device name.",
+        "Place a 1:1 intercom audio/video call from the user's current device to another paired device in the home (a phone, tablet, or the hub). Use when the user says things like 'call the kitchen', 'call Bob's phone', 'call the hub', or 'video call the living room'. `target` is the spoken device name.",
         {
             "type": "object",
             "properties": {
-                "target": {"type": "string", "description": "Name of the device/room to call, e.g. 'the kitchen', 'Bob's phone', 'kiosk'"},
+                "target": {"type": "string", "description": "Name of the device/room to call, e.g. 'the kitchen', 'Bob's phone', 'the hub'"},
             },
             "required": ["target"],
         },
@@ -526,7 +526,7 @@ def build_local_tools(state) -> LocalToolsClient:
 
     async def end_call(_args: dict) -> str:
         """Hang up the intercom call on the user's current device (voice 'hang up'
-        — the kiosk has no touch). Targets the speaking device; harmless if none."""
+        — the hub has no touch). Targets the speaking device; harmless if none."""
         from . import intercom
         from .main import send_to_device, _push_to_rpi
         origin = getattr(state.conversation, "_turn_origin", None)

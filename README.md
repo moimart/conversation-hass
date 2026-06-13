@@ -3,7 +3,7 @@
 <p align="center"><em>A fully local, always-listening voice assistant with a personality, a face, and a memory.<br>No cloud. No subscriptions. Everything runs on your network.</em></p>
 
 <p align="center">
-  <img src="docs/themes/sunset_animated.jpg" width="420" alt="PAL kiosk — Sunset Animated theme with golden-hour bokeh and looping in-orb state video">
+  <img src="docs/themes/sunset_animated.jpg" width="420" alt="PAL hub — Sunset Animated theme with golden-hour bokeh and looping in-orb state video">
 </p>
 
 ---
@@ -14,15 +14,15 @@
 - 🗣️ **Talks back** in a voice you pick, through a Wyoming-protocol TTS service
 - 🏠 **Controls Home Assistant** via MCP tool-calling — switches, scenes, climate, media, all of it
 - 🧠 **Remembers** what you've told it (Shodh Hebbian long-term memory) so context survives across days
-- 👁️ **Shows itself** through a kiosk styled after fiction's iconic AIs — an animated eye and 16 switchable themes, including two with looping in-orb state videos that change with PAL's mood
+- 👁️ **Shows itself** through a hub styled after fiction's iconic AIs — an animated eye and 16 switchable themes, including two with looping in-orb state videos that change with PAL's mood
 - 📸 **Displays cameras, images, and videos** inside the orb (HA snapshots, live WebRTC, RTSP, HLS playlists)
 - 📅 **Pops up a calendar overlay** (month / week / day) pulled from any HA calendar, on voice or HA button
-- 📜 **Keeps a conversation log** — every request, answer, and announcement persisted forever in PostgreSQL, browsable full-screen on the kiosk (by voice or HA button) and in the companion app, with timestamps, origin labels (which phone asked, which channel announced), and inline thumbnails of every image shown on the orb
-- ⏲️ **Voice timers** — "set a timer for 5 minutes" from the kiosk or any phone; auto-named (Timer 1, Timer 2, …, templates configurable in any language), the asking device shows the last 10 seconds as a big countdown inside the orb, and **every** device announces when it's done. Mirrored to HA `timer.*` helpers for dashboards/automations, with an Active Timers MQTT sensor
-- 🖼️ **Photo frame mode** — ambient full-screen image from a configurable HA `image.*` entity, white drop-shadow clock + Ken-Burns zoom, auto-crossfades when HA rotates the photo, dismisses on any kiosk action; **optional auto-activate after N minutes of inactivity**
+- 📜 **Keeps a conversation log** — every request, answer, and announcement persisted forever in PostgreSQL, browsable full-screen on the hub (by voice or HA button) and in the companion app, with timestamps, origin labels (which phone asked, which channel announced), and inline thumbnails of every image shown on the orb
+- ⏲️ **Voice timers** — "set a timer for 5 minutes" from the hub or any phone; auto-named (Timer 1, Timer 2, …, templates configurable in any language), the asking device shows the last 10 seconds as a big countdown inside the orb, and **every** device announces when it's done. Mirrored to HA `timer.*` helpers for dashboards/automations, with an Active Timers MQTT sensor
+- 🖼️ **Photo frame mode** — ambient full-screen image from a configurable HA `image.*` entity, white drop-shadow clock + Ken-Burns zoom, auto-crossfades when HA rotates the photo, dismisses on any hub action; **optional auto-activate after N minutes of inactivity**
 - 💤 **Display power (DPMS)** — actually powers the panel off (not just a black overlay), with optional idle auto-blank; wakes automatically on the next wake word / PTT / TTS / takeover. Same code path on RPi (Wayland) and x86 (Wayland or X11).
 - 🎯 **Wake word** *or* **Push-to-Talk** — your choice per situation (PTT triggerable from HA, an HTTP call, a WebSocket, or the desktop popup app)
-- 📱 **Companion app (iOS + Android)** — pair a phone as a **satellite**: talk to PAL by text or push-to-talk voice and hear replies in PAL's own server voice, while household broadcasts (spoken announcements, theme changes, live cameras/RTSP) get pushed to your screen — all sharing the kiosk's conversation, history, and memory. Capacitor app that reuses the kiosk display verbatim. See [`mobile/`](./mobile/README.md).
+- 📱 **Companion app (iOS + Android)** — pair a phone as a **satellite**: talk to PAL by text or push-to-talk voice and hear replies in PAL's own server voice, while household broadcasts (spoken announcements, theme changes, live cameras/RTSP) get pushed to your screen — all sharing the hub's conversation, history, and memory. Capacitor app that reuses the hub display verbatim. See [`mobile/`](./mobile/README.md).
 - 🎵 **Multi-room audio** via an optional Music-Assistant Sendspin sidecar with PulseAudio role-ducking
 - 🔌 **Speaks every protocol your house already speaks** — REST, MQTT, WebSocket — and HA auto-discovers it as a single device with sensors, switches, selects, text inputs, and buttons
 
@@ -32,7 +32,7 @@ Setup is two `docker compose` commands. See [Quick start](#quick-start) below.
 
 ## Themes
 
-Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_theme` tool), the MQTT `Theme` select, or the auto day/night scheduler. Two of them (`birch_animated`, `sunset_animated`) declare per-state looping videos in their manifest — short clips that play inside the orb and crossfade as PAL moves between idle / listening / processing / speaking. Any theme can opt in via the `state_videos` field. Authoring guide: [`THEMES.md`](./THEMES.md).
+Sixteen built-in themes, switchable from the hub's picker, the LLM (`ui_set_theme` tool), the MQTT `Theme` select, or the auto day/night scheduler. Two of them (`birch_animated`, `sunset_animated`) declare per-state looping videos in their manifest — short clips that play inside the orb and crossfade as PAL moves between idle / listening / processing / speaking. Any theme can opt in via the `state_videos` field. Authoring guide: [`THEMES.md`](./THEMES.md).
 
 | Preview | Theme | Vibe |
 |---|---|---|
@@ -64,7 +64,7 @@ Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_th
 | **Typed text**                    | `POST /api/command` (or write to HA's `text.<id>_command` entity, or publish to MQTT `hal/<id>/command`) — runs the full LLM round with tools. |
 | **Verbatim announcement**         | `POST /api/speak` (or `text.<id>_speak`, or MQTT `hal/<id>/speak`) — PAL says the exact words you wrote, no LLM in the loop. |
 | **Companion app (satellite)**     | Pair an iOS/Android phone. Text or PTT voice runs in the shared conversation, but that turn's transcript, orb, reply, and voice route **only to your phone** — plus it receives household broadcasts. See [`mobile/`](./mobile/README.md). |
-| **Watch (wrist PTT)**             | Apple Watch or Pixel Watch: tap the orb, dictate, and PAL's reply lands back on your wrist — standalone via the gateway, least-privilege `watch`-scope token, kiosk stays quiet. Timer haptics + quick-launch (Tile / complication). See [`mobile/`](./mobile/README.md#watch-apps). |
+| **Watch (wrist PTT)**             | Apple Watch or Pixel Watch: tap the orb, dictate, and PAL's reply lands back on your wrist — standalone via the gateway, least-privilege `watch`-scope token, hub stays quiet. Timer haptics + quick-launch (Tile / complication). See [`mobile/`](./mobile/README.md#watch-apps). |
 | **Follow-up window**              | After a turn ends, you have ~10 s to reply without repeating the wake word.                                                          |
 | **Always-on mode**                | Set `WAKE_WORD=` (empty) to process every transcribed line through the LLM.                                                           |
 
@@ -72,13 +72,13 @@ Sixteen built-in themes, switchable from the kiosk's picker, the LLM (`ui_set_th
 
 ## Companion app (satellites)
 
-Pair an **iOS or Android** phone and it becomes a **satellite** — not a mirror of the kiosk. A satellite shares the same household conversation, history, and long-term memory, but anything *you* trigger on the phone (its transcript, orb state, reply text, and PAL's **server-voice TTS**) routes **only to that phone**, never the kiosk. The home display keeps doing its own thing.
+Pair an **iOS or Android** phone and it becomes a **satellite** — not a mirror of the hub. A satellite shares the same household conversation, history, and long-term memory, but anything *you* trigger on the phone (its transcript, orb state, reply text, and PAL's **server-voice TTS**) routes **only to that phone**, never the hub. The home display keeps doing its own thing.
 
 Phones also receive **household broadcasts** — proactive actions fired from voice, HA, or MQTT propagate to every connected satellite:
 
 - 🔊 Spoken announcements (`/api/speak`) — the text **and** PAL's voice
 - 🎨 Theme changes
-- 📸 Camera snapshots, images, and on-orb video (auto-dismiss on the same `duration_s` as the kiosk)
+- 📸 Camera snapshots, images, and on-orb video (auto-dismiss on the same `duration_s` as the hub)
 - 🎥 Live streams — RTSP (via go2rtc) and HA-camera WebRTC, each phone negotiating its own peer
 
 Each phone also gets its own idle **photo-frame** screensaver, dismissed automatically when a broadcast arrives. Per-phone pairing tokens gate access, and turns from different phones stay isolated from one another.
@@ -119,14 +119,14 @@ watch they work with no phone present.
 - 🎙️ **Dictation** — the watch transcribes and sends only the final *text*.
   Apple Watch uses the system dictation screen (watchOS has no in-app
   recognizer); the Pixel does in-app live recognition (orb-as-mic).
-- 🔐 **Least-privilege, self-enrolled** — each watch types the kiosk's 6-digit
+- 🔐 **Least-privilege, self-enrolled** — each watch types the hub's 6-digit
   code and redeems a `watch`-scope token (`POST /api/pair/redeem`, scope
   `watch`), persisted on the watch. That token may only command PAL, probe its
   validity, and register for push — *nothing else* (no live mirror, no cloud
   override, no admin) — and revokes on its own without touching the phone.
 - 🌍 **Works anywhere** — talks to the satellite gateway over HTTPS and uses
   `wait_reply` on `POST /api/command`, so PAL's reply returns in the same
-  request (no WebSocket). The turn is **private** — the kiosk stays quiet,
+  request (no WebSocket). The turn is **private** — the hub stays quiet,
   exactly like a phone satellite.
 - ⏲️ **Push haptics** — finished timers/announcements buzz the wrist while the
   app is closed: the Pixel registers its own FCM token; the Apple Watch mirrors
@@ -165,7 +165,7 @@ never committed). Setup notes in `CLAUDE.md`; the build/install is in
 | [`THEMES.md`](./THEMES.md)                | Plug-in theme authoring (CSS variable reference, `effect.js` API, manifest schema, hot-reload behaviour)            |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md)    | Node layout, pipeline + LLM routing (local/agentic/cloud), STT, PTT, orb camera/video, conversation log, timers, satellites + gateway, push notifications, project structure |
 | [`openclaw-channel/hal/`](./openclaw-channel/hal/README.md) | OpenClaw channel plugin — routes voice through an OpenClaw agent with full mcporter/MCP tool access, Ollama fallback |
-| `openclaw-skill/hal/SKILL.md`             | OpenClaw skill teaching the agent how to control PAL's kiosk via mcporter                                          |
+| `openclaw-skill/hal/SKILL.md`             | OpenClaw skill teaching the agent how to control PAL's hub via mcporter                                          |
 | `desktop/`                                | Rust/GTK4 Wayland overlay for typing commands + hold-to-talk PTT from your Linux desktop                            |
 | [`mobile/`](./mobile/README.md)           | iOS + Android companion app (Capacitor) — pair a phone as a satellite for text/voice + household broadcasts          |
 
@@ -220,12 +220,12 @@ docker compose -f docker-compose.rpi.yml up --build -d
 
 Brings up `hal-audio-streamer` (port **8080**, web UI + mic capture + speaker playback) and the optional `hal-sendspin` sidecar.
 
-### 4. Open the kiosk
+### 4. Open the hub
 
-Navigate to `http://<rpi-ip>:8080`. For HA snapshots to work, launch the kiosk Chromium with the DevTools Protocol enabled:
+Navigate to `http://<rpi-ip>:8080`. For HA snapshots to work, launch the hub Chromium with the DevTools Protocol enabled:
 
 ```bash
-chromium-browser --kiosk http://localhost:8080 \
+chromium-browser --hub http://localhost:8080 \
   --autoplay-policy=no-user-gesture-required \
   --remote-debugging-port=9222
 ```
@@ -248,7 +248,7 @@ cd mobile && npm install && npm run build
 npx cap run android      # or: npx cap run ios
 ```
 
-On first launch, enter the server URL (`http://<ai-server-ip>:8765`), then ask PAL to pair and type the 6-digit code shown on the kiosk. Full build notes (emulator, iOS signing, Info.plist exceptions): [`mobile/README.md`](./mobile/README.md).
+On first launch, enter the server URL (`http://<ai-server-ip>:8765`), then ask PAL to pair and type the 6-digit code shown on the hub. Full build notes (emulator, iOS signing, Info.plist exceptions): [`mobile/README.md`](./mobile/README.md).
 
 ---
 
@@ -257,7 +257,7 @@ On first launch, enter the server URL (`http://<ai-server-ip>:8765`), then ask P
 | Image                                                                  | Platform     | Purpose                                                            |
 |------------------------------------------------------------------------|--------------|--------------------------------------------------------------------|
 | `ghcr.io/moimart/conversation-hass/hal-ai-server:latest`               | `linux/amd64`| FastAPI server, VAD + transcription cadence, MCP routing, MQTT bridge |
-| `ghcr.io/moimart/conversation-hass/hal-rpi:latest`                     | `linux/arm64`| Pi audio_streamer + kiosk web UI                                   |
+| `ghcr.io/moimart/conversation-hass/hal-rpi:latest`                     | `linux/arm64`| Pi audio_streamer + hub web UI                                   |
 | `ghcr.io/moimart/conversation-hass/hal-sendspin:latest`                | `linux/arm64`| Sendspin daemon for Music Assistant                                |
 
 Tagged versions also published (`:0.10`, etc. — the previous stable is preserved with each release for easy revert).
@@ -277,7 +277,7 @@ Tagged versions also published (`:0.10`, etc. — the previous stable is preserv
 | `AI_SERVER_HOST`     | —                             | IP of the AI server (used by RPi to connect)                         |
 | `RPI_HOST`           | —                             | IP of the RPi (informational; not consumed by code)                  |
 | `WEB_PORT`           | `8080`                        | Port for the RPi web UI                                              |
-| `CHROMIUM_DEBUG_URL` | `http://127.0.0.1:9222`       | Kiosk Chromium's DevTools endpoint (for snapshot capture)            |
+| `CHROMIUM_DEBUG_URL` | `http://127.0.0.1:9222`       | Hub Chromium's DevTools endpoint (for snapshot capture)            |
 | `SNAPSHOT_INTERVAL_S`| `60`                          | Seconds between CDP screenshots posted to the AI server              |
 
 ### Speech & LLM
@@ -396,7 +396,7 @@ See [`openclaw-channel/hal/README.md`](./openclaw-channel/hal/README.md) for ful
 Every user request, assistant answer, and announcement is stored forever
 (origin-labeled: which paired phone asked, which channel — `api` / `mqtt` /
 `openclaw` / `voice-tool` — announced). Browse it full-screen: say *"show the
-conversation log"* (kiosk, auto-dismisses after 30 s of no interaction), press
+conversation log"* (hub, auto-dismisses after 30 s of no interaction), press
 the HA **Show Conversation Log** button, or tap the list button in the
 companion app (stays open until ✕). Scroll up to page older history in. A
 postgres outage never breaks a turn — writes are dropped with a warning and
@@ -410,7 +410,7 @@ the connection heals itself.
 | `TIMER_ANNOUNCE_TEMPLATE` | `{name} is ready.` | What PAL says when a timer finishes (`{name}` = timer name)  |
 
 Both are live runtime config (HA text entities) — the env vars only seed the
-first boot. Say *"set a timer for 5 minutes"* (kiosk or phone): the device that
+first boot. Say *"set a timer for 5 minutes"* (hub or phone): the device that
 asked shows the final 10 seconds as a countdown inside the orb, and every
 device plays a kitchen-timer alarm followed by the spoken announcement (the
 beep pattern is prepended to the TTS audio server-side, so even a TTS outage
@@ -439,7 +439,7 @@ exposing anything beyond your LAN.
 
 | Surface | Who can reach it | Auth |
 |---|---|---|
-| **AI server** `:8765` (kiosk, RPi, HA, MQTT, satellites-on-VPN) | Your LAN (and Tailscale, if you use it) | **LAN-trusted** — most routes need no token by default |
+| **AI server** `:8765` (hub, RPi, HA, MQTT, satellites-on-VPN) | Your LAN (and Tailscale, if you use it) | **LAN-trusted** — most routes need no token by default |
 | **Satellite gateway** `:8766` (only if you expose it) | The internet, via your TLS ingress | **Token-gated allowlist** — every private route requires a paired-device token |
 
 **The LAN is trusted.** By default (`HAL_REQUIRE_TOKEN` unset) the AI server
@@ -454,7 +454,7 @@ token even on the LAN. You can flip the whole server to token-required with
 ### Pairing & tokens
 
 - A phone becomes a **satellite** by redeeming a 6-digit code **shown on the
-  kiosk** for a long-lived device token (32-byte URL-safe random). Pairing
+  hub** for a long-lived device token (32-byte URL-safe random). Pairing
   therefore requires physical access to the display — it can only happen at
   home, never remotely.
 - Tokens are persisted server-side (`runtime/pairing_tokens.json`) and, on the

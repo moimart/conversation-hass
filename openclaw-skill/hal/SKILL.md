@@ -1,6 +1,6 @@
 ---
 name: hal
-description: Control PAL — local voice assistant for Home Assistant. Send spoken commands, adjust speaker volume, toggle mic mute, switch the web UI theme, drive push-to-talk, open or auto-trigger the photo frame, toggle the kiosk display (DPMS), and pop up the calendar.
+description: Control PAL — local voice assistant for Home Assistant. Send spoken commands, adjust speaker volume, toggle mic mute, switch the web UI theme, drive push-to-talk, open or auto-trigger the photo frame, toggle the hub display (DPMS), and pop up the calendar.
 metadata.openclaw.requires.bins: ["curl"]
 metadata.openclaw.requires.config: ["HAL_SERVER_URL"]
 ---
@@ -32,7 +32,7 @@ mcporter call <server>.<tool> key=value key2=value2
   `ha_get_state`, `ha_search_entities`, `ha_get_history`, and all
   other HA tools. Use this for lights, climate, sensors, automations,
   scripts, service calls, etc.
-- **`hal`** — PAL kiosk controls: volume, mute, display power, photo
+- **`hal`** — PAL hub controls: volume, mute, display power, photo
   frame, calendar, cameras, speak, and theme.
 
 ### Examples
@@ -47,10 +47,10 @@ mcporter call berlinmcp.ha_get_state entity_id=sun.sun
 # Search for entities
 mcporter call berlinmcp.ha_search_entities query=light domain=light
 
-# Show photo frame on PAL kiosk
+# Show photo frame on PAL hub
 mcporter call hal.show_photo_frame
 
-# Speak text on PAL kiosk
+# Speak text on PAL hub
 mcporter call hal.speak_verbatim text="Hello Master"
 ```
 
@@ -86,11 +86,11 @@ When you POST a natural-language command to `/api/command`, PAL's LLM has these 
 - Anything Home Assistant exposes through its MCP server
 
 **PAL UI / hardware:**
-- Switch the kiosk theme: "switch the theme to japandi" (registry is dynamic; see Theme control for how to list available themes)
+- Switch the hub theme: "switch the theme to japandi" (registry is dynamic; see Theme control for how to list available themes)
 - Set or adjust speaker volume: "turn the volume up", "set volume to 30%"
 - Toggle mic mute
 - Make PAL speak text exactly: "say out loud: dinner is ready"
-- Turn the kiosk display (panel) on or off via real DPMS: "turn off the screen", "wake the screen" (`set_display_power`)
+- Turn the hub display (panel) on or off via real DPMS: "turn off the screen", "wake the screen" (`set_display_power`)
 - Auto-blank the display after N idle seconds (set via voice or REST; see Display power)
 - Auto-activate the photo frame after N idle minutes: "auto-show the photo frame after 30 minutes" (`set_photo_frame_idle_minutes`)
 
@@ -189,7 +189,7 @@ curl -sS "$HAL_SERVER_URL/api/mute"
 
 ## Push-to-talk (PTT)
 
-Open a listening session without saying the wake word. STT begins immediately and runs until you end (or cancel) the session. The kiosk shows the PTT chip + orb glow; an active photo frame dismisses automatically.
+Open a listening session without saying the wake word. STT begins immediately and runs until you end (or cancel) the session. The hub shows the PTT chip + orb glow; an active photo frame dismisses automatically.
 
 ```sh
 # Start listening (idempotent; second start while open is a no-op)
@@ -209,9 +209,9 @@ curl -sS -X POST "$HAL_SERVER_URL/api/ptt/cancel"
 
 ## Display power (DPMS)
 
-Turn the kiosk's physical display on or off (real DPMS — the panel
+Turn the hub's physical display on or off (real DPMS — the panel
 actually powers off, not just a black overlay). Auto-wakes on any
-incoming kiosk activity (wake word, PTT, takeover, TTS reply).
+incoming hub activity (wake word, PTT, takeover, TTS reply).
 
 ```sh
 # Read current state + idle-blank timeout
@@ -229,14 +229,14 @@ curl -sS -X POST "$HAL_SERVER_URL/api/command" \
   -d '{"text": "turn off the screen"}'
 ```
 
-`available: false` in the GET response means the kiosk host has no
+`available: false` in the GET response means the hub host has no
 supported DPMS backend (wlr-randr / xset / vcgencmd). In that state
 the POST returns `{"status":"unavailable"}` and the voice tool replies
 with the same.
 
 ## Show an image on the orb
 
-Display an arbitrary image on the kiosk orb for a configurable duration.
+Display an arbitrary image on the hub orb for a configurable duration.
 No REST endpoint — use MQTT or the LLM voice path.
 
 ```sh
@@ -261,7 +261,7 @@ binary pushes from automations).
 
 ## Play a video on the orb
 
-Play an HTTP video (MP4, WebM) or HLS playlist on the kiosk orb.
+Play an HTTP video (MP4, WebM) or HLS playlist on the hub orb.
 Auto-stops at end of file unless `loop` is set. Audio ducks
 automatically when PAL speaks.
 
@@ -338,7 +338,7 @@ curl -sS -X POST "$HAL_SERVER_URL/api/command" \
 
 ## Show the calendar overlay
 
-Pop up a calendar overlay on the kiosk (month / week / day view).
+Pop up a calendar overlay on the hub (month / week / day view).
 Merges all HA calendars by default; pass `calendar_name` to filter.
 Auto-dismisses after `calendar_dismiss_seconds` (default 30, configurable
 via MQTT / runtime config).
@@ -370,7 +370,7 @@ string that isn't a view name, it's treated as `calendar_name`.
 
 ## Photo frame (open / dismiss on demand)
 
-Open the photo frame on the kiosk — full-screen image (HA `image.*` or `camera.*` entity) with white drop-shadow clock and Ken-Burns zoom. If `photo_frame_entity` is configured in runtime config, no body is needed; otherwise pass `entity_id` explicitly. Auto-crossfades when HA rotates the underlying image.
+Open the photo frame on the hub — full-screen image (HA `image.*` or `camera.*` entity) with white drop-shadow clock and Ken-Burns zoom. If `photo_frame_entity` is configured in runtime config, no body is needed; otherwise pass `entity_id` explicitly. Auto-crossfades when HA rotates the underlying image.
 
 ```sh
 # REST — open using the configured default entity
@@ -406,9 +406,9 @@ Statuses returned by `/start`: `ok` (opened), `already_active` (same entity alre
 
 ## Photo-frame idle auto-activation
 
-After `N` minutes of no activity the kiosk auto-activates the photo
+After `N` minutes of no activity the hub auto-activates the photo
 frame (uses the configured `photo_frame_entity`). `0` disables. Wake
-word, PTT, video/image/calendar takeover, PAL TTS, and a kiosk-side
+word, PTT, video/image/calendar takeover, PAL TTS, and a hub-side
 dismissal all reset the timer.
 
 ```sh
@@ -452,9 +452,9 @@ Useful when you want to confirm or react to PAL's most recent reply:
 # Read via HA's REST API or the homeassistant CLI if you have access.
 ```
 
-## Grab a screenshot of the kiosk
+## Grab a screenshot of the hub
 
-For visual confirmation of what PAL is currently showing (orb state, active photo frame, calendar overlay, camera view, etc.), fetch the latest kiosk snapshot. The RPi audio_streamer posts a fresh JPEG to the server every `SNAPSHOT_INTERVAL_S` seconds (default 60).
+For visual confirmation of what PAL is currently showing (orb state, active photo frame, calendar overlay, camera view, etc.), fetch the latest hub snapshot. The RPi audio_streamer posts a fresh JPEG to the server every `SNAPSHOT_INTERVAL_S` seconds (default 60).
 
 ```sh
 curl -sS -o /tmp/hal.jpg "$HAL_SERVER_URL/api/snapshot.jpg"

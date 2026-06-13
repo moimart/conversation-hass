@@ -1,10 +1,10 @@
 # PAL companion app (iOS + Android + watchOS + Wear OS)
 
 A Capacitor app that pairs a phone as a **satellite** of PAL — not a mirror of
-the kiosk. You talk to PAL by **text** or **voice**; your turn runs in the shared
+the hub. You talk to PAL by **text** or **voice**; your turn runs in the shared
 household conversation, but its output (transcript, orb, reply, and PAL's
-**server-voice TTS**) routes **only to your phone**, never the kiosk. The app
-reuses the kiosk web UI (`rpi/web`) verbatim inside a native WebView and points it
+**server-voice TTS**) routes **only to your phone**, never the hub. The app
+reuses the hub web UI (`rpi/web`) verbatim inside a native WebView and points it
 at the AI server directly.
 
 <p align="center">
@@ -20,7 +20,7 @@ at the AI server directly.
   `window.HAL_CONFIG = {serverBaseUrl, wsUrl, token, pinLandscape}`, then loads
   the copied `app.js`, which connects to the server's `ws://host:8765/ws/ui` feed
   (with `?token=` → the server classifies it as a satellite) and renders
-  state/themes/photo-frame/calendar/conversation-log exactly like the kiosk.
+  state/themes/photo-frame/calendar/conversation-log exactly like the hub.
   A list button next to the gear opens the **conversation log** (persistent
   household history; no auto-dismiss on mobile — close with ✕). Asking PAL to
   show it by voice from a phone opens it on that phone only.
@@ -69,7 +69,7 @@ emulator -avd hal &
 npx cap run android       # builds + installs to the running emulator/device
 ```
 First run: enter your server URL (`http://<ai-server-ip>:8765`), then ask PAL to
-pair and enter the 6-digit code shown on the kiosk.
+pair and enter the 6-digit code shown on the hub.
 
 ### iOS
 Needs a Mac with Xcode. The native project uses Swift Package Manager (no
@@ -110,7 +110,7 @@ Design facts (each one was discovered the hard way — don't re-litigate):
   SwiftUI lifecycle. watchOS then remembers the **last-used input mode**: once
   the user picks dictation (mic icon) it opens dictation-first thereafter.
 - **Auth = a self-enrolled scoped token.** First launch shows `EnrollView`:
-  enter PAL's LAN URL → *Show code on kiosk* (`POST /api/pair/request`) → type
+  enter PAL's LAN URL → *Show code on hub* (`POST /api/pair/request`) → type
   the 6-digit code → *Pair* (`POST /api/pair/redeem` with `scope: "watch"`).
   The `watch`-scope token + the gateway base PAL returns are persisted in
   `ConfigStore` (UserDefaults; Keychain hardening is a follow-up). The token is
@@ -123,7 +123,7 @@ Design facts (each one was discovered the hard way — don't re-litigate):
 - **Replies are synchronous + private.** The watch scope excludes `/ws/ui`, so
   it sends `wait_reply: true` and PAL's reply returns in the same HTTP response
   (server caps the turn at 90s; gateway proxy timeout 100s). A `wait_reply`
-  turn routes to its own token, so the **kiosk stays quiet** — like a phone
+  turn routes to its own token, so the **hub stays quiet** — like a phone
   satellite.
 - **Push haptics — free via iPhone mirroring.** The iPhone already has PAL
   APNs push; watchOS mirrors its notifications to the wrist when the iPhone is
@@ -178,7 +178,7 @@ linux SDK, deploys by **adb over WiFi** (no Mac, no provisioning profiles).
   partial transcript (Path B). `isOnDeviceRecognitionAvailable` is currently
   false on the Pixel Watch 3 → recognition is network-backed (audio leaves the
   wrist); falls back to the `ACTION_RECOGNIZE_SPEECH` intent if no backend.
-- **Enrollment** mirrors the Apple Watch (`EnrollScreen`: type the kiosk code →
+- **Enrollment** mirrors the Apple Watch (`EnrollScreen`: type the hub code →
   `redeem` scope=watch → persist in `ConfigStore`/SharedPreferences).
   `usesCleartextTraffic` for the LAN redeem; runtime uses the HTTPS gateway.
 - **Push haptics — native FCM.** The watch registers its own FCM token
@@ -207,7 +207,7 @@ wireless debugging auto-disables when idle and the port rotates.
 src/boot.ts            entry: config → display → overlay
 src/config/            HalConfig (Preferences) + demo defaults
 src/display/inject.ts  injects display.html body + loads app.js
-src/overlay/           input bar, mic (STT), command, hide-kiosk CSS,
+src/overlay/           input bar, mic (STT), command, hide-hub CSS,
                        satellite-audio (server-voice TTS), photo-frame-idle
 src/onboarding/        server URL + pairing screens, redeem client
 src/platform/          keep-awake/status-bar/splash/resume wrappers

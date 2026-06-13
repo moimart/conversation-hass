@@ -37,7 +37,12 @@ import time
 
 log = logging.getLogger("hal.intercom")
 
+# The PAL display unit is the "hub" in the intercom (you "call the hub"). Its
+# routing id stays the internal "kiosk" string; only the user-facing name +
+# spoken word are "hub". Decoupled from HAL_DEVICE_NAME (which names the whole
+# server for onboarding/mDNS and is left as-is).
 KIOSK_ID = "kiosk"
+HUB_NAME = "Hub"
 
 
 # --- ICE configuration ------------------------------------------------------
@@ -154,7 +159,7 @@ def _peer_token(session: dict, token: str) -> str | None:
 
 def _device_label(state, token: str) -> str:
     if token == KIOSK_ID:
-        return os.environ.get("HAL_DEVICE_NAME", "Kiosk")
+        return HUB_NAME
     name = state.pairing.device_name(token) if state.pairing else None
     return name or "Device"
 
@@ -180,12 +185,12 @@ def directory(state, *, exclude_token: str | None = None) -> list[dict]:
                 "online": token in connected,
                 "can_video": scope == "full",
             })
-    # The kiosk is always a callable endpoint when its panel is connected.
+    # The hub (PAL display unit) is always a callable endpoint when connected.
     out.append({
         "id": KIOSK_ID,
-        "name": os.environ.get("HAL_DEVICE_NAME", "Kiosk"),
+        "name": HUB_NAME,
         "online": getattr(state, "audio_websocket", None) is not None,
-        "can_video": False,  # the kiosk has no camera
+        "can_video": False,  # the hub has no camera
     })
     out.sort(key=lambda d: (not d["online"], d["name"].lower()))
     return out
@@ -214,13 +219,12 @@ def resolve_target(state, name: str, *, exclude_token: str | None = None):
                                entry.get("device_name") or "Device",
                                token in connected))
     if exclude_token != KIOSK_ID:
-        kiosk_name = os.environ.get("HAL_DEVICE_NAME", "Kiosk")
-        candidates.append((KIOSK_ID, kiosk_name,
+        candidates.append((KIOSK_ID, HUB_NAME,
                            getattr(state, "audio_websocket", None) is not None))
 
-    # The kiosk also answers to the generic word "kiosk".
+    # The hub answers to "hub" (and still to "kiosk" as a quiet alias).
     exact = [c for c in candidates if c[1].lower() == q
-             or (c[0] == KIOSK_ID and q == "kiosk")]
+             or (c[0] == KIOSK_ID and q in ("hub", "kiosk"))]
     partial = [c for c in candidates if q in c[1].lower()]
     pool = exact or partial   # exact name wins over a substring match
     if not pool:

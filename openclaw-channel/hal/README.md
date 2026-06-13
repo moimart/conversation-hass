@@ -1,6 +1,6 @@
-# PAL Kiosk — OpenClaw Channel Plugin
+# PAL Hub — OpenClaw Channel Plugin
 
-Connects a [PAL voice assistant](../README.md) kiosk to OpenClaw as an
+Connects a [PAL voice assistant](../README.md) hub to OpenClaw as an
 alternative conversation engine. Voice commands captured by PAL are routed
 through an OpenClaw agent with full MCP tool access, and the agent's
 responses are delivered back for TTS playback and orb display.
@@ -27,7 +27,7 @@ Voice → PAL STT → text
    with full tool access including mcporter.
 3. The agent uses `mcporter` with two MCP servers:
    - **`hal`** — PAL's own MCP server at `/mcp` (SSE transport) for
-     kiosk controls: volume, mute, display, photo frame, camera, etc.
+     hub controls: volume, mute, display, photo frame, camera, etc.
    - **`berlinmcp`** (or your HA MCP) — for Home Assistant tasks:
      lights, climate, sensors, automations.
 4. The agent's text response (and any media URLs) are delivered back
@@ -68,7 +68,7 @@ openclaw plugins install /path/to/openclaw-channel/hal
 
 ### 2. Workspace mcporter — `~/.openclaw/<workspace>/config/mcporter.json`
 
-Register PAL's MCP server so the agent can control the kiosk via mcporter:
+Register PAL's MCP server so the agent can control the hub via mcporter:
 
 ```json
 {
@@ -121,7 +121,7 @@ The MQTT bridge auto-discovers these entities in HA:
 {
   "text": "turn on the kitchen lights",
   "request_id": "uuid-v4",
-  "sender_id": "kiosk-user"
+  "sender_id": "hub-user"
 }
 ```
 

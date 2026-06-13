@@ -99,7 +99,7 @@ HA (or any MQTT publisher on your LAN) writes to these. PAL reads.
 |---|---|---|
 | `<base>/volume/set` | `0`-`100` (string) | Sets RPi TTS volume (mapped to `0.0`-`1.0`). |
 | `<base>/mute/set`   | `ON` / `OFF`       | Mutes/unmutes the RPi mic. |
-| `<base>/theme/set`  | theme name (e.g. `material_you`) | Switches active kiosk theme. |
+| `<base>/theme/set`  | theme name (e.g. `material_you`) | Switches active hub theme. |
 
 ### Conversation triggers
 
@@ -110,7 +110,7 @@ HA (or any MQTT publisher on your LAN) writes to these. PAL reads.
 
 ### Display payloads
 
-These all push something onto the orb / kiosk. Multiple shapes are
+These all push something onto the orb / hub. Multiple shapes are
 accepted to make HA automations easy.
 
 | Topic | Payloads accepted | Effect |
@@ -150,7 +150,7 @@ HA discovery buttons) works.
 
 Full-screen browsable history of every request, answer, and announcement
 (PostgreSQL-backed — see the README's *Conversation log* section). Shown on
-the kiosk + web mirrors; auto-dismisses after 30 s without interaction.
+the hub + web mirrors; auto-dismisses after 30 s without interaction.
 
 | Topic | Payload | Effect |
 |---|---|---|
@@ -167,20 +167,20 @@ the request is a silent no-op.
 
 | Topic | Payload | Effect |
 |---|---|---|
-| `<base>/photo_frame/show/set` | Several forms:<br>• `PRESS` (HA button default) — uses configured default<br>• Bare `image.weather_radar` / `camera.front_door`<br>• JSON `{"entity_id": "image.weather_radar"}` | Show the photo frame. Auto-dismisses on any kiosk activity. |
+| `<base>/photo_frame/show/set` | Several forms:<br>• `PRESS` (HA button default) — uses configured default<br>• Bare `image.weather_radar` / `camera.front_door`<br>• JSON `{"entity_id": "image.weather_radar"}` | Show the photo frame. Auto-dismisses on any hub activity. |
 | `<base>/photo_frame/hide/set` | (any) | Dismiss early. |
 
 ### Display power (DPMS)
 
-Real hardware power-down via the kiosk-host display tools (`wlr-randr`
+Real hardware power-down via the hub-host display tools (`wlr-randr`
 / `xset` / `vcgencmd`, auto-selected). Auto-wake fires on any incoming
-kiosk activity (wake word, PTT, takeover push, TTS reply). The number
+hub activity (wake word, PTT, takeover push, TTS reply). The number
 entity controls an optional idle-blank timeout; `0` = manual control
 only.
 
 | Topic | Payload | Effect |
 |---|---|---|
-| `<base>/display/set` | `ON` / `OFF` | Power the kiosk display on or off. |
+| `<base>/display/set` | `ON` / `OFF` | Power the hub display on or off. |
 
 ### Live runtime config
 
@@ -220,7 +220,7 @@ PAL writes to these. HA (or anything else subscribed) reads.
 | `<base>/theme/state`        | theme name           | Active theme. |
 | `<base>/last_response`      | text (≤ 250 chars)   | Truncated for HA's 255-char sensor cap. |
 | `<base>/last_response/attrs`| JSON `{"full_text": "...", "ts": "..."}` | Full text + ISO timestamp. |
-| `<base>/snapshot`           | binary `image/jpeg`  | Latest kiosk snapshot (camera entity). |
+| `<base>/snapshot`           | binary `image/jpeg`  | Latest hub snapshot (camera entity). |
 | `<base>/task_metrics`       | JSON (11 fields, see below) | Per-task timing diagnostics. |
 | `<base>/config/<key>/state` | per-key (see table above) | Mirrors persisted runtime config. |
 
@@ -334,7 +334,7 @@ the theme catalog / voice list / model list changes.
 
 | Entity     | Topic       | Notes                            |
 |------------|-------------|----------------------------------|
-| **Display**| `snapshot`  | Latest kiosk JPEG (binary topic) |
+| **Display**| `snapshot`  | Latest hub JPEG (binary topic) |
 
 ---
 
@@ -468,7 +468,7 @@ mosquitto_pub -h mqtt.broker.lan -t hal/hal-default/config/auto_theme/set -m OFF
 # Configure + show the photo frame (HA image.* entity)
 mosquitto_pub -h mqtt.broker.lan -t hal/hal-default/config/photo_frame_entity/set -m image.weather_radar
 mosquitto_pub -h mqtt.broker.lan -t hal/hal-default/photo_frame/show/set -m PRESS
-# ...wait, then dismiss explicitly (or just touch the kiosk):
+# ...wait, then dismiss explicitly (or just touch the hub):
 mosquitto_pub -h mqtt.broker.lan -t hal/hal-default/photo_frame/hide/set -m PRESS
 
 # Watch every topic the device touches

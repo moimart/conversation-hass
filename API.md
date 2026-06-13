@@ -2,8 +2,8 @@
 
 The AI server (default port **`8765`**) exposes a small REST surface and
 three WebSocket endpoints. The Raspberry Pi audio_streamer (port
-**`8080`** on the kiosk host) re-publishes a couple of these and serves
-the kiosk UI.
+**`8080`** on the hub host) re-publishes a couple of these and serves
+the hub UI.
 
 **Two reachability tiers** (see [Reachability](#reachability-lan-vs-gateway)):
 
@@ -42,7 +42,7 @@ the kiosk UI.
   - [`POST /api/mute`](#post-apimute)
   - [`GET /api/mute`](#get-apimute)
   - [`POST /api/volume`](#post-apivolume)
-- [Snapshots (kiosk → server)](#snapshots)
+- [Snapshots (hub → server)](#snapshots)
   - [`POST /api/snapshot`](#post-apisnapshot)
   - [`GET /api/snapshot.jpg`](#get-apisnapshotjpg)
 - [Photo frame](#photo-frame)
@@ -106,7 +106,7 @@ internet-reachable **only** if its "Gateway" cell is ✓.
 | `POST /api/mute`, `GET /api/mute`, `POST /api/volume` | ✓ | — | LAN-only |
 | `GET`/`POST /api/display`, `…/photo_frame/idle` | ✓ | — | LAN-only |
 | `POST /api/snapshot`, `GET /api/snapshot.jpg` | ✓ | — | LAN-only |
-| `POST /api/photo_frame/{start,end}` (kiosk) | ✓ | — | LAN-only |
+| `POST /api/photo_frame/{start,end}` (hub) | ✓ | — | LAN-only |
 | `POST /api/ptt/{start,end,cancel}`, `WS /ws/ptt` | ✓ | — | LAN-only |
 | `POST /api/pair/request`, `/redeem` | ✓ | — | LAN-only — **pairing only happens at home** |
 | `POST /api/pair/derive` | ✓ | — | LAN-only — scoped-token mint (full-token Bearer) |
@@ -129,7 +129,7 @@ mirror). Unknown scopes deny everything.
 A scoped token is obtained two ways, both LAN-only:
 
 - **`POST /api/pair/redeem`** with `{"code", "device_name", "scope": "watch"}`
-  — the watch self-enrolls by typing the kiosk's 6-digit code (this is what
+  — the watch self-enrolls by typing the hub's 6-digit code (this is what
   the shipped watch apps do). `scope` defaults to `full`; a client-chosen
   scope can only *narrow*. Response echoes `scope` + the `gateway_url`.
 - **`POST /api/pair/derive`** with `{"scope": "watch", "device_name"}`,
@@ -194,7 +194,7 @@ through STT until [`/api/ptt/end`](#post-apipttend) (or
   mute state, restore on end).
 - Set `conversation._wake_detected = True` so STT output flows into the
   command buffer.
-- Push `state=listening` and `ptt_active=true` to the kiosk.
+- Push `state=listening` and `ptt_active=true` to the hub.
 - Schedule a 20 s safety timeout — if `end` never arrives, finalise
   anyway.
 
@@ -377,7 +377,7 @@ back **oldest → newest** within the page.
 | Field | Notes |
 |---|---|
 | `kind` | `user` \| `assistant` \| `announcement` \| `image` (a static image shown on the orb; `origin` = its entity/source label) |
-| `origin` | `null` for kiosk voice turns; the paired device's name for satellite turns; the source channel (`api`, `mqtt`, `openclaw`, `voice-tool`) for announcements. Never the pairing token. |
+| `origin` | `null` for hub voice turns; the paired device's name for satellite turns; the source channel (`api`, `mqtt`, `openclaw`, `voice-tool`) for announcements. Never the pairing token. |
 | `has_more` | `true` while older rows exist (keep paging with `before_id`) |
 | `has_image` | `true` on `kind: "image"` rows (orb images) — fetch the thumbnail lazily via `GET /api/conversation/log/image?id=<row id>` (returns the stored JPEG; page payloads never carry bytes) |
 
@@ -526,8 +526,8 @@ Return the current display power state and the idle-blank timeout.
 | Field | Type | Notes |
 |---|---|---|
 | `state` | `"on"` \| `"off"` | The server's view of the panel state. |
-| `auto_off_seconds` | int | How long with no kiosk activity before auto-blank. `0` = disabled. |
-| `available` | bool | False = no DPMS backend found on the kiosk host. |
+| `auto_off_seconds` | int | How long with no hub activity before auto-blank. `0` = disabled. |
+| `available` | bool | False = no DPMS backend found on the hub host. |
 
 ```bash
 curl http://hal:8765/api/display
@@ -535,7 +535,7 @@ curl http://hal:8765/api/display
 
 ### `POST /api/display`
 
-Turn the kiosk display on or off.
+Turn the hub display on or off.
 
 **Request body**
 
@@ -555,10 +555,10 @@ Turn the kiosk display on or off.
 
 `{"status":"rpi_disconnected","state":"off"}` if the audio_websocket is
 down (the change is still stored server-side and will apply on
-reconnect). `{"status":"unavailable",...}` if the kiosk container has
+reconnect). `{"status":"unavailable",...}` if the hub container has
 no working DPMS backend.
 
-Any incoming kiosk activity — wake-word fire, PTT, calendar / photo
+Any incoming hub activity — wake-word fire, PTT, calendar / photo
 frame / camera / image / video takeover, PAL TTS playback — auto-wakes
 the display before the activity proceeds.
 
@@ -572,12 +572,12 @@ curl -XPOST http://hal:8765/api/display \
 
 ## Photo-frame idle auto-activation
 
-The kiosk can auto-fall-back to the photo frame after a configurable
+The hub can auto-fall-back to the photo frame after a configurable
 idle period. `0` minutes disables the feature. Range 0–720 (12 h).
 
 Activity that resets the timer: wake word, PTT, video / image /
 calendar / camera takeover, PAL TTS playback, and a
-`photo_frame_dismissed` event from the kiosk. The photo frame itself
+`photo_frame_dismissed` event from the hub. The photo frame itself
 opening does **not** reset the timer — that would re-arm it forever and
 prevent re-trigger after a manual dismiss.
 
@@ -622,7 +622,7 @@ category), both auto-discovered.
 
 ### `POST /api/snapshot`
 
-The RPi audio_streamer posts a JPEG of the kiosk view here every
+The RPi audio_streamer posts a JPEG of the hub view here every
 `SNAPSHOT_INTERVAL_S` seconds. The server caches it for
 [`GET /api/snapshot.jpg`](#get-apisnapshotjpg) and forwards it to MQTT
 (`<base>/snapshot`) so HA sees it as a `camera` entity.
@@ -651,8 +651,8 @@ curl -o latest.jpg http://hal:8765/api/snapshot.jpg
 ## Photo frame
 
 Ambient full-screen image from a configurable HA `image.*` entity,
-with the kiosk clock overlaid in white and a slow Ken-Burns zoom. The
-photo frame auto-dismisses on **any** kiosk activity (state change,
+with the hub clock overlaid in white and a slow Ken-Burns zoom. The
+photo frame auto-dismisses on **any** hub activity (state change,
 volume/mute interaction, PTT trigger, pointer tap, another overlay).
 
 The feature is gated by `runtime_config["photo_frame_entity"]` (see
@@ -675,8 +675,8 @@ default entity.
 
 | Status string       | Meaning                                                       |
 |---------------------|---------------------------------------------------------------|
-| `"ok"`              | New session opened; image is being shown on the kiosk.        |
-| `"already_active"`  | A session was already open for the same entity; the kiosk got a fresh `photo_frame_update` (covers re-fetch when the entity rotated). |
+| `"ok"`              | New session opened; image is being shown on the hub.        |
+| `"already_active"`  | A session was already open for the same entity; the hub got a fresh `photo_frame_update` (covers re-fetch when the entity rotated). |
 | `"not_configured"`  | No entity given and `photo_frame_entity` runtime config is empty. Silent no-op — surface this in the UI text rather than as an error. |
 | `"invalid_entity"`  | The supplied `entity_id` isn't an `image.*` or `camera.*`.    |
 | `"fetch_failed"`    | HA returned a non-image content type, 404, or the request capped out. |
@@ -704,7 +704,7 @@ Dismiss the active photo frame. No-op when nothing is open.
 
 | Status string  | Meaning                                                    |
 |----------------|------------------------------------------------------------|
-| `"ok"`         | Session closed; kiosk is fading out; HA subscription torn down. |
+| `"ok"`         | Session closed; hub is fading out; HA subscription torn down. |
 | `"not_active"` | No session was open.                                       |
 
 ```bash
@@ -717,7 +717,7 @@ curl -XPOST http://hal:8765/api/photo_frame/end
 
 ### `GET /api/themes`
 
-List the installed plug-in themes. The kiosk uses this on first load
+List the installed plug-in themes. The hub uses this on first load
 and on every `themes_changed` WebSocket event.
 
 **Response** `200`
@@ -752,7 +752,7 @@ background) at `/themes/<name>/effect.js`.
 
 Serve a theme's static asset (`theme.css`, `effect.js`, fonts, etc.).
 Responses are sent with `Cache-Control: no-cache, no-store,
-must-revalidate` so the kiosk always picks up the latest after a
+must-revalidate` so the hub always picks up the latest after a
 hot-reload.
 
 `404` if the theme or file doesn't exist. Path traversal is rejected.
@@ -803,7 +803,7 @@ asyncio.run(hold())
 ### `/ws/ui`
 
 Read-only stream of UI events for any web client that wants to mirror
-the kiosk. Connect and you'll receive every state change, transcription,
+the hub. Connect and you'll receive every state change, transcription,
 and LLM response. Volume / mute / theme-picker UI clients can use this.
 
 **Server → client** message types (all JSON text frames):
@@ -815,7 +815,7 @@ and LLM response. Volume / mute / theme-picker UI clients can use this.
 | `response`        | `{"text": "..."}` — what PAL said back |
 | `wake`            | `{}` — wake word detected (also when chime fires) |
 | `set_theme`       | `{"name": "<theme>"}` — active theme changed |
-| `themes_changed`  | `{}` — kiosk should re-fetch `/api/themes` |
+| `themes_changed`  | `{}` — hub should re-fetch `/api/themes` |
 | `mute_sync`       | `{"muted": bool}` — mic mute state echo |
 | `volume_sync`     | `{"level": 0.0–1.0}` — TTS volume |
 | `show_camera`     | `{"image_b64": "...", "mime": "...", "duration_s": N, "entity_id": "..."}` |
@@ -831,7 +831,7 @@ and LLM response. Volume / mute / theme-picker UI clients can use this.
 | `timer_countdown` | `{"timer_id": "...", "name": "Timer 1", "ends_at_epoch_ms": N, "remaining_s": N}` — show the last-10s countdown inside the orb (sent ONLY to the device that created the timer; the client ticks locally from `ends_at_epoch_ms`) |
 | `timer_countdown_cancel` | `{"timer_id": "..."}` — tear the countdown down early (timer cancelled) |
 | `timer_countdown_dismiss` | `{"timer_id": "..."}` — safety dismiss at fire (the client also self-dismisses at 0) |
-| `ptt_active`      | `{"active": bool}` — PTT chip / orb glow on the kiosk |
+| `ptt_active`      | `{"active": bool}` — PTT chip / orb glow on the hub |
 
 **Client → server**:
 - `{"type": "ping"}` → server replies `{"type": "pong"}`
@@ -884,25 +884,25 @@ pipeline and the audio_streamer.
 
 ## RPi audio_streamer (port 8080)
 
-The kiosk-host service exposes its own small HTTP surface on the RPi.
-It serves the kiosk UI assets and proxies a handful of AI-server
+The hub-host service exposes its own small HTTP surface on the RPi.
+It serves the hub UI assets and proxies a handful of AI-server
 endpoints so the browser only has to talk to one origin.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET`  | `/` | Kiosk `index.html` |
-| `GET`  | `/style.css`, `/app.js`, `/calendar.css`, `/calendar.js`, `/fonts/...` | Kiosk static assets (image-baked) |
+| `GET`  | `/` | Hub `index.html` |
+| `GET`  | `/style.css`, `/app.js`, `/calendar.css`, `/calendar.js`, `/fonts/...` | Hub static assets (image-baked) |
 | `GET`  | `/api/themes` | Proxy to AI server `/api/themes` |
 | `GET`  | `/api/conversation/log` | Proxy to AI server [`/api/conversation/log`](#get-apiconversationlog) (query string forwarded) |
 | `GET`  | `/api/conversation/log/image` | Proxy to the log's thumbnail route (`?id=N`) |
 | `GET`  | `/themes/{name}/{filename}` | Proxy to AI server theme assets |
-| `GET`  | `/ws` | Kiosk WebSocket (see message table below) |
-| `POST` | `/api/snapshot` | Receives JPEG from a kiosk client, forwards to AI server `/api/snapshot` |
+| `GET`  | `/ws` | Hub WebSocket (see message table below) |
+| `POST` | `/api/snapshot` | Receives JPEG from a hub client, forwards to AI server `/api/snapshot` |
 | `POST` | `/api/music/state` | Sendspin daemon hook: tells the audio_streamer to route HW volume buttons to the media player instead of PAL TTS while a stream is active |
 
-### Kiosk `/ws` message types
+### Hub `/ws` message types
 
-The kiosk's browser-side WebSocket. **Server (audio_streamer) → kiosk**
+The hub's browser-side WebSocket. **Server (audio_streamer) → hub**
 relays AI-server messages plus its own local sync:
 
 | `type` | Origin | Payload |
@@ -911,7 +911,7 @@ relays AI-server messages plus its own local sync:
 | `mute_sync` | local | `{"muted": bool}` |
 | `volume_sync` | local | `{"level": 0.0–1.0}` |
 
-**Kiosk → server (audio_streamer)**:
+**Hub → server (audio_streamer)**:
 
 | `type` | Effect |
 |---|---|
@@ -951,7 +951,7 @@ in addition to the `Authorization: Bearer` header and is redacted from logs.
 Explicitly NOT proxied (LAN-only): `/api/pair/request`, `/api/pair/redeem`
 (pairing is local-only), `/api/pair/devices`, `/api/pair/revoke` (device admin
 stays home-side), `/api/speak`, `/api/display`, `/api/volume`, `/api/mute`,
-`/api/ptt/*`, `/api/snapshot*`, `/api/photo_frame/*` (kiosk), `/mcp`, all MQTT.
+`/api/ptt/*`, `/api/snapshot*`, `/api/photo_frame/*` (hub), `/mcp`, all MQTT.
 Config: `AI_SERVER_URL`, `GATEWAY_PORT` (8766),
 `AUTH_CACHE_TTL` (30s), `RATE_LIMIT_RPM` (240), `TRUST_CF_IP`. Expose via
 Cloudflare Tunnel / reverse proxy / Tailscale Funnel; `HAL_GATEWAY_URL` on the

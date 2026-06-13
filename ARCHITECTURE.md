@@ -89,7 +89,7 @@ and [`MQTT.md`](./MQTT.md). For theme authoring see
 ```
 
 The Raspberry Pi handles all I/O — microphone capture, speaker
-playback, the kiosk UI. The AI server orchestrates everything else:
+playback, the hub UI. The AI server orchestrates everything else:
 voice-activity detection, the transcription cadence, speaker filtering,
 language understanding, tool calls, speech synthesis, memory, MQTT.
 
@@ -113,7 +113,7 @@ to:
 |---|---|---|
 | **AI server** (`ai-server`) | GPU host | The hub: VAD front-end, conversation engine, MCP tools, TTS client, MQTT bridge, all REST/WS surfaces |
 | **STT service** (`stt-service`) | GPU host (own container) | The heavy ASR model behind `RemoteTranscriber` — see [STT engines](#speech-to-text-engines) |
-| **Kiosk RPi** (`audio-streamer`, `sendspin`) | Raspberry Pi | Mic/speaker I/O + the kiosk Chromium display (`/ws/ui`) |
+| **Hub RPi** (`audio-streamer`, `sendspin`) | Raspberry Pi | Mic/speaker I/O + the hub Chromium display (`/ws/ui`) |
 | **Postgres** (`hal-postgres`) | with AI server | Persistent [conversation log](#conversation-log) (text + image thumbnails) |
 | **Satellite gateway** (`hal-gateway`) | with AI server | Token-gated reverse proxy that exposes the satellite surface to the internet — see [gateway](#satellite-gateway-remote-access) |
 | **Mobile satellites** (PAL app) | phones / tablets, anywhere | Paired companion apps over `/ws/ui` + REST; reach home on the LAN or the gateway when away |
@@ -191,8 +191,8 @@ to:
    device exposing state, volume, mute, theme, a camera (the latest
    UI snapshot), text inputs that speak/command, PTT buttons,
    calendar buttons, and live runtime-config selectors. The
-   audio_streamer captures the kiosk via the Chrome DevTools Protocol
-   against the running kiosk Chromium and forwards a JPEG to the
+   audio_streamer captures the hub via the Chrome DevTools Protocol
+   against the running hub Chromium and forwards a JPEG to the
    server every minute (live video frames, custom fonts, animations,
    masks, and filters all included — exact pixels, no html2canvas
    approximations).
@@ -307,7 +307,7 @@ open:
   end).
 - `conversation._wake_detected` is flipped so STT output flows into
   the command buffer.
-- The kiosk receives `ptt_active=true` so the PTT chip + circular
+- The hub receives `ptt_active=true` so the PTT chip + circular
   orb aura show up.
 
 On end, `audio_pipeline.force_finalize()` flushes whatever the VAD
@@ -332,8 +332,8 @@ modes, all mutually exclusive (newest replaces previous):
   5–900 s (default 150).
 
 - **HA camera live stream** — `stream_camera(entity_id, duration_s=300)`
-  opens a WebRTC peer connection. The kiosk owns the
-  `RTCPeerConnection`; the server proxies SDP/ICE between kiosk and
+  opens a WebRTC peer connection. The hub owns the
+  `RTCPeerConnection`; the server proxies SDP/ICE between hub and
   HA's `camera/webrtc/offer` subscription. Default 5 min, max 30.
   End early with `stop_streaming` ("stop streaming", "stop the
   video", etc.). Audio is dropped (video only).
@@ -342,12 +342,12 @@ modes, all mutually exclusive (newest replaces previous):
   takes any RTSP URL (with optional inline credentials) and streams
   it via the bundled go2rtc sidecar. The server registers a
   temporary stream in go2rtc, then exchanges a non-trickle SDP
-  offer/answer through go2rtc's HTTP API (kiosk waits for ICE
+  offer/answer through go2rtc's HTTP API (hub waits for ICE
   gathering to complete before sending the offer; candidates are
   bundled in the SDP). Same `stop_streaming` ends it.
 
 - **HTTP video / HLS** — `play_video(url, duration_s, loop, muted)`
-  plays an MP4 / WebM / HLS playlist directly in the kiosk's
+  plays an MP4 / WebM / HLS playlist directly in the hub's
   `<video>` element. No server-side fetching, no transcoding — the
   browser handles playback. HLS is detected by `.m3u8` and routed
   through hls.js; everything else uses native `<video src>`. Audio
@@ -374,9 +374,9 @@ appended to a persistent **PostgreSQL** log (`server/app/conversation_log.py`,
 `hal-postgres` container). The schema self-migrates on connect (idempotent
 `ALTER … IF NOT EXISTS`), so there is no migration framework. Image rows
 store a ≤512px JPEG thumbnail (`image BYTEA`); pages never ship the bytes —
-the kiosk/app view lazy-loads them via `GET /api/conversation/log/image?id=`.
+the hub/app view lazy-loads them via `GET /api/conversation/log/image?id=`.
 
-The log view (`rpi/web/conversation_log.js`, shown on the kiosk and in the
+The log view (`rpi/web/conversation_log.js`, shown on the hub and in the
 app) paginates by keyset (`before_id`, 100 rows/page, capped at 1500
 rendered rows). On mobile, image thumbnails are tappable into a
 pinch-to-zoom lightbox. Writes never raise — a DB hiccup degrades to
@@ -390,7 +390,7 @@ warn-and-drop so a turn is never broken.
 in-memory voice timers named in the local language ("Timer 1", "Timer 2", …
 from runtime templates). The originating device shows a last-10-seconds
 countdown in its orb; when a timer finishes, `announce_everywhere()` speaks
-the finish line on **every** device (kiosk + all satellites) with a
+the finish line on **every** device (hub + all satellites) with a
 prepended alarm beep (`server/app/alarm.py`). Timers are mirrored to
 pre-created HA helpers `timer.pal_timer_1..5` (PAL is the source of truth);
 >5 concurrent are tracked but unmirrored. Timers do **not** survive an
@@ -400,13 +400,13 @@ ai-server restart (startup best-effort cancels the HA pool to avoid ghosts).
 
 ## Mobile satellites & pairing
 
-The **PAL** companion app (Capacitor, `mobile/`) reuses the kiosk display
+The **PAL** companion app (Capacitor, `mobile/`) reuses the hub display
 (`rpi/web`, copied into the app bundle) and connects as a **satellite**:
-the same `/ws/ui` feed the kiosk uses, plus a satellite-only REST surface
+the same `/ws/ui` feed the hub uses, plus a satellite-only REST surface
 (server TTS, MJPEG camera fallback, photo frame, conversation log).
 
 Pairing (`server/app/pairing.py`) trades a short-lived 6-digit code shown
-on the kiosk for a long-lived device **token** (32-byte urlsafe, persisted
+on the hub for a long-lived device **token** (32-byte urlsafe, persisted
 to `pairing_tokens.json`). The app stores the token in the iOS
 Keychain / Android Keystore (`@aparajita/capacitor-secure-storage`), never
 in the plaintext config blob. Token auth is opt-in server-wide
@@ -430,14 +430,14 @@ on either platform. Shared flow: **dictation → `POST /api/command`
 (`wait_reply: true`) over the gateway HTTPS base → PAL's reply in the same HTTP
 response + a wrist haptic.** `wait_reply` exists because the `watch` scope has
 no `/ws/ui` reply channel; the gateway proxy timeout is 100 s to cover the
-turn's 90 s cap, and the turn routes to its own token so the **kiosk stays
+turn's 90 s cap, and the turn routes to its own token so the **hub stays
 quiet** (like a satellite).
 
 - **Dictation:** Apple Watch uses the system dictation screen (watchOS ships no
   Speech framework, so no in-app recognizer — audio leaves only as final text);
   the Pixel does in-app live recognition (`SpeechRecognizer`, network-backed on
   the Pixel Watch 3 today).
-- **Enrollment:** each watch self-enrolls by typing the kiosk's 6-digit code →
+- **Enrollment:** each watch self-enrolls by typing the hub's 6-digit code →
   `POST /api/pair/redeem` with `scope: "watch"` (LAN-only, cleartext — hence
   the iOS ATS exception / Wear `usesCleartextTraffic`), persisting the scoped
   token on the watch.
@@ -475,7 +475,7 @@ unreachable, re-probing on resume. See the gateway runbook in `CLAUDE.md`.
 
 ```
                   ┌────────────────────── home LAN ──────────────────────┐
-                  │   kiosk RPi ──/ws/audio──►  ai-server:8765  ◄─► HA/MQTT │
+                  │   hub RPi ──/ws/audio──►  ai-server:8765  ◄─► HA/MQTT │
                   │                                  ▲                      │
   satellite ──────┼──── /ws/ui + REST (token) ───────┤                      │
   (home Wi-Fi)    │                                  │  allowlist +         │
@@ -638,7 +638,7 @@ conversation-hass/
 │       ├── timers.py / alarm.py                    # voice timers + finish alarm
 │       ├── push.py / push_providers.py             # APNs/FCM dispatch, signed image URLs, creds
 │       ├── media.py / media_player.py / streaming.py / go2rtc.py / qr_code.py   # orb image/video/stream
-│       ├── photo_frame.py / display.py             # ambient photo frame + kiosk display control
+│       ├── photo_frame.py / display.py             # ambient photo frame + hub display control
 │       ├── ptt.py, calendar_ha.py, memory.py       # push-to-talk, calendar, Shodh memory
 │       ├── mqtt_bridge.py / mqtt_callbacks.py      # HA Discovery + MQTT state/command bridge
 │       └── runtime_config.py, themes.py, tts.py, ha_ws.py
@@ -650,7 +650,7 @@ conversation-hass/
 │
 ├── rpi/
 │   ├── audio_streamer/                             # mic/speaker I/O, CDP snapshot loop, HID buttons
-│   ├── web/                                        # kiosk display (ALSO bundled into the mobile app)
+│   ├── web/                                        # hub display (ALSO bundled into the mobile app)
 │   │   └── app.js, style.css, calendar.*, conversation_log.*, timer_overlay.*, pairing_overlay.js
 │   └── sendspin/                                   # multi-room audio sidecar
 │
