@@ -1674,7 +1674,11 @@
         icSession = icRandId(); icPeerName = toName || "";
         try { icLocal = await icGetMedia(); }
         catch (e) { icSession = null; icToast("Couldn't access mic/camera"); return; }
-        icBuildPC();
+        // NOTE: do NOT build the PeerConnection here — we don't have the
+        // server-minted ICE servers (TURN) yet. They arrive in intercom_ringing;
+        // the PC is built there. Building now (icIce empty) yields a TURN-less PC
+        // that gathers only host candidates → no relay → dead media on remote/
+        // CGNAT calls (the callee already has TURN via the invite).
         icShowInCall(toName, true);       // "Calling <name>…"
         icSend({ type: "intercom_invite", to: toId, session_id: icSession,
             media: { audio: true, video: icWantVideo } });
@@ -1748,7 +1752,10 @@
             return;
         }
         if (t === "intercom_ringing") {
+            // The caller builds its PeerConnection HERE — only now do we have the
+            // server-minted ICE servers (TURN). See icStartOutgoing for why.
             icIce = msg.ice_servers || icIce;
+            if (icRole === "caller" && !icPC) icBuildPC();
         } else if (t === "intercom_busy") {
             icToastEnd("Busy");
         } else if (t === "intercom_unavailable") {
@@ -1756,8 +1763,10 @@
         } else if (t === "intercom_decline") {
             icToastEnd("Call declined");
         } else if (t === "intercom_accept") {
-            // Callee accepted → caller makes the offer.
+            // Callee accepted → caller makes the offer. Safety net: build the PC
+            // now if the ringing that normally carries the ICE servers was missed.
             try {
+                if (!icPC) icBuildPC();
                 const offer = await icPC.createOffer();
                 await icPC.setLocalDescription(offer);
                 icSend({ type: "intercom_offer", session_id: icSession, sdp: offer.sdp });
