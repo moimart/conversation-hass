@@ -69,14 +69,15 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         Z = Math.min(1.8, Math.max(1.15, Z)) * (zoomMul || 1);
         let tx = Z * (vw / 2 - cx);                // bring face centre → centre
         let ty = Z * (vh / 2 - cy);
-        // Coverage clamp (translate is in post-scale screen px):
-        const ax = Z * vw / 2, ay = Z * vh / 2;
-        const txMax = -vw / 2 - Z * ox + ax;
-        const txMin = vw / 2 - Z * (ox + dw) + ax;
-        const tyMax = -vh / 2 - Z * oy + ay;
-        const tyMin = vh / 2 - Z * (oy + dh) + ay;
-        tx = Math.min(txMax, Math.max(txMin, tx));
-        ty = Math.min(tyMax, Math.max(tyMin, ty));
+        // Coverage clamp: the <img> is object-fit:cover and clipped to its own
+        // vw×vh box, so scaling about the centre by Z lets the box shift at most
+        // (Z-1)*half each way before an edge enters the viewport and exposes the
+        // black stage. Clamp the translate to that — a face near an edge simply
+        // stops at the border (never goes out of bounds), it just isn't centred.
+        const halfX = (Z - 1) * vw / 2;
+        const halfY = (Z - 1) * vh / 2;
+        tx = Math.max(-halfX, Math.min(halfX, tx));
+        ty = Math.max(-halfY, Math.min(halfY, ty));
         return `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${Z.toFixed(4)})`;
     }
 
