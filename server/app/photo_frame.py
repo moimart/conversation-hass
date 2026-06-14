@@ -686,6 +686,7 @@ async def refresh_faces_now(state: "AppState") -> None:
     wrong/malformed sensor, otherwise pushes the current photo's faces."""
     has_kiosk = state.photo_frame_session is not None
     device_tokens = list(getattr(state, "satellite_photo_sessions", {}).keys())
+    log.info(f"[faces] refresh: kiosk={has_kiosk} devices={len(device_tokens)}")
     if not has_kiosk and not device_tokens:
         return
 
@@ -701,14 +702,18 @@ async def refresh_faces_now(state: "AppState") -> None:
         return
     attrs = await _read_faces_attrs(state, fe)
     if attrs is None:
+        log.info("[faces] refresh: read returned None (HA unreachable)")
         return  # couldn't reach HA — leave as-is, don't self-disable
     if attrs.get("detection_pending"):
+        log.info("[faces] refresh: detection_pending, skipping")
         return  # not settled yet; the subscription will deliver it
     boxes = parse_faces(attrs)
     if boxes is None:
+        log.info("[faces] refresh: parse_faces=None → disabling")
         await _disable_faces(state, "bad_sensor_on_set")
         await _fan(_clear_faces_msg())
         return
+    log.info(f"[faces] refresh: pushing {len(boxes)} boxes (kiosk={has_kiosk})")
     await _fan(_faces_msg(boxes, attrs))
 
 
