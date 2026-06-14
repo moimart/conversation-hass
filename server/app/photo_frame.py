@@ -319,7 +319,6 @@ async def _on_state_changed(
         return
     session.last_hash = sha
     session.media_item_id = _media_item_id(new_state)
-    log.info(f"[faces] PHOTO changed → session_mid={session.media_item_id[:10]}")
     msg = {"type": "photo_frame_update", "image": b64, "mime": mime,
            "entity_id": entity_id, "show_clock": _show_clock(state)}
     await _push_to_rpi(state, msg)
@@ -613,10 +612,6 @@ async def _handle_faces_event(
     """Common faces-event logic for kiosk + satellite. `push` is an async
     callable taking the message and delivering it to the right surface."""
     attrs = ((new_state or {}).get("attributes") or {}) if isinstance(new_state, dict) else {}
-    smid = str(attrs.get("media_item_id") or "")[:10]
-    wmid = (session.media_item_id[:10] if session and session.media_item_id else "")
-    log.info(f"[faces] event pending={attrs.get('detection_pending')} "
-             f"sensor_mid={smid} session_mid={wmid} faces={len(attrs.get('faces', [])) if 'faces' in attrs else 'n/a'}")
     if not attrs:
         return  # no data on this event (e.g. entity went unavailable) — ignore
     if attrs.get("detection_pending"):
@@ -627,9 +622,8 @@ async def _handle_faces_event(
         await push(_clear_faces_msg())
         return
     if not _faces_for_photo(session, attrs):
-        log.info(f"[faces] SKIP: sensor_mid={smid} != session_mid={wmid}")
         return  # faces for a different (stale/ahead) photo
-    log.info(f"[faces] PUSH {len(boxes)} boxes")
+    log.debug(f"photo frame faces: pushing {len(boxes)} boxes")
     await push(_faces_msg(boxes, attrs))
 
 
