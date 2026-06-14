@@ -58,10 +58,12 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         layer.style.transform = "";
     }
 
-    // Transform that centers a normalized face box under object-fit:cover at an
-    // ABSOLUTE zoom Z, clamped so the (already-covering) image never exposes an
-    // edge. transform-origin is the viewport centre (CSS .pf-img: 50% 50%).
-    function faceTransform(box, geom, Z) {
+    // Target transform that centers a normalized face box under object-fit:cover
+    // at an ABSOLUTE zoom Z, clamped so the (already-covering) image never
+    // exposes an edge. Returns the numeric {tx,ty,Z} so callers can measure the
+    // travel between targets (for constant-velocity timing). transform-origin is
+    // the viewport centre (CSS .pf-img: 50% 50%).
+    function faceTarget(box, geom, Z) {
         const { vw, vh, iw, ih } = geom;
         const s = Math.max(vw / iw, vh / ih);     // object-fit: cover scale
         const dw = iw * s, dh = ih * s;            // displayed (covering) size
@@ -79,7 +81,15 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         const halfY = (Z - 1) * vh / 2;
         tx = Math.max(-halfX, Math.min(halfX, tx));
         ty = Math.max(-halfY, Math.min(halfY, ty));
-        return `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${Z.toFixed(4)})`;
+        return { tx, ty, Z };
+    }
+
+    function tfStr(t) {
+        return `translate(${t.tx.toFixed(2)}px, ${t.ty.toFixed(2)}px) scale(${t.Z.toFixed(4)})`;
+    }
+
+    function faceTransform(box, geom, Z) {
+        return tfStr(faceTarget(box, geom, Z));
     }
 
     // Framing zoom for a multi-face pan: aim for the face to fill ~half the
@@ -167,21 +177,33 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
             // in motion (rather than finishing early and sitting static).
             opts = { duration: 36000, iterations: 1, fill: "forwards", easing: "ease-in-out" };
         } else {
-            // Multiple faces → route nearest-neighbour so each move goes to the
-            // closest next face, then dwell on each, ease to the next, loop back
-            // to the first. Deliberate but with visible travel.
+            // Multiple faces → route nearest-neighbour (closest next face), dwell
+            // on each, glide to the next, loop back to the first. CONSTANT
+            // VELOCITY: each move's duration is proportional to the distance it
+            // travels (px / PX_PER_S), so a hop between neighbours and a sweep
+            // across the frame feel like the same pace — never a fast jump.
             const route = orderByNearest(curFaces.faces, geom);
-            const MOVE_MS = 2000, DWELL_MS = 1700;
-            const slot = MOVE_MS + DWELL_MS, D = N * slot;
+            const targets = route.map((f) => faceTarget(f, geom, faceZoom(f, geom)));
+            const DWELL_MS = 1700;
+            const PX_PER_S = 320;          // pan speed (lower = slower glide)
+            const MIN_MOVE = 800, MAX_MOVE = 4200;
+            const moveDur = (a, b) => {
+                const d = Math.hypot(b.tx - a.tx, b.ty - a.ty);
+                return Math.min(MAX_MOVE, Math.max(MIN_MOVE, d / PX_PER_S * 1000));
+            };
+            const moves = targets.map((t, i) => moveDur(t, targets[(i + 1) % N]));
+            const total = DWELL_MS * N + moves.reduce((a, b) => a + b, 0);
             keyframes = [];
+            let tms = 0;
             for (let i = 0; i < N; i++) {
-                const t = faceTransform(route[i], geom, faceZoom(route[i], geom));
-                const arrive = i * slot;
-                keyframes.push({ transform: t, offset: arrive / D });          // arrive
-                keyframes.push({ transform: t, offset: (arrive + DWELL_MS) / D }); // dwell
+                const s = tfStr(targets[i]);
+                keyframes.push({ transform: s, offset: tms / total });          // arrive
+                tms += DWELL_MS;
+                keyframes.push({ transform: s, offset: tms / total });          // dwell
+                tms += moves[i];                                                // glide to next
             }
-            keyframes.push({ transform: faceTransform(route[0], geom, faceZoom(route[0], geom)), offset: 1 });
-            opts = { duration: D, iterations: Infinity, easing: "ease-in-out" };
+            keyframes.push({ transform: tfStr(targets[0]), offset: 1 });        // loop back
+            opts = { duration: total, iterations: Infinity, easing: "ease-in-out" };
         }
         layer.classList.remove("ken-burns");       // hand off to the JS anim
         try {
