@@ -123,7 +123,9 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
             const close = faceTransform(f, geom, 1.45);     // zoomed, face centred
             keyframes = faceBig ? [{ transform: close }, { transform: full }]   // pull out
                                 : [{ transform: full }, { transform: close }];  // push in
-            opts = { duration: 20000, iterations: 1, fill: "forwards", easing: "ease-in-out" };
+            // Slow + continuous over most of a photo's life so it stays gently
+            // in motion (rather than finishing early and sitting static).
+            opts = { duration: 42000, iterations: 1, fill: "forwards", easing: "ease-in-out" };
         } else {
             // Multiple faces → pan across them in order: dwell on each, ease to
             // the next, loop back to the first. Move/dwell are independent. Paced
