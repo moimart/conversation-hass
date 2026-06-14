@@ -92,6 +92,40 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         return Math.min(2.1, Math.max(1.4, Z));
     }
 
+    // Order faces into a short route so each move goes to the CLOSEST next face
+    // (greedy nearest-neighbour) instead of the sensor's confidence order — the
+    // camera then glides between nearby faces rather than leaping across the
+    // frame. Distance is measured between face centres in displayed pixels (what
+    // the pan actually travels). Starts top-left for a natural reading order.
+    function orderByNearest(faces, geom) {
+        if (faces.length <= 2) return faces.slice();
+        const s = Math.max(geom.vw / geom.iw, geom.vh / geom.ih);
+        const dw = geom.iw * s, dh = geom.ih * s;
+        const ox = (geom.vw - dw) / 2, oy = (geom.vh - dh) / 2;
+        const pts = faces.map((f) => ({
+            f, x: ox + (f.x + f.w / 2) * dw, y: oy + (f.y + f.h / 2) * dh,
+        }));
+        let start = 0;
+        for (let i = 1; i < pts.length; i++) {
+            if (pts[i].x + pts[i].y < pts[start].x + pts[start].y) start = i;
+        }
+        const used = new Array(pts.length).fill(false);
+        const order = [];
+        let cur = start;
+        used[cur] = true; order.push(pts[cur].f);
+        for (let n = 1; n < pts.length; n++) {
+            let best = -1, bd = Infinity;
+            for (let j = 0; j < pts.length; j++) {
+                if (used[j]) continue;
+                const dx = pts[j].x - pts[cur].x, dy = pts[j].y - pts[cur].y;
+                const d = dx * dx + dy * dy;
+                if (d < bd) { bd = d; best = j; }
+            }
+            used[best] = true; order.push(pts[best].f); cur = best;
+        }
+        return order;
+    }
+
     function startFacePan() {
         if (!curFaces) return;
         const layer = active;                      // the currently-shown photo
@@ -133,19 +167,20 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
             // in motion (rather than finishing early and sitting static).
             opts = { duration: 36000, iterations: 1, fill: "forwards", easing: "ease-in-out" };
         } else {
-            // Multiple faces → pan across them in order: dwell on each, ease to
-            // the next, loop back to the first. Deliberate but with visible
-            // travel (a middle ground — not frantic, not sleepy).
+            // Multiple faces → route nearest-neighbour so each move goes to the
+            // closest next face, then dwell on each, ease to the next, loop back
+            // to the first. Deliberate but with visible travel.
+            const route = orderByNearest(curFaces.faces, geom);
             const MOVE_MS = 2000, DWELL_MS = 1700;
             const slot = MOVE_MS + DWELL_MS, D = N * slot;
             keyframes = [];
             for (let i = 0; i < N; i++) {
-                const t = faceTransform(curFaces.faces[i], geom, faceZoom(curFaces.faces[i], geom));
+                const t = faceTransform(route[i], geom, faceZoom(route[i], geom));
                 const arrive = i * slot;
                 keyframes.push({ transform: t, offset: arrive / D });          // arrive
                 keyframes.push({ transform: t, offset: (arrive + DWELL_MS) / D }); // dwell
             }
-            keyframes.push({ transform: faceTransform(curFaces.faces[0], geom, faceZoom(curFaces.faces[0], geom)), offset: 1 });
+            keyframes.push({ transform: faceTransform(route[0], geom, faceZoom(route[0], geom)), offset: 1 });
             opts = { duration: D, iterations: Infinity, easing: "ease-in-out" };
         }
         layer.classList.remove("ken-burns");       // hand off to the JS anim
