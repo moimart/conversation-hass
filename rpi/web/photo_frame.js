@@ -218,6 +218,9 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
             shown = true;
             document.body.classList.add("photo-frame-active");
         }
+        // Faces for this photo can arrive (synchronously) DURING the async paint
+        // above — landing on the pre-swap layer. Re-apply to the now-active one.
+        if (curFaces) startFacePan();
     }
 
     async function update(payload) {
@@ -234,6 +237,10 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         buffer.classList.add("active");
         active.classList.remove("active");
         [active, buffer] = [buffer, active];
+        // Faces may have arrived during the async paint (applied to the pre-swap
+        // layer) — re-apply to the now-active layer. This is the common case:
+        // detection is fast, so photo_faces lands mid-decode.
+        if (curFaces) startFacePan();
     }
 
     let pendingDismissPromise = null;
