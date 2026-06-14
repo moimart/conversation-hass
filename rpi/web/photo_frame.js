@@ -126,8 +126,9 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
             opts = { duration: 20000, iterations: 1, fill: "forwards", easing: "ease-in-out" };
         } else {
             // Multiple faces → pan across them in order: dwell on each, ease to
-            // the next, loop back to the first. Move/dwell are independent.
-            const MOVE_MS = 1100, DWELL_MS = 1500;
+            // the next, loop back to the first. Move/dwell are independent. Paced
+            // for an unhurried, gallery-like feel (smooth glide + a real pause).
+            const MOVE_MS = 2600, DWELL_MS = 2600;
             const slot = MOVE_MS + DWELL_MS, D = N * slot;
             keyframes = [];
             for (let i = 0; i < N; i++) {
