@@ -152,11 +152,19 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         const ih = layer.naturalHeight || curFaces.ih;
         if (!vw || !vh || !iw || !ih) return;      // not laid out / decoded yet
         // Only animate when the photo's orientation is OPPOSITE the display's. A
-        // landscape photo on this portrait screen (or vice-versa) is heavily
-        // cropped by object-fit:cover, so panning across faces reveals what's
-        // otherwise off-screen. A photo that matches the display already fills
-        // the frame, so leave it on the calm default Ken Burns (no extra motion).
-        if ((vw > vh) === (iw > ih)) {
+        // landscape photo on a portrait screen (or vice-versa) is heavily cropped
+        // by object-fit:cover, so panning across faces reveals what's otherwise
+        // off-screen; a matching-orientation photo already fills the frame, so
+        // leave it on the calm default Ken Burns.
+        //
+        // DISPLAY orientation: on a phone/tablet (window.HAL_CONFIG present) the
+        // photo fills the DEVICE viewport, which rotates with the device — use
+        // the live viewport so a phone held landscape is treated as landscape.
+        // On the kiosk (no HAL_CONFIG) the photo fills a fixed orientation
+        // wrapper, so the rendered layout box (vw,vh) is the right signal.
+        const dvw = window.HAL_CONFIG ? window.innerWidth : vw;
+        const dvh = window.HAL_CONFIG ? window.innerHeight : vh;
+        if ((dvw > dvh) === (iw > ih)) {
             clearFaceAnims(layer);
             layer.classList.add("ken-burns");
             return;
