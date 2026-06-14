@@ -90,28 +90,32 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         cancelFacePan();                           // stop any prior anim
         const geom = { vw, vh, iw, ih };
         const N = curFaces.faces.length;
+        // Pacing: MOVE = travel time between faces, DWELL = rest time on each.
+        // Decoupled so the pan feels snappy without rushing the dwell.
+        const MOVE_MS = 1100, DWELL_MS = 1500;
         let keyframes, opts;
         if (N === 1) {
             // Single face: gentle breathing zoom centred on it.
             keyframes = [
                 { transform: faceTransform(curFaces.faces[0], geom, 1.0) },
-                { transform: faceTransform(curFaces.faces[0], geom, 1.12) },
+                { transform: faceTransform(curFaces.faces[0], geom, 1.1) },
             ];
-            opts = { duration: 9000, iterations: Infinity,
+            opts = { duration: 6000, iterations: Infinity,
                      direction: "alternate", easing: "ease-in-out" };
         } else {
-            // Pan across faces in order, dwelling on each, looping back to the
-            // first. Dwell = flat segment (identical transforms); the moves
-            // between faces are eased.
+            // Pan across faces in order: dwell on each (flat segment), then ease
+            // to the next; loop back to the first. Move/dwell are independent.
+            const slot = MOVE_MS + DWELL_MS;
+            const D = N * slot;
             keyframes = [];
-            const hold = 0.55;                     // fraction of each slot held
-            for (let i = 0; i <= N; i++) {
-                const t = faceTransform(curFaces.faces[i % N], geom, 1.0);
-                const base = i / N;
-                keyframes.push({ transform: t, offset: Math.min(1, base) });
-                if (i < N) keyframes.push({ transform: t, offset: Math.min(1, base + hold / N) });
+            for (let i = 0; i < N; i++) {
+                const t = faceTransform(curFaces.faces[i], geom, 1.0);
+                const arrive = i * slot;
+                keyframes.push({ transform: t, offset: arrive / D });          // arrive
+                keyframes.push({ transform: t, offset: (arrive + DWELL_MS) / D }); // dwell
             }
-            opts = { duration: N * 4500, iterations: Infinity, easing: "ease-in-out" };
+            keyframes.push({ transform: faceTransform(curFaces.faces[0], geom, 1.0), offset: 1 });
+            opts = { duration: D, iterations: Infinity, easing: "ease-in-out" };
         }
         layer.classList.remove("ken-burns");       // hand off to the JS anim
         try {
