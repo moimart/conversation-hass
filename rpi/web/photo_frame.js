@@ -83,7 +83,13 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
     function startFacePan() {
         if (!curFaces || !curFaces.faces.length) return;
         const layer = active;                      // the currently-shown photo
-        const vw = root.clientWidth, vh = root.clientHeight;
+        // Measure the RENDERED image box, not `root` — the controller's root is
+        // a display:contents wrapper (pf-img-layer) with zero client size, so
+        // root.clientWidth is 0 and would (wrongly) abort the pan. The <img>
+        // fills the fixed fullscreen stage, so its rect is the viewport.
+        const rect = layer.getBoundingClientRect();
+        const vw = Math.round(rect.width) || window.innerWidth;
+        const vh = Math.round(rect.height) || window.innerHeight;
         const iw = layer.naturalWidth || curFaces.iw;
         const ih = layer.naturalHeight || curFaces.ih;
         if (!vw || !vh || !iw || !ih) return;      // not laid out / decoded yet
