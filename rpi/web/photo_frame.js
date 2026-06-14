@@ -84,13 +84,15 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
     function startFacePan() {
         if (!curFaces || !curFaces.faces.length) return;
         const layer = active;                      // the currently-shown photo
-        // Measure the RENDERED image box, not `root` — the controller's root is
-        // a display:contents wrapper (pf-img-layer) with zero client size, so
-        // root.clientWidth is 0 and would (wrongly) abort the pan. The <img>
-        // fills the fixed fullscreen stage, so its rect is the viewport.
-        const rect = layer.getBoundingClientRect();
-        const vw = Math.round(rect.width) || window.innerWidth;
-        const vh = Math.round(rect.height) || window.innerHeight;
+        // Use the LAYOUT box (offsetWidth/Height), not getBoundingClientRect:
+        // the rect is affected by the element's own (animating) transform AND by
+        // any orientation-wrapper rotation, which would feed back an inflated
+        // viewport and throw the pan out of bounds. offsetWidth is the un-
+        // transformed layout size — the same space object-fit:cover maps into.
+        // (root.clientWidth can't be used: the controller root is a
+        // display:contents wrapper with zero client size.)
+        const vw = layer.offsetWidth || window.innerWidth;
+        const vh = layer.offsetHeight || window.innerHeight;
         const iw = layer.naturalWidth || curFaces.iw;
         const ih = layer.naturalHeight || curFaces.ih;
         if (!vw || !vh || !iw || !ih) return;      // not laid out / decoded yet
