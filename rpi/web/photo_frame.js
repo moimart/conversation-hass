@@ -53,20 +53,16 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         if (faceLayer) { faceLayer.classList.add("ken-burns"); faceLayer = null; }
     }
 
-    // Transform that centers a normalized face box under object-fit:cover at a
-    // moderate zoom, clamped so the (already-covering) image never exposes an
+    // Transform that centers a normalized face box under object-fit:cover at an
+    // ABSOLUTE zoom Z, clamped so the (already-covering) image never exposes an
     // edge. transform-origin is the viewport centre (CSS .pf-img: 50% 50%).
-    function faceTransform(box, geom, zoomMul) {
+    function faceTransform(box, geom, Z) {
         const { vw, vh, iw, ih } = geom;
         const s = Math.max(vw / iw, vh / ih);     // object-fit: cover scale
         const dw = iw * s, dh = ih * s;            // displayed (covering) size
         const ox = (vw - dw) / 2, oy = (vh - dh) / 2;  // displayed top-left (≤0)
         const cx = ox + (box.x + box.w / 2) * dw;  // face centre, screen px
         const cy = oy + (box.y + box.h / 2) * dh;
-        const faceH = box.h * dh;
-        // Moderate framing: aim for the face to fill ~1/3 of the height.
-        let Z = faceH > 0 ? (vh / 3) / faceH : 1.3;
-        Z = Math.min(1.8, Math.max(1.15, Z)) * (zoomMul || 1);
         let tx = Z * (vw / 2 - cx);                // bring face centre → centre
         let ty = Z * (vh / 2 - cy);
         // Coverage clamp: the <img> is object-fit:cover and clipped to its own
@@ -81,8 +77,17 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         return `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${Z.toFixed(4)})`;
     }
 
+    // Framing zoom for a multi-face pan: aim for the face to fill ~1/3 of the
+    // viewport height, clamped to a tasteful range.
+    function faceZoom(box, geom) {
+        const dh = geom.ih * Math.max(geom.vw / geom.iw, geom.vh / geom.ih);
+        const faceH = box.h * dh;
+        const Z = faceH > 0 ? (geom.vh / 3) / faceH : 1.3;
+        return Math.min(1.8, Math.max(1.15, Z));
+    }
+
     function startFacePan() {
-        if (!curFaces || !curFaces.faces.length) return;
+        if (!curFaces) return;
         const layer = active;                      // the currently-shown photo
         // Use the LAYOUT box (offsetWidth/Height), not getBoundingClientRect:
         // the rect is affected by the element's own (animating) transform AND by
@@ -99,31 +104,39 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         cancelFacePan();                           // stop any prior anim
         const geom = { vw, vh, iw, ih };
         const N = curFaces.faces.length;
-        // Pacing: MOVE = travel time between faces, DWELL = rest time on each.
-        // Decoupled so the pan feels snappy without rushing the dwell.
-        const MOVE_MS = 1100, DWELL_MS = 1500;
         let keyframes, opts;
-        if (N === 1) {
-            // Single face: gentle breathing zoom centred on it.
+        if (N === 0) {
+            // No faces → a subtle, calm centred zoom in/out (gentle breathing).
             keyframes = [
-                { transform: faceTransform(curFaces.faces[0], geom, 1.0) },
-                { transform: faceTransform(curFaces.faces[0], geom, 1.1) },
+                { transform: "translate(0px, 0px) scale(1.0)" },
+                { transform: "translate(0px, 0px) scale(1.06)" },
             ];
-            opts = { duration: 6000, iterations: Infinity,
+            opts = { duration: 14000, iterations: Infinity,
                      direction: "alternate", easing: "ease-in-out" };
+        } else if (N === 1) {
+            // Single face → ONE directional Ken Burns (no in/out wobble): push IN
+            // on a small/distant face, pull OUT from a large/close one, then hold.
+            const f = curFaces.faces[0];
+            const s = Math.max(vw / iw, vh / ih);
+            const faceBig = (f.h * ih * s) > vh * 0.42;     // face fills >42% height
+            const full = faceTransform(f, geom, 1.0);       // whole photo
+            const close = faceTransform(f, geom, 1.45);     // zoomed, face centred
+            keyframes = faceBig ? [{ transform: close }, { transform: full }]   // pull out
+                                : [{ transform: full }, { transform: close }];  // push in
+            opts = { duration: 20000, iterations: 1, fill: "forwards", easing: "ease-in-out" };
         } else {
-            // Pan across faces in order: dwell on each (flat segment), then ease
-            // to the next; loop back to the first. Move/dwell are independent.
-            const slot = MOVE_MS + DWELL_MS;
-            const D = N * slot;
+            // Multiple faces → pan across them in order: dwell on each, ease to
+            // the next, loop back to the first. Move/dwell are independent.
+            const MOVE_MS = 1100, DWELL_MS = 1500;
+            const slot = MOVE_MS + DWELL_MS, D = N * slot;
             keyframes = [];
             for (let i = 0; i < N; i++) {
-                const t = faceTransform(curFaces.faces[i], geom, 1.0);
+                const t = faceTransform(curFaces.faces[i], geom, faceZoom(curFaces.faces[i], geom));
                 const arrive = i * slot;
                 keyframes.push({ transform: t, offset: arrive / D });          // arrive
                 keyframes.push({ transform: t, offset: (arrive + DWELL_MS) / D }); // dwell
             }
-            keyframes.push({ transform: faceTransform(curFaces.faces[0], geom, 1.0), offset: 1 });
+            keyframes.push({ transform: faceTransform(curFaces.faces[0], geom, faceZoom(curFaces.faces[0], geom)), offset: 1 });
             opts = { duration: D, iterations: Infinity, easing: "ease-in-out" };
         }
         layer.classList.remove("ken-burns");       // hand off to the JS anim
@@ -149,8 +162,11 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
 
     // Called by app.js on a photo_faces message.
     function setFaces(msg) {
+        // Any photo_faces message means the feature is ON (the server stays
+        // silent when it's off → default CSS Ken Burns). An empty list = a photo
+        // with no detected faces → subtle centred zoom (handled in startFacePan).
         const faces = msg && Array.isArray(msg.faces) ? msg.faces : [];
-        if (!shown || faces.length === 0) { curFaces = null; cancelFacePan(); return; }
+        if (!shown) { curFaces = null; cancelFacePan(); return; }
         curFaces = { faces, iw: msg.image_w || 0, ih: msg.image_h || 0 };
         bindResize();
         startFacePan();
