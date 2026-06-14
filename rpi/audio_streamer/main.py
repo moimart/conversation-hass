@@ -592,6 +592,8 @@ class AudioManager:
 
         elif msg_type == "photo_faces":
             # Cache so a (re)connecting kiosk page restores the face pan.
+            log.info(f"[faces] rpi forwarding photo_faces "
+                     f"({len(msg.get('faces', []))} boxes) → {len(self.ui_clients)} ui clients")
             self.last_photo_faces = msg
             await self.broadcast_to_ui(msg)
 
