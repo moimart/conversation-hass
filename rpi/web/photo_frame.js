@@ -43,14 +43,19 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
     // default CSS .ken-burns on the active layer with a JS (Web Animations API)
     // pan that sweeps across the detected faces in order, looping until the
     // photo changes. Empty faces / no faces ⇒ revert to the default effect.
-    let faceAnim = null;     // running WAA animation (or null)
-    let faceLayer = null;    // the <img> the face anim is attached to
     let curFaces = null;     // { faces:[{x,y,w,h}], iw, ih } for the active photo
     let resizeBound = false;
 
-    function cancelFacePan() {
-        if (faceAnim) { try { faceAnim.cancel(); } catch (_) { /* ignore */ } faceAnim = null; }
-        if (faceLayer) { faceLayer.classList.add("ken-burns"); faceLayer = null; }
+    // Cancel only the JS (face) animations on a layer — never the CSS Ken Burns
+    // (CSSAnimation has an animationName; WAA animations don't). Used to clean a
+    // layer BEFORE it's reused; we never cancel the outgoing layer while it's
+    // still visible (that would snap it back mid-crossfade — the "jump").
+    function clearFaceAnims(layer) {
+        if (!layer) return;
+        layer.getAnimations().forEach((a) => {
+            if (!a.animationName) { try { a.cancel(); } catch (_) { /* ignore */ } }
+        });
+        layer.style.transform = "";
     }
 
     // Transform that centers a normalized face box under object-fit:cover at an
@@ -77,13 +82,14 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         return `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${Z.toFixed(4)})`;
     }
 
-    // Framing zoom for a multi-face pan: aim for the face to fill ~1/3 of the
-    // viewport height, clamped to a tasteful range.
+    // Framing zoom for a multi-face pan: aim for the face to fill ~half the
+    // viewport height — enough zoom that the travel between faces actually reads
+    // (a shallow zoom makes the pan feel too subtle). Clamped to a sane range.
     function faceZoom(box, geom) {
         const dh = geom.ih * Math.max(geom.vw / geom.iw, geom.vh / geom.ih);
         const faceH = box.h * dh;
-        const Z = faceH > 0 ? (geom.vh / 3) / faceH : 1.3;
-        return Math.min(1.8, Math.max(1.15, Z));
+        const Z = faceH > 0 ? (geom.vh * 0.48) / faceH : 1.6;
+        return Math.min(2.1, Math.max(1.4, Z));
     }
 
     function startFacePan() {
@@ -101,7 +107,7 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         const iw = layer.naturalWidth || curFaces.iw;
         const ih = layer.naturalHeight || curFaces.ih;
         if (!vw || !vh || !iw || !ih) return;      // not laid out / decoded yet
-        cancelFacePan();                           // stop any prior anim
+        clearFaceAnims(layer);                     // clean THIS layer (only)
         const geom = { vw, vh, iw, ih };
         const N = curFaces.faces.length;
         let keyframes, opts;
@@ -120,17 +126,17 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
             const s = Math.max(vw / iw, vh / ih);
             const faceBig = (f.h * ih * s) > vh * 0.42;     // face fills >42% height
             const full = faceTransform(f, geom, 1.0);       // whole photo
-            const close = faceTransform(f, geom, 1.45);     // zoomed, face centred
+            const close = faceTransform(f, geom, 1.7);      // zoomed, face centred
             keyframes = faceBig ? [{ transform: close }, { transform: full }]   // pull out
                                 : [{ transform: full }, { transform: close }];  // push in
             // Slow + continuous over most of a photo's life so it stays gently
             // in motion (rather than finishing early and sitting static).
-            opts = { duration: 42000, iterations: 1, fill: "forwards", easing: "ease-in-out" };
+            opts = { duration: 36000, iterations: 1, fill: "forwards", easing: "ease-in-out" };
         } else {
             // Multiple faces → pan across them in order: dwell on each, ease to
-            // the next, loop back to the first. Move/dwell are independent. Paced
-            // for an unhurried, gallery-like feel (smooth glide + a real pause).
-            const MOVE_MS = 2600, DWELL_MS = 2600;
+            // the next, loop back to the first. Deliberate but with visible
+            // travel (a middle ground — not frantic, not sleepy).
+            const MOVE_MS = 2000, DWELL_MS = 1700;
             const slot = MOVE_MS + DWELL_MS, D = N * slot;
             keyframes = [];
             for (let i = 0; i < N; i++) {
@@ -144,11 +150,9 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         }
         layer.classList.remove("ken-burns");       // hand off to the JS anim
         try {
-            faceAnim = layer.animate(keyframes, opts);
-            faceLayer = layer;
+            layer.animate(keyframes, opts);
         } catch (_) {
             layer.classList.add("ken-burns");      // WAA unavailable → default
-            faceAnim = null; faceLayer = null;
         }
     }
 
@@ -169,7 +173,7 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         // silent when it's off → default CSS Ken Burns). An empty list = a photo
         // with no detected faces → subtle centred zoom (handled in startFacePan).
         const faces = msg && Array.isArray(msg.faces) ? msg.faces : [];
-        if (!shown) { curFaces = null; cancelFacePan(); return; }
+        if (!shown) { curFaces = null; clearFaceAnims(active); return; }
         curFaces = { faces, iw: msg.image_w || 0, ih: msg.image_h || 0 };
         bindResize();
         startFacePan();
@@ -195,9 +199,11 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
     }
 
     async function show(payload) {
-        // New photo → drop any face pan; the new image starts on the default
-        // Ken Burns until its own photo_faces arrives.
-        curFaces = null; cancelFacePan();
+        // New photo: clean only the INCOMING layer (buffer). The OUTGOING layer
+        // keeps its pan running and fades out smoothly — never cancelled while
+        // visible, so there's no snap/jump as the photo changes.
+        curFaces = null;
+        clearFaceAnims(buffer);
         await paintInto(buffer, payload);
         // Re-trigger Ken-Burns on the incoming layer (animation restarts
         // when we re-add the class).
@@ -219,7 +225,8 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
             // update arrived before show — treat it as a show.
             return show(payload);
         }
-        curFaces = null; cancelFacePan();
+        curFaces = null;
+        clearFaceAnims(buffer);     // incoming only; outgoing fades out un-snapped
         await paintInto(buffer, payload);
         buffer.classList.remove("ken-burns");
         void buffer.offsetWidth;
@@ -243,12 +250,14 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
                 try { onDismiss(reason); } catch (_) { /* ignore */ }
             }
             document.body.classList.remove("photo-frame-active");
-            curFaces = null; cancelFacePan();
+            curFaces = null;   // let the current pan fade out un-snapped
             // Wait for the CSS fade-out (matches the 400ms in style.css).
             setTimeout(() => {
                 shown = false;
                 // Clear images so a fresh show always paints from scratch
                 // (avoids a cached old image flashing in).
+                clearFaceAnims(imgA);
+                clearFaceAnims(imgB);
                 imgA.removeAttribute("src");
                 imgB.removeAttribute("src");
                 imgA.classList.remove("ken-burns", "active");
