@@ -151,6 +151,16 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         const iw = layer.naturalWidth || curFaces.iw;
         const ih = layer.naturalHeight || curFaces.ih;
         if (!vw || !vh || !iw || !ih) return;      // not laid out / decoded yet
+        // Only animate when the photo's orientation is OPPOSITE the display's. A
+        // landscape photo on this portrait screen (or vice-versa) is heavily
+        // cropped by object-fit:cover, so panning across faces reveals what's
+        // otherwise off-screen. A photo that matches the display already fills
+        // the frame, so leave it on the calm default Ken Burns (no extra motion).
+        if ((vw > vh) === (iw > ih)) {
+            clearFaceAnims(layer);
+            layer.classList.add("ken-burns");
+            return;
+        }
         clearFaceAnims(layer);                     // clean THIS layer (only)
         const geom = { vw, vh, iw, ih };
         const N = curFaces.faces.length;
