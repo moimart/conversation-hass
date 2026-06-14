@@ -763,6 +763,15 @@
             case "weather_update":
                 applyWeather(msg);
                 break;
+            case "photo_faces":
+                // Face-aware Ken Burns: re-point the pan to sweep the detected
+                // faces. Empty list ⇒ revert to the default effect.
+                if (pfController) {
+                    pfController.setFaces(msg);
+                } else if (msg.faces && msg.faces.length) {
+                    getPhotoFrame().then((pf) => pf.setFaces(msg)).catch(() => {});
+                }
+                break;
             default:
                 console.log("Unknown message:", msg);
         }

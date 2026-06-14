@@ -1522,6 +1522,31 @@
     }
   ],
   [
+    "homeassistant/text/hal-default/config_photo_frame_faces_entity/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/photo_frame_faces_entity/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:face-recognition",
+      "mode": "text",
+      "name": "Photo Frame Faces Sensor",
+      "state_topic": "hal/hal-default/config/photo_frame_faces_entity/state",
+      "unique_id": "hal-default_config_photo_frame_faces_entity"
+    }
+  ],
+  [
     "homeassistant/text/hal-default/config_photo_frame_video_url/config",
     {
       "availability": [

@@ -91,6 +91,9 @@ class AppState:
     # replay to (re)connecting clients) and the poller task.
     current_weather: dict | None = None
     weather_task: object | None = None
+    # Face-aware Ken Burns: last photo_faces pushed to the KIOSK (for replay to
+    # a (re)connecting kiosk/web client). None when no frame / no faces.
+    current_photo_faces: dict | None = None
     mqtt_bridge: MQTTBridge | None = None
     tts_volume: float = 0.7  # cached, mirrors RPi state
     last_snapshot: bytes | None = None  # latest JPEG from the RPi

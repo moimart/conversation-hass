@@ -448,3 +448,120 @@ async def test_device_photo_frame_is_independent_of_kiosk(fake_fetch):
     await photo_frame.stop_photo_frame_for_device(state, "tokA")
     assert state.photo_frame_session is not None      # kiosk untouched
     assert "tokA" not in state.satellite_photo_sessions
+
+
+# ---------------------------------------------------------------------------
+# Face-aware Ken Burns: parse_faces validation + self-disable
+# ---------------------------------------------------------------------------
+
+def _attrs(faces, iw=4032, ih=3024, **extra):
+    a = {"faces": faces, "image_width": iw, "image_height": ih}
+    a.update(extra)
+    return a
+
+
+def test_parse_faces_valid_strips_to_boxes():
+    boxes = photo_frame.parse_faces(_attrs([
+        {"x": 0.21, "y": 0.18, "w": 0.12, "h": 0.18, "confidence": 0.93},
+        {"x": 0.52, "y": 0.22, "w": 0.11, "h": 0.17, "confidence": 0.88},
+    ]))
+    assert boxes == [
+        {"x": 0.21, "y": 0.18, "w": 0.12, "h": 0.18},
+        {"x": 0.52, "y": 0.22, "w": 0.11, "h": 0.17},
+    ]
+
+
+def test_parse_faces_empty_list_is_valid():
+    # A settled photo with zero faces — valid (client uses default Ken Burns).
+    assert photo_frame.parse_faces(_attrs([])) == []
+
+
+@pytest.mark.parametrize("attrs", [
+    {},                                              # wrong sensor (no faces attr)
+    {"faces": "nope", "image_width": 1, "image_height": 1},   # faces not a list
+    {"faces": []},                                   # missing image dims
+    {"faces": [], "image_width": 0, "image_height": 0},       # zero dims
+    _attrs([{"x": 0.1, "y": 0.1, "w": 0.1}]),        # box missing h
+    _attrs([{"x": 0.1, "y": 0.1, "w": 0.1, "h": "x"}]),       # non-numeric
+    _attrs([{"x": 1.5, "y": 0.1, "w": 0.1, "h": 0.1}]),       # out of range
+    _attrs([{"x": 0.1, "y": 0.1, "w": 0.0, "h": 0.1}]),       # zero width
+    _attrs(["notadict"]),                            # box not a dict
+])
+def test_parse_faces_rejects_malformed(attrs):
+    assert photo_frame.parse_faces(attrs) is None
+
+
+def _faces_state(entity="sensor.gphotos_faces_count"):
+    cleared = {}
+    rt = SimpleNamespace(
+        get=lambda k, d=None: entity if k == "photo_frame_faces_entity" else d,
+        set=lambda k, v: cleared.__setitem__(k, v),
+    )
+    bridge = SimpleNamespace(publish_config=AsyncMock())
+    state = SimpleNamespace(runtime_config=rt, mqtt_bridge=bridge)
+    return state, cleared, bridge
+
+
+@pytest.mark.asyncio
+async def test_faces_event_bad_sensor_self_disables_and_clears():
+    state, cleared, bridge = _faces_state()
+    pushed = []
+
+    async def push(m):
+        pushed.append(m)
+
+    # Settled detection but the entity has no `faces` attr → wrong sensor.
+    await photo_frame._handle_faces_event(
+        state, None, {"attributes": {"detection_pending": False, "foo": 1}}, push)
+
+    assert cleared.get("photo_frame_faces_entity") == ""        # setting emptied
+    bridge.publish_config.assert_awaited_with("photo_frame_faces_entity", "")
+    assert pushed and pushed[-1]["type"] == "photo_faces" and pushed[-1]["faces"] == []
+
+
+@pytest.mark.asyncio
+async def test_faces_event_pending_is_noop():
+    state, _, _ = _faces_state()
+    pushed = []
+
+    async def push(m):
+        pushed.append(m)
+
+    await photo_frame._handle_faces_event(
+        state, None, {"attributes": {"detection_pending": True, "faces": []}}, push)
+    assert pushed == []
+
+
+@pytest.mark.asyncio
+async def test_faces_event_valid_pushes_boxes():
+    state, _, _ = _faces_state()
+    session = SimpleNamespace(media_item_id="")     # unknown → no gating
+    pushed = []
+
+    async def push(m):
+        pushed.append(m)
+
+    attrs = {"detection_pending": False, "image_width": 100, "image_height": 50,
+             "media_item_id": "AB", "faces": [{"x": 0.1, "y": 0.2, "w": 0.1, "h": 0.1}]}
+    await photo_frame._handle_faces_event(state, session, {"attributes": attrs}, push)
+
+    assert len(pushed) == 1
+    m = pushed[0]
+    assert m["type"] == "photo_faces" and m["image_w"] == 100 and m["image_h"] == 50
+    assert m["faces"] == [{"x": 0.1, "y": 0.2, "w": 0.1, "h": 0.1}]
+    assert m["media_item_id"] == "AB"
+
+
+@pytest.mark.asyncio
+async def test_faces_event_stale_media_id_is_skipped():
+    state, _, _ = _faces_state()
+    session = SimpleNamespace(media_item_id="CURRENT")
+    pushed = []
+
+    async def push(m):
+        pushed.append(m)
+
+    attrs = {"detection_pending": False, "image_width": 100, "image_height": 50,
+             "media_item_id": "OTHER", "faces": [{"x": 0.1, "y": 0.2, "w": 0.1, "h": 0.1}]}
+    await photo_frame._handle_faces_event(state, session, {"attributes": attrs}, push)
+    assert pushed == []     # faces belong to a different photo

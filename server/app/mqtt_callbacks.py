@@ -422,6 +422,9 @@ async def wire(state, bridge) -> None:
     bridge._cached_config["photo_frame_show_clock"] = bool(
         state.runtime_config.get("photo_frame_show_clock", True)
     )
+    bridge._cached_config["photo_frame_faces_entity"] = str(
+        state.runtime_config.get("photo_frame_faces_entity", "") or ""
+    )
     # Weather under the clock.
     bridge._cached_config["weather_entity"] = str(
         state.runtime_config.get("weather_entity", "") or ""
@@ -570,6 +573,15 @@ async def wire(state, bridge) -> None:
         msg = {"type": "set_photo_frame_clock", "show": bool(val)}
         await _push_to_rpi(state, msg)
         await broadcast_to_ui(state, msg)
+
+    async def _cfg_photo_frame_faces_entity(value: str):
+        value = (value or "").strip()
+        await _persist("photo_frame_faces_entity", value)
+        await bridge.publish_config("photo_frame_faces_entity", value)
+        # Apply immediately to any live photo frame: (re)read the sensor for the
+        # current photo and push the faces, or clear them if the setting emptied.
+        from . import photo_frame
+        await photo_frame.refresh_faces_now(state)
 
     async def _cfg_weather_entity(value: str):
         value = (value or "").strip()
@@ -840,6 +852,7 @@ async def wire(state, bridge) -> None:
     bridge.set_config_callback("photo_frame_video_url", _cfg_photo_frame_video_url)
     bridge.set_config_callback("photo_frame_video_mode", _cfg_photo_frame_video_mode)
     bridge.set_config_callback("photo_frame_show_clock", _cfg_photo_frame_show_clock)
+    bridge.set_config_callback("photo_frame_faces_entity", _cfg_photo_frame_faces_entity)
     bridge.set_config_callback("weather_entity", _cfg_weather_entity)
     bridge.set_config_callback("weather_enabled", _cfg_weather_enabled)
     bridge.set_config_callback("calendar_default_source", _cfg_calendar_default_source)

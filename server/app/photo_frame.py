@@ -48,6 +48,10 @@ class PhotoFrameSession:
     sub_id: Optional[int]              # HA WS subscription id; None if HA wasn't reachable
     last_hash: str                     # sha256 of the last image bytes we pushed
     started_at: float = field(default_factory=time.monotonic)
+    # gphotos `media_item_id` of the currently-shown photo — used to correlate
+    # the (separately-arriving, possibly-delayed) faces sensor with this photo
+    # so late face boxes never land on the next image. "" when unknown.
+    media_item_id: str = ""
 
 
 @dataclass
@@ -201,9 +205,14 @@ async def start_photo_frame(
             # Subscription confirmation comes back as a `result` —
             # ignore. Real events have a `data.entity_id`.
             data = (event.get("data") or {}) if isinstance(event, dict) else {}
-            if data.get("entity_id") != entity:
+            eid = data.get("entity_id")
+            if eid == entity:
+                await _on_state_changed(state, entity, data.get("new_state"))
                 return
-            await _on_state_changed(state, entity)
+            # Same subscription also carries the faces sensor (read fresh so a
+            # mid-session setting change takes effect without a restart).
+            if eid and eid == _faces_entity(state):
+                await _on_faces_changed(state, data.get("new_state"))
         try:
             sub_id = await ha_client.subscribe(
                 {"type": "subscribe_events", "event_type": "state_changed"},
@@ -222,6 +231,11 @@ async def start_photo_frame(
     await _push_to_rpi(state, msg)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, msg)
+    # Push the current photo's faces (if the feature is on) — the subscription
+    # only fires on *changes*, so the opening photo needs an explicit read. Fire
+    # it off the open path so the MCP read never delays showing the photo.
+    if _faces_entity(state):
+        asyncio.create_task(refresh_faces_now(state))
     log.info(f"Photo frame opened: entity={entity} sub_id={sub_id}")
     return {"status": "ok", "session": True}
 
@@ -287,7 +301,9 @@ async def _ensure_ha_ws(state: "AppState"):
         return None
 
 
-async def _on_state_changed(state: "AppState", entity_id: str) -> None:
+async def _on_state_changed(
+    state: "AppState", entity_id: str, new_state: Optional[dict] = None,
+) -> None:
     """HA notified that our entity state changed — re-fetch and push if
     the bytes actually changed."""
     session: Optional[PhotoFrameSession] = state.photo_frame_session
@@ -302,11 +318,16 @@ async def _on_state_changed(state: "AppState", entity_id: str) -> None:
         # State changed but bytes are identical (e.g. attribute-only update).
         return
     session.last_hash = sha
+    session.media_item_id = _media_item_id(new_state)
     msg = {"type": "photo_frame_update", "image": b64, "mime": mime,
            "entity_id": entity_id, "show_clock": _show_clock(state)}
     await _push_to_rpi(state, msg)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, msg)
+    # New photo → reset the kiosk to the default Ken Burns until this photo's
+    # faces settle (the faces sensor fires its own state_changed shortly after).
+    if _faces_entity(state):
+        await _push_kiosk_faces(state, _clear_faces_msg())
     log.debug(f"Photo frame: pushed update for {entity_id}")
 
 
@@ -323,6 +344,7 @@ async def stop_photo_frame(state: "AppState", reason: str = "explicit") -> dict:
     # only teardown it needs is the kiosk hide message below.
     state.photo_frame_session = None
     state.photo_frame_video_session = None
+    state.current_photo_faces = None      # don't replay stale faces after close
 
     # Tear down the HA subscription if we had a photo session with one.
     if session is not None and session.sub_id is not None:
@@ -388,9 +410,12 @@ async def start_photo_frame_for_device(
     if ha_client is not None:
         async def _on_event(event: dict) -> None:
             data = (event.get("data") or {}) if isinstance(event, dict) else {}
-            if data.get("entity_id") != entity:
+            eid = data.get("entity_id")
+            if eid == entity:
+                await _on_device_state_changed(state, token, entity, data.get("new_state"))
                 return
-            await _on_device_state_changed(state, token, entity)
+            if eid and eid == _faces_entity(state):
+                await _on_device_faces_changed(state, token, data.get("new_state"))
         try:
             sub_id = await ha_client.subscribe(
                 {"type": "subscribe_events", "event_type": "state_changed"}, _on_event,
@@ -409,11 +434,15 @@ async def start_photo_frame_for_device(
     if not ok:
         await stop_photo_frame_for_device(state, token, reason="device_gone")
         return {"status": "device_disconnected", "session": False}
+    if _faces_entity(state):
+        asyncio.create_task(refresh_faces_now(state))
     log.info(f"Satellite photo frame opened: device={token[:8]} entity={entity} sub_id={sub_id}")
     return {"status": "ok", "session": True}
 
 
-async def _on_device_state_changed(state: "AppState", token: str, entity_id: str) -> None:
+async def _on_device_state_changed(
+    state: "AppState", token: str, entity_id: str, new_state: Optional[dict] = None,
+) -> None:
     session: Optional[PhotoFrameSession] = state.satellite_photo_sessions.get(token)
     if session is None or session.entity_id != entity_id:
         return
@@ -424,11 +453,14 @@ async def _on_device_state_changed(state: "AppState", token: str, entity_id: str
     if sha == session.last_hash:
         return
     session.last_hash = sha
+    session.media_item_id = _media_item_id(new_state)
     from .main import send_to_device
     await send_to_device(state, token, {
         "type": "photo_frame_update", "image": b64, "mime": mime,
         "entity_id": entity_id, "show_clock": _show_clock(state),
     })
+    if _faces_entity(state):
+        await _push_device_faces(state, token, _clear_faces_msg())
 
 
 async def stop_photo_frame_for_device(
@@ -448,6 +480,236 @@ async def stop_photo_frame_for_device(
     from .main import send_to_device
     await send_to_device(state, token, {"type": "hide_photo_frame", "reason": reason})
     return {"status": "ok", "session": False}
+
+
+# --- Face-aware Ken Burns --------------------------------------------------
+# Opt-in: the user names a `gphotos_rotator` faces sensor in
+# `photo_frame_faces_entity`. While a photo frame is open we read that sensor
+# off the SAME HA state_changed subscription the photo entity already uses
+# (events carry `new_state.attributes`, so no polling), and push the normalized
+# face boxes to the display, which re-points its Ken-Burns pan to sweep across
+# the faces in order. Empty setting → feature off. Malformed/wrong sensor →
+# silently empty the setting (self-heal). The boxes are correlated to the
+# displayed photo by `media_item_id` so late detections never land on the next
+# image (gphotos clears faces atomically on rotation, then sets
+# `detection_pending` until detection completes).
+
+
+def _faces_entity(state: "AppState") -> str:
+    """The configured faces-sensor entity_id, or "" when the feature is off."""
+    try:
+        return str(state.runtime_config.get("photo_frame_faces_entity", "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _media_item_id(new_state: Optional[dict]) -> str:
+    """Pull gphotos `media_item_id` out of a state_changed `new_state` blob."""
+    attrs = ((new_state or {}).get("attributes") or {}) if isinstance(new_state, dict) else {}
+    return str(attrs.get("media_item_id") or "")
+
+
+def parse_faces(attrs: dict) -> Optional[list[dict]]:
+    """Validate a gphotos faces-sensor attributes dict → a clean list of
+    normalized `{x,y,w,h}` boxes, or None if the data is STRUCTURALLY wrong
+    (missing/malformed `faces`, bad image dims, wrong sensor). An empty list is
+    VALID (a settled photo with zero faces). Pure — no I/O, unit-testable.
+
+    None is the signal to self-disable the feature; transient read failures
+    (handled by callers) must NOT route through here."""
+    if not isinstance(attrs, dict):
+        return None
+    raw = attrs.get("faces")
+    if not isinstance(raw, list):
+        return None
+    try:
+        iw = int(attrs.get("image_width"))
+        ih = int(attrs.get("image_height"))
+    except (TypeError, ValueError):
+        return None
+    if iw <= 0 or ih <= 0:
+        return None
+    boxes: list[dict] = []
+    for f in raw:
+        if not isinstance(f, dict):
+            return None
+        try:
+            x, y = float(f["x"]), float(f["y"])
+            w, h = float(f["w"]), float(f["h"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        # Normalized 0..1 with a little float slop; w/h must be positive.
+        if not (-0.02 <= x <= 1.02 and -0.02 <= y <= 1.02
+                and 0.0 < w <= 1.02 and 0.0 < h <= 1.02):
+            return None
+        boxes.append({"x": x, "y": y, "w": w, "h": h})
+    return boxes
+
+
+def _faces_msg(boxes: list[dict], attrs: dict) -> dict:
+    return {
+        "type": "photo_faces",
+        "faces": boxes,
+        "image_w": int(attrs.get("image_width") or 0),
+        "image_h": int(attrs.get("image_height") or 0),
+        "media_item_id": attrs.get("media_item_id"),
+    }
+
+
+def _clear_faces_msg() -> dict:
+    """Tell the display to drop face-panning and use the default Ken Burns."""
+    return {"type": "photo_faces", "faces": [], "image_w": 0, "image_h": 0,
+            "media_item_id": None}
+
+
+async def _push_kiosk_faces(state: "AppState", msg: dict) -> None:
+    # Cache for replay to a (re)connecting kiosk/web client (mirrors weather).
+    state.current_photo_faces = msg
+    await _push_to_rpi(state, msg)
+    from .main import broadcast_to_ui
+    await broadcast_to_ui(state, msg)
+
+
+async def _push_device_faces(state: "AppState", token: str, msg: dict) -> None:
+    from .main import send_to_device
+    await send_to_device(state, token, msg)
+
+
+async def _disable_faces(state: "AppState", reason: str) -> None:
+    """Self-heal: a bad/wrong/malformed faces sensor empties the setting (and
+    the backing HA text field) and turns the feature off. Silent (debug log)."""
+    if not _faces_entity(state):
+        return
+    log.debug(f"photo frame faces: disabling feature (reason={reason})")
+    try:
+        state.runtime_config.set("photo_frame_faces_entity", "")
+    except Exception:
+        pass
+    bridge = getattr(state, "mqtt_bridge", None)
+    if bridge is not None:
+        try:
+            await bridge.publish_config("photo_frame_faces_entity", "")
+        except Exception:
+            pass
+
+
+def _faces_for_photo(session: Optional[PhotoFrameSession], attrs: dict) -> bool:
+    """True if these faces belong to the photo the session is showing. When
+    either side lacks a media_item_id we can't gate, so accept (temporal)."""
+    if session is None:
+        return False
+    want = session.media_item_id
+    got = str(attrs.get("media_item_id") or "")
+    if not want or not got:
+        return True
+    return want == got
+
+
+async def _handle_faces_event(
+    state: "AppState", session: Optional[PhotoFrameSession],
+    new_state: Optional[dict], push,
+) -> None:
+    """Common faces-event logic for kiosk + satellite. `push` is an async
+    callable taking the message and delivering it to the right surface."""
+    attrs = ((new_state or {}).get("attributes") or {}) if isinstance(new_state, dict) else {}
+    if not attrs:
+        return  # no data on this event (e.g. entity went unavailable) — ignore
+    if attrs.get("detection_pending"):
+        return  # still detecting; the settled event will follow
+    boxes = parse_faces(attrs)
+    if boxes is None:
+        await _disable_faces(state, "bad_sensor_data")
+        await push(_clear_faces_msg())
+        return
+    if not _faces_for_photo(session, attrs):
+        return  # faces for a different (stale/ahead) photo
+    await push(_faces_msg(boxes, attrs))
+
+
+async def _on_faces_changed(state: "AppState", new_state: Optional[dict]) -> None:
+    if state.photo_frame_session is None:
+        return
+    await _handle_faces_event(
+        state, state.photo_frame_session, new_state,
+        lambda m: _push_kiosk_faces(state, m),
+    )
+
+
+async def _on_device_faces_changed(
+    state: "AppState", token: str, new_state: Optional[dict],
+) -> None:
+    session = state.satellite_photo_sessions.get(token)
+    if session is None:
+        return
+    await _handle_faces_event(
+        state, session, new_state,
+        lambda m: _push_device_faces(state, token, m),
+    )
+
+
+async def _read_faces_attrs(state: "AppState", faces_entity: str) -> Optional[dict]:
+    """One-off read of the faces sensor's attributes via the HA MCP tool, for
+    the initial push (the subscription only fires on *changes*). Returns the
+    attributes dict (possibly empty for a missing entity), or None when we
+    simply can't reach HA (so callers don't self-disable on a transient miss)."""
+    import json
+    import re
+    mcp = getattr(state, "mcp_client", None)
+    if not mcp or "ha_get_state" not in getattr(mcp, "tool_names", ()):
+        return None
+    try:
+        raw = await mcp.call_tool("ha_get_state", {"entity_id": faces_entity})
+    except Exception as e:
+        log.debug(f"photo frame faces: ha_get_state({faces_entity}) failed: {e}")
+        return None
+    data = None
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        m = re.search(r"\{[\s\S]*\}", raw or "")
+        if m:
+            try:
+                data = json.loads(m.group(0))
+            except (TypeError, ValueError):
+                pass
+    if not isinstance(data, dict):
+        return None
+    entity = data.get("data", data)
+    if not isinstance(entity, dict):
+        return None
+    return entity.get("attributes") or {}
+
+
+async def refresh_faces_now(state: "AppState") -> None:
+    """(Re)evaluate faces for every open photo session and push. Called when the
+    setting changes: clears panning if the setting emptied, self-disables on a
+    wrong/malformed sensor, otherwise pushes the current photo's faces."""
+    has_kiosk = state.photo_frame_session is not None
+    device_tokens = list(getattr(state, "satellite_photo_sessions", {}).keys())
+    if not has_kiosk and not device_tokens:
+        return
+
+    async def _fan(msg: dict) -> None:
+        if has_kiosk:
+            await _push_kiosk_faces(state, msg)
+        for t in device_tokens:
+            await _push_device_faces(state, t, msg)
+
+    fe = _faces_entity(state)
+    if not fe:
+        await _fan(_clear_faces_msg())   # feature turned off → default Ken Burns
+        return
+    attrs = await _read_faces_attrs(state, fe)
+    if attrs is None:
+        return  # couldn't reach HA — leave as-is, don't self-disable
+    if attrs.get("detection_pending"):
+        return  # not settled yet; the subscription will deliver it
+    boxes = parse_faces(attrs)
+    if boxes is None:
+        await _disable_faces(state, "bad_sensor_on_set")
+        await _fan(_clear_faces_msg())
+        return
+    await _fan(_faces_msg(boxes, attrs))
 
 
 # --- Photo-frame looping video: download + cache on the server -------------

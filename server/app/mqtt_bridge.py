@@ -237,6 +237,11 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
         parse=_switch_parse, serialize=_switch_serialize,
     ),
     ConfigEntity(
+        key="photo_frame_faces_entity", platform="text",
+        name="Photo Frame Faces Sensor", icon="mdi:face-recognition",
+        extra={"mode": "text"}, serialize=lambda v: v or "",
+    ),
+    ConfigEntity(
         key="weather_entity", platform="text", name="Weather Entity",
         icon="mdi:weather-partly-cloudy", extra={"mode": "text"},
         serialize=lambda v: v or "",

@@ -80,6 +80,14 @@ async def audio_endpoint(websocket: WebSocket):
         except Exception as e:
             log.warning(f"Could not push weather to RPi: {e}")
 
+    # Replay the open photo frame's face boxes so the kiosk restores face-aware
+    # Ken Burns after a reconnect.
+    if state.current_photo_faces:
+        try:
+            await websocket.send_json(state.current_photo_faces)
+        except Exception as e:
+            log.warning(f"Could not push photo faces to RPi: {e}")
+
     # Reconcile the kiosk's photo/video frame with our session state. After a
     # server restart our session is None, but the kiosk may still be showing
     # an orphaned frame — a static photo, or a video looping from the RPi's
@@ -496,6 +504,13 @@ async def ui_endpoint(websocket: WebSocket):
     if state.current_weather:
         try:
             await websocket.send_json(state.current_weather)
+        except Exception:
+            pass
+
+    # Replay the open photo frame's face boxes (face-aware Ken Burns).
+    if state.current_photo_faces:
+        try:
+            await websocket.send_json(state.current_photo_faces)
         except Exception:
             pass
 

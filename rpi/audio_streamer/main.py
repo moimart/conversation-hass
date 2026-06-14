@@ -97,6 +97,9 @@ class AudioManager:
         # Last weather_update from the server, cached so a (re)connecting kiosk
         # page gets it immediately (it has no localStorage copy like the theme).
         self.last_weather: dict | None = None
+        # Last photo_faces (face-aware Ken Burns boxes) for the open photo frame,
+        # cached + replayed like weather so a reloaded page restores the pan.
+        self.last_photo_faces: dict | None = None
 
         # Sendspin coordination: when a Sendspin stream is active on
         # the local daemon, hardware volume buttons target the MA
@@ -580,6 +583,16 @@ class AudioManager:
             "show_photo_frame_video", "set_photo_frame_clock",
             "show_pairing_code", "hide_pairing_code",
         ):
+            # A photo session opening/closing (or switching to video) drops any
+            # cached faces so a reconnecting page never replays stale boxes.
+            if msg_type in ("show_photo_frame", "hide_photo_frame",
+                            "show_photo_frame_video"):
+                self.last_photo_faces = None
+            await self.broadcast_to_ui(msg)
+
+        elif msg_type == "photo_faces":
+            # Cache so a (re)connecting kiosk page restores the face pan.
+            self.last_photo_faces = msg
             await self.broadcast_to_ui(msg)
 
         elif msg_type.startswith("intercom_"):
@@ -771,6 +784,8 @@ class AudioManager:
         await ws.send_json({"type": "volume_sync", "level": self.tts_volume})
         if self.last_weather:
             await ws.send_json(self.last_weather)
+        if self.last_photo_faces:
+            await ws.send_json(self.last_photo_faces)
 
         try:
             async for msg in ws:
