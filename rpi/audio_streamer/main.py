@@ -100,6 +100,11 @@ class AudioManager:
         # Last photo_faces (face-aware Ken Burns boxes) for the open photo frame,
         # cached + replayed like weather so a reloaded page restores the pan.
         self.last_photo_faces: dict | None = None
+        # Last photo-frame SHOW message (image/video) for the open frame, cached +
+        # replayed so a reloaded page re-mounts the frame (the server only re-sends
+        # `update`s while the session is active, which a fresh page drops). Stored
+        # as a `show_*` so the replay mounts the controller. None when no frame.
+        self.last_photo_frame: dict | None = None
 
         # Sendspin coordination: when a Sendspin stream is active on
         # the local daemon, hardware volume buttons target the MA
@@ -583,11 +588,20 @@ class AudioManager:
             "show_photo_frame_video", "set_photo_frame_clock",
             "show_pairing_code", "hide_pairing_code",
         ):
-            # A photo session opening/closing (or switching to video) drops any
-            # cached faces so a reconnecting page never replays stale boxes.
-            if msg_type in ("show_photo_frame", "hide_photo_frame",
-                            "show_photo_frame_video"):
+            # Cache the photo-frame state so a reconnecting page re-mounts it.
+            if msg_type == "show_photo_frame":
                 self.last_photo_faces = None
+                self.last_photo_frame = msg
+            elif msg_type == "show_photo_frame_video":
+                self.last_photo_faces = None
+                self.last_photo_frame = msg
+            elif msg_type == "photo_frame_update":
+                # Replay as a SHOW so a fresh (controller-less) page mounts the
+                # frame — a bare `update` would be dropped.
+                self.last_photo_frame = {**msg, "type": "show_photo_frame"}
+            elif msg_type == "hide_photo_frame":
+                self.last_photo_faces = None
+                self.last_photo_frame = None
             await self.broadcast_to_ui(msg)
 
         elif msg_type == "photo_faces":
@@ -784,6 +798,10 @@ class AudioManager:
         await ws.send_json({"type": "volume_sync", "level": self.tts_volume})
         if self.last_weather:
             await ws.send_json(self.last_weather)
+        # Re-mount the photo frame (if one is open) BEFORE its faces, so the
+        # face boxes apply on top of the freshly-shown photo.
+        if self.last_photo_frame:
+            await ws.send_json(self.last_photo_frame)
         if self.last_photo_faces:
             await ws.send_json(self.last_photo_faces)
 

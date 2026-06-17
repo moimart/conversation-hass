@@ -332,6 +332,34 @@ class TestServerMessageHandling:
         await mgr.handle_server_message("unknown_type", {}, MagicMock())
         mgr.broadcast_to_ui.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_show_photo_frame_cached_for_replay(self, mgr):
+        mgr.broadcast_to_ui = AsyncMock()
+        msg = {"type": "show_photo_frame", "image": "AAA", "mime": "image/jpeg"}
+        await mgr.handle_server_message("show_photo_frame", msg, MagicMock())
+        mgr.broadcast_to_ui.assert_awaited_with(msg)
+        assert mgr.last_photo_frame == msg
+        assert mgr.last_photo_faces is None        # a new frame clears stale faces
+
+    @pytest.mark.asyncio
+    async def test_photo_frame_update_cached_as_show(self, mgr):
+        # An update must be re-cached as a SHOW so a reconnecting (controller-less)
+        # page re-mounts the frame — a bare update would be dropped.
+        mgr.broadcast_to_ui = AsyncMock()
+        msg = {"type": "photo_frame_update", "image": "BBB", "mime": "image/jpeg"}
+        await mgr.handle_server_message("photo_frame_update", msg, MagicMock())
+        assert mgr.last_photo_frame["type"] == "show_photo_frame"
+        assert mgr.last_photo_frame["image"] == "BBB"
+
+    @pytest.mark.asyncio
+    async def test_hide_photo_frame_clears_cache(self, mgr):
+        mgr.broadcast_to_ui = AsyncMock()
+        mgr.last_photo_frame = {"type": "show_photo_frame", "image": "AAA"}
+        mgr.last_photo_faces = {"type": "photo_faces", "faces": []}
+        await mgr.handle_server_message("hide_photo_frame", {"type": "hide_photo_frame"}, MagicMock())
+        assert mgr.last_photo_frame is None
+        assert mgr.last_photo_faces is None
+
 
 # --- UI broadcasting ---
 
