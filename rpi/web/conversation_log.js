@@ -407,15 +407,12 @@ export function mountConversationLog(root) {
         renderedRows = data.rows.length;
         oldestId = data.rows[0].id;
         hasMore = !!data.has_more;
-        // Open at the bottom (newest). Inline images load async and GROW the
-        // body after this, pushing the newest entries below the fold — so re-pin
-        // to the bottom on the next frame and as each image finishes loading.
-        const stick = () => { bodyEl.scrollTop = bodyEl.scrollHeight; };
-        stick();
-        requestAnimationFrame(stick);
-        bodyEl.querySelectorAll("img").forEach((img) => {
-            if (!img.complete) img.addEventListener("load", stick, { once: true });
-        });
+        // Open at the bottom (newest) and KEEP it pinned while the body settles
+        // (flip-in animation + async inline images). Released when the user
+        // scrolls up — see stickToBottomFor / the scroll handler.
+        stickBottom = true;
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+        stickToBottomFor(1200);
     }
 
     async function loadOlder() {
@@ -461,7 +458,24 @@ export function mountConversationLog(root) {
         }
     }
 
+    // Keep the newest entries pinned to the bottom while the body is still
+    // settling after open — the 700ms flip-in animation AND async inline images
+    // both grow scrollHeight after the initial scroll, which otherwise leaves
+    // the latest entries below the fold. Released the instant the user scrolls up.
+    let stickBottom = true;
+    function stickToBottomFor(ms) {
+        const t0 = performance.now();
+        const loop = () => {
+            if (!stickBottom) return;
+            bodyEl.scrollTop = bodyEl.scrollHeight;
+            if (performance.now() - t0 < ms) requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
+
     bodyEl.addEventListener("scroll", () => {
+        const dist = bodyEl.scrollHeight - bodyEl.clientHeight - bodyEl.scrollTop;
+        stickBottom = dist < 60;          // near the bottom → keep sticking
         if (bodyEl.scrollTop < LOAD_THRESHOLD_PX) loadOlder();
     }, { passive: true });
 
