@@ -407,7 +407,15 @@ export function mountConversationLog(root) {
         renderedRows = data.rows.length;
         oldestId = data.rows[0].id;
         hasMore = !!data.has_more;
-        bodyEl.scrollTop = bodyEl.scrollHeight;   // open at the bottom (newest)
+        // Open at the bottom (newest). Inline images load async and GROW the
+        // body after this, pushing the newest entries below the fold — so re-pin
+        // to the bottom on the next frame and as each image finishes loading.
+        const stick = () => { bodyEl.scrollTop = bodyEl.scrollHeight; };
+        stick();
+        requestAnimationFrame(stick);
+        bodyEl.querySelectorAll("img").forEach((img) => {
+            if (!img.complete) img.addEventListener("load", stick, { once: true });
+        });
     }
 
     async function loadOlder() {

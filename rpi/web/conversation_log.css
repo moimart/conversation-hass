@@ -105,7 +105,14 @@ body.show-conversation-log .clog-stage {
     font-family: 'Inter', sans-serif;
     font-size: 15px;
     line-height: 1.55;
+    /* Hide the native scrollbar: Chromium renders it in SCREEN space (not the
+       rotated orientation-wrapper's space), so on a portrait kiosk it appears
+       sideways along the physical display edge. The kiosk scrolls by touch /
+       auto-scroll, so the indicator isn't needed. */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
+.clog-body::-webkit-scrollbar { display: none; }
 
 .clog-day-sep {
     text-align: center;
