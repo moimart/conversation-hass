@@ -105,14 +105,17 @@ body.show-conversation-log .clog-stage {
     font-family: 'Inter', sans-serif;
     font-size: 15px;
     line-height: 1.55;
-    /* Hide the native scrollbar: Chromium renders it in SCREEN space (not the
-       rotated orientation-wrapper's space), so on a portrait kiosk it appears
-       sideways along the physical display edge. The kiosk scrolls by touch /
-       auto-scroll, so the indicator isn't needed. */
+}
+/* Hide the native scrollbar ONLY on the rotated kiosk (portrait mode): Chromium
+   renders it in SCREEN space, not the orientation-wrapper's rotated space, so it
+   appears sideways along the physical display edge. Mobile (always
+   orientation-landscape via pinLandscape) and kiosk-landscape have no rotation,
+   so their scrollbar is correctly oriented — leave it. */
+body.orientation-portrait .clog-body {
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
-.clog-body::-webkit-scrollbar { display: none; }
+body.orientation-portrait .clog-body::-webkit-scrollbar { display: none; }
 
 .clog-day-sep {
     text-align: center;
