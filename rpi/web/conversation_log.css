@@ -96,9 +96,20 @@ body.show-conversation-log .clog-stage {
 
 /* === The scroll body ==================================================== */
 
+/* .clog-body is a clip box; the actual scrolling happens on the inner
+   .clog-scroll. This lets the portrait kiosk push the (overlay) scrollbar into a
+   clipped gutter — `scrollbar-width:none` alone doesn't suppress Chromium's
+   overlay scrollbar on this transformed/`contain`ed element, so it painted
+   sideways along the physical display edge. */
 .clog-body {
     flex: 1 1 auto;
-    overflow-y: auto;
+    min-height: 0;
+    position: relative;
+}
+.clog-scroll {
+    position: absolute;
+    inset: 0;
+    overflow-y: scroll;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     padding: 14px 22px 18px;
@@ -106,16 +117,17 @@ body.show-conversation-log .clog-stage {
     font-size: 15px;
     line-height: 1.55;
 }
-/* Hide the native scrollbar ONLY on the rotated kiosk (portrait mode): Chromium
-   renders it in SCREEN space, not the orientation-wrapper's rotated space, so it
-   appears sideways along the physical display edge. Mobile (always
-   orientation-landscape via pinLandscape) and kiosk-landscape have no rotation,
-   so their scrollbar is correctly oriented — leave it. */
-body.orientation-portrait .clog-body {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+/* Portrait kiosk only: clip the scrollbar gutter (the inner scroller extends
+   40px past the clip's right edge, so its scrollbar — classic or overlay — lands
+   in the clipped zone). Mobile (always orientation-landscape) and kiosk-landscape
+   keep their normal, correctly-oriented scrollbar — untouched. */
+body.orientation-portrait .clog-body { overflow: hidden; }
+body.orientation-portrait .clog-scroll {
+    right: -40px;
+    padding-right: 62px;          /* 22px gutter + the 40px clipped strip */
+    scrollbar-width: none;        /* belt-and-suspenders */
 }
-body.orientation-portrait .clog-body::-webkit-scrollbar { display: none; }
+body.orientation-portrait .clog-scroll::-webkit-scrollbar { display: none; }
 
 .clog-day-sep {
     text-align: center;

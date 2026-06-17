@@ -53,12 +53,12 @@ export function mountConversationLog(root) {
           <button class="clog-close" aria-label="Close" style="display:none">&#x2715;</button>
           <div class="clog-countdown-bar"></div>
         </div>
-        <div class="clog-body"></div>
+        <div class="clog-body"><div class="clog-scroll"></div></div>
     `;
     root.appendChild(overlay);
 
     const titleEl = overlay.querySelector(".clog-title");
-    const bodyEl = overlay.querySelector(".clog-body");
+    const bodyEl = overlay.querySelector(".clog-scroll");   // inner scroller
     const countdownEl = overlay.querySelector(".clog-countdown-bar");
     const closeEl = overlay.querySelector(".clog-close");
 
