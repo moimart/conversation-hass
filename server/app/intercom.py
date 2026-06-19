@@ -27,6 +27,7 @@ intercom_busy / intercom_unavailable.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -326,11 +327,42 @@ async def _on_invite(state, from_token: str, msg: dict) -> None:
             "type": "intercom_ringing", "session_id": session_id,
             "ice_servers": ice,
         })
+        # Speak an audible cue on the ringing phone (the hub auto-answers, so it
+        # never rings — gate on a real satellite token). Fire-and-forget: TTS
+        # synth latency must not delay signaling.
+        if callee != KIOSK_ID:
+            asyncio.create_task(
+                _announce_incoming_call(state, callee, invite["from_name"]))
     else:
         # Callee not connected. (Offline push to wake a closed app is wired in a
         # later phase via push.py; for now report unavailable and drop.)
         _end(state, session_id)
         await _send(state, caller, {"type": "intercom_unavailable", "session_id": session_id})
+
+
+async def _announce_incoming_call(state, callee: str, caller_name: str) -> None:
+    """Speak "Incoming call from <name>" on a ringing satellite, using the same
+    TTS path as every other announcement (synth → cache → tts_play). Best-effort:
+    any failure (no engine, synth error, device gone) is swallowed so the call
+    proceeds regardless."""
+    engine = getattr(state, "tts_engine", None)
+    if not engine:
+        return
+    try:
+        audio = await engine.synthesize(f"Incoming call from {caller_name}")
+    except Exception:
+        audio = None
+    if not audio:
+        return
+    from .main import cache_satellite_tts, send_to_device
+    try:
+        seq = cache_satellite_tts(state, callee, audio, "audio/wav")
+        await send_to_device(state, callee, {
+            "type": "tts_play", "url": "/api/satellite/tts",
+            "mime": "audio/wav", "seq": seq,
+        })
+    except Exception:
+        log.debug("[intercom] incoming-call announce failed", exc_info=True)
 
 
 def _end(state, session_id: str) -> None:

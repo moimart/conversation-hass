@@ -3,6 +3,7 @@ paired devices. The relay logic + addressing + session lifecycle are pure/
 network-free (the only side effect is send_to_device, which we capture), so we
 pin them here. Mirrors tests/test_weather.py's monkeypatch-the-send style."""
 
+import asyncio
 import hashlib
 from types import SimpleNamespace
 
@@ -106,6 +107,104 @@ async def test_invite_online_callee_rings_both(sent):
     assert _to(sent, "A")[0]["type"] == "intercom_ringing"
     assert state.intercom_sessions["s1"]["caller"] == "A"
     assert state.intercom_sessions["s1"]["callee"] == "B"
+
+
+# ---- incoming-call spoken announcement (mobile callee only) ----------------
+
+class _FakeTTS:
+    def __init__(self, audio=b"WAVDATA", fail=False):
+        self._audio, self._fail, self.calls = audio, fail, []
+
+    async def synthesize(self, text):
+        self.calls.append(text)
+        if self._fail:
+            raise RuntimeError("boom")
+        return self._audio
+
+
+async def _drain():
+    # Let the fire-and-forget announce task run to completion.
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+
+@pytest.fixture
+def cached(monkeypatch):
+    """Capture cache_satellite_tts calls; return a fixed seq (the helper lazy-
+    imports it from server.app.main)."""
+    out = []
+
+    def fake_cache(state, token, audio, mime):
+        out.append((token, audio, mime))
+        return 7
+
+    monkeypatch.setattr("server.app.main.cache_satellite_tts", fake_cache)
+    return out
+
+
+@pytest.mark.asyncio
+async def test_invite_satellite_callee_gets_spoken_announcement(sent, cached):
+    state = _state(online=("A", "B"))
+    state.tts_engine = _FakeTTS(b"WAVDATA")
+    await intercom.handle_signal(state, "A", {
+        "type": "intercom_invite", "to": pid("B"), "session_id": "s1",
+        "media": {"audio": True, "video": True},
+    })
+    await _drain()
+    plays = [m for m in _to(sent, "B") if m["type"] == "tts_play"]
+    assert len(plays) == 1
+    assert plays[0]["url"] == "/api/satellite/tts" and plays[0]["seq"] == 7
+    assert plays[0]["mime"] == "audio/wav"
+    assert cached == [("B", b"WAVDATA", "audio/wav")]
+    assert state.tts_engine.calls == ["Incoming call from Alice phone"]
+
+
+@pytest.mark.asyncio
+async def test_invite_hub_callee_is_not_announced(sent, cached, monkeypatch):
+    # The hub auto-answers (no ring) — it must never get a spoken cue. Its
+    # delivery goes over the RPi bridge (_push_to_rpi), not send_to_device.
+    async def fake_push(state, msg):
+        return True
+
+    monkeypatch.setattr("server.app.main._push_to_rpi", fake_push)
+    state = _state(online=("A",), audio=True)
+    state.tts_engine = _FakeTTS(b"WAVDATA")
+    await intercom.handle_signal(state, "A", {
+        "type": "intercom_invite", "to": intercom.KIOSK_ID, "session_id": "s1",
+        "media": {"audio": True, "video": True},
+    })
+    await _drain()
+    assert not any(m["type"] == "tts_play" for (_t, m) in sent)
+    assert state.tts_engine.calls == []
+    assert cached == []
+
+
+@pytest.mark.asyncio
+async def test_invite_announcement_failure_does_not_break_call(sent, cached):
+    state = _state(online=("A", "B"))
+    state.tts_engine = _FakeTTS(fail=True)   # synth raises
+    await intercom.handle_signal(state, "A", {
+        "type": "intercom_invite", "to": pid("B"), "session_id": "s1",
+        "media": {"audio": True, "video": True},
+    })
+    await _drain()
+    # No spoken cue, but the call still rang both parties.
+    assert not any(m["type"] == "tts_play" for (_t, m) in sent)
+    assert _to(sent, "A")[0]["type"] == "intercom_ringing"
+    assert _to(sent, "B")[0]["type"] == "intercom_invite"
+    assert cached == []
+
+
+@pytest.mark.asyncio
+async def test_invite_without_tts_engine_is_silent_no_crash(sent, cached):
+    state = _state(online=("A", "B"))   # no state.tts_engine attribute
+    await intercom.handle_signal(state, "A", {
+        "type": "intercom_invite", "to": pid("B"), "session_id": "s1",
+        "media": {"audio": True, "video": True},
+    })
+    await _drain()
+    assert not any(m["type"] == "tts_play" for (_t, m) in sent)
+    assert cached == []
 
 
 @pytest.mark.asyncio
