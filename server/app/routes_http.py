@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import logging
 import os
@@ -629,6 +630,32 @@ async def post_satellite_photo_stop(request: Request):
     if token is None:
         return Response(status_code=401)
     return await stop_photo_frame_for_device(state, token)
+
+
+@router.post("/api/satellite/photo-broadcast")
+async def post_satellite_photo_broadcast(request: Request):
+    """A paired phone broadcasts a still it just captured (the mirror shutter) to
+    every home surface — the kiosk + all satellites — reusing the orb-image path
+    (`_dispatch_show_image` → broadcast + conversation-log thumbnail + push to
+    offline devices). Body is the raw JPEG; the device name labels the log entry.
+    Restricted (`watch`) scopes are denied — fail-closed via scope_allows."""
+    from .main import _get_state
+    from .media import _dispatch_show_image
+    from .pairing import extract_bearer
+    state = _get_state(request.app)
+    token = extract_bearer(request)
+    if not (token and state.pairing and state.pairing.is_valid_token(token)):
+        return Response(status_code=401)
+    if not state.pairing.scope_allows(token, "image_broadcast"):
+        return Response(status_code=403)
+    body = await request.body()
+    if not body or len(body) > 8 * 1024 * 1024:
+        return Response(status_code=400)
+    name = state.pairing.device_name(token) or "Phone"
+    image_b64 = base64.b64encode(body).decode("ascii")
+    await _dispatch_show_image(state, image_b64, "image/jpeg",
+                               duration_s=30, entity_id=name, push=True)
+    return {"status": "ok"}
 
 
 @router.post("/api/openclaw/response")

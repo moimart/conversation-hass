@@ -537,6 +537,70 @@ async def test_stream_mjpeg_auth_scoping(fake_main):
     assert (await get_satellite_stream_mjpeg(_req("tokA"))).status_code == 404
 
 
+# --- POST /api/satellite/photo-broadcast ------------------------------------
+
+def _req_body(token=None, body=b"\xff\xd8jpegbytes"):
+    headers = {"authorization": f"Bearer {token}"} if token else {}
+
+    async def _body():
+        return body
+
+    return SimpleNamespace(app=SimpleNamespace(), headers=headers,
+                           query_params={}, body=_body)
+
+
+@pytest.fixture
+def fake_main_pbcast(monkeypatch):
+    st = _state()
+    st.pairing = SimpleNamespace(
+        is_valid_token=lambda t: t in ("full_tok", "watch_tok"),
+        scope_allows=lambda t, perm: t == "full_tok",   # watch denied
+        device_name=lambda t: "Kitchen iPhone" if t == "full_tok" else None,
+    )
+    fake = SimpleNamespace(_get_state=lambda app: st)
+    monkeypatch.setitem(sys.modules, "server.app.main", fake)
+    return st
+
+
+@pytest.mark.asyncio
+async def test_photo_broadcast_dispatches_to_home(fake_main_pbcast, monkeypatch):
+    import base64
+    from server.app.routes_http import post_satellite_photo_broadcast
+    calls = []
+
+    async def fake_dispatch(state, image_b64, mime, duration_s, *, entity_id="external", push=True):
+        calls.append((image_b64, mime, entity_id, push))
+        return True
+
+    monkeypatch.setattr("server.app.media._dispatch_show_image", fake_dispatch)
+    resp = await post_satellite_photo_broadcast(_req_body("full_tok", b"JPEGBYTES"))
+    assert resp == {"status": "ok"}
+    assert len(calls) == 1
+    image_b64, mime, entity_id, push = calls[0]
+    assert base64.b64decode(image_b64) == b"JPEGBYTES"
+    assert mime == "image/jpeg" and entity_id == "Kitchen iPhone" and push is True
+
+
+@pytest.mark.asyncio
+async def test_photo_broadcast_requires_valid_token(fake_main_pbcast):
+    from server.app.routes_http import post_satellite_photo_broadcast
+    assert (await post_satellite_photo_broadcast(_req_body())).status_code == 401
+    assert (await post_satellite_photo_broadcast(_req_body("bogus"))).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_photo_broadcast_watch_scope_forbidden(fake_main_pbcast):
+    from server.app.routes_http import post_satellite_photo_broadcast
+    assert (await post_satellite_photo_broadcast(_req_body("watch_tok"))).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_photo_broadcast_empty_body_400(fake_main_pbcast, monkeypatch):
+    from server.app.routes_http import post_satellite_photo_broadcast
+    monkeypatch.setattr("server.app.media._dispatch_show_image", AsyncMock())
+    assert (await post_satellite_photo_broadcast(_req_body("full_tok", b""))).status_code == 400
+
+
 @pytest.mark.asyncio
 async def test_satellite_tts_404_when_empty_or_expired(fake_main):
     from server.app.routes_http import get_satellite_tts

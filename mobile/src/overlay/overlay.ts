@@ -79,7 +79,7 @@ export function mountOverlay(cfg: HalConfig): void {
   mirrorBtn.setAttribute("aria-label", "Mirror");
   mirrorBtn.hidden = true;
   mirrorBtn.innerHTML = mirrorIcon();
-  mirrorBtn.addEventListener("click", () => { void haptic(); void mountMirror(); });
+  mirrorBtn.addEventListener("click", () => { void haptic(); void mountMirror(cfg); });
   root.appendChild(mirrorBtn);
   void hasFrontCamera().then((ok) => { mirrorBtn.hidden = !ok; });
 

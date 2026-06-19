@@ -152,6 +152,16 @@ async def test_protected_route_needs_valid_token(client):
 
 
 @pytest.mark.asyncio
+async def test_photo_broadcast_allowed_with_token(client):
+    """The mirror shutter posts a captured still through the gateway (token-gated)."""
+    cl, state = client
+    assert (await cl.post("/api/satellite/photo-broadcast")).status == 401   # no token
+    good = await cl.post("/api/satellite/photo-broadcast", headers=_auth())
+    assert good.status == 200
+    assert ("POST", "/api/satellite/photo-broadcast") in state["proxied"]
+
+
+@pytest.mark.asyncio
 async def test_token_via_query_param(client):
     """The MJPEG <img> tag and WS upgrade can only carry ?token=."""
     cl, state = client

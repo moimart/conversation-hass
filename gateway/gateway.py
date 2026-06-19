@@ -69,6 +69,8 @@ _ALLOWLIST = [
     ("GET",  r"^/api/satellite/stream\.mjpeg$",        True,  True),
     ("POST", r"^/api/satellite/photo_frame/start$",     True,  False),
     ("POST", r"^/api/satellite/photo_frame/stop$",      True,  False),
+    # Mirror shutter: a phone broadcasts a captured still to the home surfaces.
+    ("POST", r"^/api/satellite/photo-broadcast$",       True,  False),
     ("GET",  r"^/api/conversation/log$",                True,  False),
     ("GET",  r"^/api/conversation/log/image$",          True,  False),
     ("GET",  r"^/api/cloud_llm$",                        True,  False),
