@@ -208,6 +208,13 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
         extra={"mode": "text"}, serialize=lambda v: v or "{name} is ready.",
     ),
     ConfigEntity(
+        key="intercom_announce_template", platform="text",
+        name="Intercom Call Announcement", icon="mdi:phone-incoming",
+        default="Incoming call from {name}",
+        extra={"mode": "text"},
+        serialize=lambda v: v or "Incoming call from {name}",
+    ),
+    ConfigEntity(
         key="start_muted", platform="switch", name="Start Muted",
         icon="mdi:microphone-off", default=False,
         extra={"payload_on": "ON", "payload_off": "OFF"},

@@ -208,6 +208,33 @@ async def test_invite_without_tts_engine_is_silent_no_crash(sent, cached):
 
 
 @pytest.mark.asyncio
+async def test_invite_announcement_uses_configurable_template(sent, cached):
+    state = _state(online=("A", "B"))
+    state.tts_engine = _FakeTTS(b"WAVDATA")
+    state.intercom_announce_template = "{name} is calling you"
+    await intercom.handle_signal(state, "A", {
+        "type": "intercom_invite", "to": pid("B"), "session_id": "s1",
+        "media": {"audio": True, "video": True},
+    })
+    await _drain()
+    assert state.tts_engine.calls == ["Alice phone is calling you"]
+    assert any(m["type"] == "tts_play" for m in _to(sent, "B"))
+
+
+@pytest.mark.asyncio
+async def test_invite_announcement_bad_template_falls_back(sent, cached):
+    state = _state(online=("A", "B"))
+    state.tts_engine = _FakeTTS(b"WAVDATA")
+    state.intercom_announce_template = "Call from {unknown}"   # invalid placeholder
+    await intercom.handle_signal(state, "A", {
+        "type": "intercom_invite", "to": pid("B"), "session_id": "s1",
+        "media": {"audio": True, "video": True},
+    })
+    await _drain()
+    assert state.tts_engine.calls == ["Incoming call from Alice phone"]
+
+
+@pytest.mark.asyncio
 async def test_invite_unknown_device_is_unavailable(sent):
     state = _state(online=("A",))
     await intercom.handle_signal(state, "A", {

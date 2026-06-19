@@ -348,8 +348,14 @@ async def _announce_incoming_call(state, callee: str, caller_name: str) -> None:
     engine = getattr(state, "tts_engine", None)
     if not engine:
         return
+    template = getattr(state, "intercom_announce_template", "") or "Incoming call from {name}"
     try:
-        audio = await engine.synthesize(f"Incoming call from {caller_name}")
+        phrase = template.format(name=caller_name)
+    except Exception:
+        # Bad template (stray/unknown placeholder) — fall back to the default.
+        phrase = f"Incoming call from {caller_name}"
+    try:
+        audio = await engine.synthesize(phrase)
     except Exception:
         audio = None
     if not audio:

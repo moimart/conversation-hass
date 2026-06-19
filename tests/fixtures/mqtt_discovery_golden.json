@@ -1449,6 +1449,31 @@
     }
   ],
   [
+    "homeassistant/text/hal-default/config_intercom_announce_template/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/intercom_announce_template/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:phone-incoming",
+      "mode": "text",
+      "name": "Intercom Call Announcement",
+      "state_topic": "hal/hal-default/config/intercom_announce_template/state",
+      "unique_id": "hal-default_config_intercom_announce_template"
+    }
+  ],
+  [
     "homeassistant/text/hal-default/config_openclaw_gateway_url/config",
     {
       "availability": [

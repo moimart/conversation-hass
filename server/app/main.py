@@ -180,6 +180,7 @@ class AppState:
     timer_manager: object | None = None
     timer_name_template: str = "Timer {n}"
     timer_announce_template: str = "{name} is ready."
+    intercom_announce_template: str = "Incoming call from {name}"
     # Display orientation
     display_orientation: str = "portrait"
     orb_side: str = "left"
@@ -609,6 +610,10 @@ async def lifespan(app: FastAPI):
     state.timer_name_template = str(cfg.get("timer_name_template", "Timer {n}") or "Timer {n}")
     state.timer_announce_template = str(
         cfg.get("timer_announce_template", "{name} is ready.") or "{name} is ready."
+    )
+    state.intercom_announce_template = str(
+        cfg.get("intercom_announce_template", "Incoming call from {name}")
+        or "Incoming call from {name}"
     )
     state.timer_manager = TimerManager(state)
     asyncio.create_task(state.timer_manager.resync_pool_on_startup())

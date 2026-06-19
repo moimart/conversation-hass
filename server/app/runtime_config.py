@@ -53,6 +53,8 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     # timer number, {name} the rendered timer name).
     "timer_name_template":       ("TIMER_NAME_TEMPLATE", "Timer {n}"),
     "timer_announce_template":   ("TIMER_ANNOUNCE_TEMPLATE", "{name} is ready."),
+    # Intercom: spoken cue on a ringing satellite ({name} = caller's name).
+    "intercom_announce_template": ("INTERCOM_ANNOUNCE_TEMPLATE", "Incoming call from {name}"),
     # Weather under the clock. Empty entity → no weather shown; the switch
     # (on by default) toggles it. Unit follows HA (read off the entity).
     "weather_entity":            ("WEATHER_ENTITY", ""),

@@ -404,6 +404,10 @@ async def wire(state, bridge) -> None:
     bridge._cached_config["timer_announce_template"] = str(
         state.runtime_config.get("timer_announce_template", "{name} is ready.") or "{name} is ready."
     )
+    bridge._cached_config["intercom_announce_template"] = str(
+        state.runtime_config.get("intercom_announce_template", "Incoming call from {name}")
+        or "Incoming call from {name}"
+    )
     bridge._cached_config["calendar_dismiss_seconds"] = int(
         state.runtime_config.get("calendar_dismiss_seconds", 30) or 30
     )
@@ -616,6 +620,12 @@ async def wire(state, bridge) -> None:
         state.timer_announce_template = value
         await _persist("timer_announce_template", value)
         await bridge.publish_config("timer_announce_template", value)
+
+    async def _cfg_intercom_announce_template(value: str):
+        value = (value or "").strip() or "Incoming call from {name}"
+        state.intercom_announce_template = value
+        await _persist("intercom_announce_template", value)
+        await bridge.publish_config("intercom_announce_template", value)
 
     async def _cfg_calendar_dismiss_seconds(seconds: int):
         try:
@@ -859,6 +869,7 @@ async def wire(state, bridge) -> None:
     bridge.set_config_callback("calendar_dismiss_seconds", _cfg_calendar_dismiss_seconds)
     bridge.set_config_callback("timer_name_template", _cfg_timer_name_template)
     bridge.set_config_callback("timer_announce_template", _cfg_timer_announce_template)
+    bridge.set_config_callback("intercom_announce_template", _cfg_intercom_announce_template)
     bridge.set_config_callback("start_muted", _cfg_start_muted)
     bridge.on_display_set = _mqtt_display_set
     bridge.set_config_callback("display_auto_off_seconds", _cfg_display_auto_off_seconds)
