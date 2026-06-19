@@ -48,12 +48,16 @@
     // it fetches /api/themes on startup, lazy-loads each theme's CSS on
     // first activation, and lazy-imports its optional effect.js module.
     const THEME_KEY = "hal-theme";
+    const SAT_THEME_KEY = "hal-sat-theme";   // per-satellite local theme override
     const ORIENTATION_KEY = "hal-orientation";
     const ORB_SIDE_KEY = "hal-orb-side";
+    // Satellites (mobile companions) carry window.HAL_CONFIG; the kiosk doesn't.
+    const isSatellite = !!(typeof window !== "undefined" && window.HAL_CONFIG);
     let themes = [];                 // [{name, display_name, has_effect, kind, state_videos?, ...}]
     let loadedCss = new Set();       // names whose stylesheet <link> we've already injected
     let loadedEffects = new Map();   // name -> { start, stop } controller from effect.js
     let currentTheme = null;
+    let lastGlobalTheme = null;      // last server-pushed theme (to restore on follow-global)
     // Lazy-imported state-video controller (rpi/web/state_videos.js).
     // Cached so we don't re-import every theme switch.
     let stateVideoModule = null;
@@ -189,6 +193,70 @@
         currentTheme = name;
     }
 
+    // --- Per-satellite local theme override -------------------------------
+    // A satellite may follow the hub's global theme (default) or pick its own:
+    // a day theme, a night theme, and whether to follow the OS dark-mode setting
+    // (off / unavailable ⇒ day theme). Device-local (localStorage); the kiosk is
+    // unaffected — everything here is gated on isSatellite.
+    function loadSatTheme() {
+        try {
+            const c = JSON.parse(localStorage.getItem(SAT_THEME_KEY) || "{}");
+            return {
+                mode: c.mode === "local" ? "local" : "global",
+                day: (typeof c.day === "string" && c.day) ? c.day : "birch",
+                night: (typeof c.night === "string" && c.night) ? c.night : "dark",
+                followOs: !!c.followOs,
+            };
+        } catch (e) {
+            return { mode: "global", day: "birch", night: "dark", followOs: false };
+        }
+    }
+    function saveSatTheme(cfg) {
+        try { localStorage.setItem(SAT_THEME_KEY, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
+    }
+    function osPrefersDark() {
+        return !!(typeof window !== "undefined" && window.matchMedia
+            && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    }
+    function resolveLocalTheme(cfg) {
+        cfg = cfg || loadSatTheme();
+        // Follow the OS only when asked AND the WebView exposes the preference;
+        // otherwise the day theme (per spec: no OS setting ⇒ day theme).
+        if (cfg.followOs && typeof window !== "undefined" && window.matchMedia) {
+            return osPrefersDark() ? cfg.night : cfg.day;
+        }
+        return cfg.day;
+    }
+    function applyResolvedTheme() {
+        const cfg = loadSatTheme();
+        if (cfg.mode === "local") applyTheme(resolveLocalTheme(cfg));
+        else if (lastGlobalTheme) applyTheme(lastGlobalTheme);
+    }
+    if (isSatellite) {
+        // API the mobile settings sheet (same WebView) drives.
+        window.HALThemeLocal = {
+            get() { return loadSatTheme(); },
+            getThemes() { return themes.slice(); },
+            set(partial) {
+                const cfg = { ...loadSatTheme(), ...(partial || {}) };
+                cfg.mode = cfg.mode === "local" ? "local" : "global";
+                saveSatTheme(cfg);
+                applyResolvedTheme();
+                return cfg;
+            },
+        };
+        // Re-resolve day/night live when the OS dark-mode preference flips.
+        if (typeof window !== "undefined" && window.matchMedia) {
+            const mq = window.matchMedia("(prefers-color-scheme: dark)");
+            const onOsChange = () => {
+                const cfg = loadSatTheme();
+                if (cfg.mode === "local" && cfg.followOs) applyTheme(resolveLocalTheme(cfg));
+            };
+            try { mq.addEventListener("change", onOsChange); }
+            catch (e) { try { mq.addListener(onOsChange); } catch (_) { /* ignore */ } }
+        }
+    }
+
     function rebuildThemeDropdown() {
         if (!themeSelect) return;
         const currentValue = themeSelect.value;
@@ -224,10 +292,16 @@
         });
     }
 
-    // Fetch the catalog, then apply the saved theme (or dark by default).
+    // Fetch the catalog, then apply the theme. A satellite in LOCAL override
+    // mode applies its own resolved theme (and ignores the server push); else
+    // apply the saved theme (the server's set_theme on connect then corrects it).
     loadThemes().then(() => {
-        const saved = localStorage.getItem(THEME_KEY) || "dark";
-        applyTheme(saved);
+        if (isSatellite && loadSatTheme().mode === "local") {
+            applyTheme(resolveLocalTheme());
+        } else {
+            const saved = localStorage.getItem(THEME_KEY) || "dark";
+            applyTheme(saved);
+        }
     });
 
     // Restore orientation from localStorage (server pushes authoritative value on connect).
@@ -601,6 +675,9 @@
                 break;
             case "set_theme":
                 if (typeof msg.name === "string" && msg.name) {
+                    lastGlobalTheme = msg.name;
+                    // A satellite in LOCAL mode ignores the hub's theme push.
+                    if (isSatellite && loadSatTheme().mode === "local") break;
                     localStorage.setItem(THEME_KEY, msg.name);
                     applyTheme(msg.name);
                 }

@@ -154,6 +154,31 @@ function showSettings(cfg: HalConfig): void {
         </div>
         <button class="hal-switch" id="hal-cloud-toggle" role="switch" aria-checked="false" aria-label="Cloud LLM"></button>
       </div>
+      <div class="hal-sheet-title" style="margin-top:14px">Theme</div>
+      <div class="hal-sheet-row">
+        <div class="hal-sheet-row-text">
+          <div class="hal-sheet-row-label">Follow hub theme</div>
+          <div class="hal-sheet-row-sub" id="hal-theme-mode-sub">This device matches the hub.</div>
+        </div>
+        <button class="hal-switch on" id="hal-theme-follow" role="switch" aria-checked="true" aria-label="Follow hub theme"></button>
+      </div>
+      <div id="hal-theme-local" hidden>
+        <div class="hal-sheet-row">
+          <div class="hal-sheet-row-text"><div class="hal-sheet-row-label">Day theme</div></div>
+          <select class="hal-sheet-select" id="hal-theme-day"></select>
+        </div>
+        <div class="hal-sheet-row">
+          <div class="hal-sheet-row-text"><div class="hal-sheet-row-label">Night theme</div></div>
+          <select class="hal-sheet-select" id="hal-theme-night"></select>
+        </div>
+        <div class="hal-sheet-row">
+          <div class="hal-sheet-row-text">
+            <div class="hal-sheet-row-label">Follow system dark mode</div>
+            <div class="hal-sheet-row-sub">Switch day/night with the OS. Off = always day.</div>
+          </div>
+          <button class="hal-switch" id="hal-theme-os" role="switch" aria-checked="false" aria-label="Follow system dark mode"></button>
+        </div>
+      </div>
       <button class="hal-sheet-btn danger" id="hal-repair">Re-pair / change server</button>
       <button class="hal-sheet-btn" id="hal-cancel">Cancel</button>
     </div>`;
@@ -167,6 +192,72 @@ function showSettings(cfg: HalConfig): void {
   });
   void mountDeviceRename(cfg, back);
   void mountCloudToggle(cfg, back);
+  mountDeviceTheme(back);
+}
+
+// Per-device theme: follow the hub (default) or pick a local day/night theme
+// that can track the OS dark-mode setting (off ⇒ always day). Lives entirely in
+// the display WebView via window.HALThemeLocal (exposed by app.js) — device-
+// local, no server, no effect on the hub or other devices.
+type ThemeLocalApi = {
+  get(): { mode: string; day: string; night: string; followOs: boolean };
+  getThemes(): Array<{ name: string; display_name?: string }>;
+  set(partial: Record<string, unknown>): unknown;
+};
+function mountDeviceTheme(back: HTMLElement): void {
+  const api = (window as unknown as { HALThemeLocal?: ThemeLocalApi }).HALThemeLocal;
+  if (!api) return;   // app.js not ready (or not a satellite)
+  const followSw = back.querySelector<HTMLButtonElement>("#hal-theme-follow");
+  const localBox = back.querySelector<HTMLElement>("#hal-theme-local");
+  const daySel = back.querySelector<HTMLSelectElement>("#hal-theme-day");
+  const nightSel = back.querySelector<HTMLSelectElement>("#hal-theme-night");
+  const osSw = back.querySelector<HTMLButtonElement>("#hal-theme-os");
+  const modeSub = back.querySelector<HTMLElement>("#hal-theme-mode-sub");
+  if (!followSw || !localBox || !daySel || !nightSel || !osSw) return;
+
+  const cfg = api.get();
+  let themes = api.getThemes() || [];
+  if (themes.length === 0) {
+    themes = [{ name: cfg.day, display_name: cfg.day }, { name: cfg.night, display_name: cfg.night }];
+  }
+  const fill = (sel: HTMLSelectElement, current: string) => {
+    sel.innerHTML = "";
+    for (const t of themes) {
+      const o = document.createElement("option");
+      o.value = t.name; o.textContent = t.display_name || t.name;
+      if (t.name === current) o.selected = true;
+      sel.appendChild(o);
+    }
+  };
+  const setSwitch = (el: HTMLButtonElement, on: boolean) => {
+    el.classList.toggle("on", on); el.setAttribute("aria-checked", String(on));
+  };
+  const render = () => {
+    const c = api.get();
+    const follow = c.mode !== "local";
+    setSwitch(followSw, follow);
+    setSwitch(osSw, !!c.followOs);
+    localBox.hidden = follow;
+    if (modeSub) modeSub.textContent = follow
+      ? "This device matches the hub."
+      : "This device uses its own theme.";
+  };
+  fill(daySel, cfg.day);
+  fill(nightSel, cfg.night);
+  render();
+
+  followSw.addEventListener("click", () => {
+    // Clicking flips it: currently following → switch to local, and vice-versa.
+    const following = followSw.classList.contains("on");
+    api.set({ mode: following ? "local" : "global" });
+    render();
+  });
+  osSw.addEventListener("click", () => {
+    api.set({ followOs: !osSw.classList.contains("on") });
+    render();
+  });
+  daySel.addEventListener("change", () => api.set({ day: daySel.value }));
+  nightSel.addEventListener("change", () => api.set({ night: nightSel.value }));
 }
 
 // Self-rename: each device names itself (authenticated by its own token). iOS
