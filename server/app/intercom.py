@@ -34,9 +34,21 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 
 log = logging.getLogger("hal.intercom")
+
+# Generic words that shouldn't drive call-target matching, so "the Cheesy phone"
+# still resolves to the device named "Cheesy". Only used for the fuzzy token
+# tier — the exact-name tier still matches a device literally named "iPhone".
+_TARGET_FILLER = {"the", "my", "a", "an", "phone", "tablet", "device", "s"}
+
+
+def _target_tokens(s: str) -> set[str]:
+    """Significant lowercased words of a name/phrase, filler removed."""
+    return {t for t in re.findall(r"[a-z0-9]+", (s or "").lower())
+            if t not in _TARGET_FILLER}
 
 # The PAL display unit is the "hub" in the intercom (you "call the hub"). Its
 # routing id stays the internal "kiosk" string; only the user-facing name +
@@ -227,11 +239,27 @@ def resolve_target(state, name: str, *, exclude_token: str | None = None):
         candidates.append((KIOSK_ID, HUB_NAME,
                            getattr(state, "audio_websocket", None) is not None))
 
-    # The hub answers to "hub" (and still to "kiosk" as a quiet alias).
+    # Tiered match, most precise first:
+    #   1. exact name (or the hub's "hub"/"kiosk" aliases);
+    #   2. token overlap with filler ("phone", "the", …) stripped, so "the Cheesy
+    #      phone" finds "Cheesy" and "Cheesy" finds "Cheesy phone" — a device
+    #      matches when its significant words are a subset of the spoken words (or
+    #      vice versa), ranked by how many words overlap;
+    #   3. raw substring either direction (catches partial words like "chee").
+    q_tokens = _target_tokens(q)
+
+    def _tok_score(c) -> int:
+        nt = _target_tokens(c[1])
+        if not nt or not q_tokens or not (nt & q_tokens):
+            return 0
+        return len(nt & q_tokens) if (nt <= q_tokens or q_tokens <= nt) else 0
+
     exact = [c for c in candidates if c[1].lower() == q
              or (c[0] == KIOSK_ID and q in ("hub", "kiosk"))]
-    partial = [c for c in candidates if q in c[1].lower()]
-    pool = exact or partial   # exact name wins over a substring match
+    token = sorted((c for c in candidates if _tok_score(c) > 0),
+                   key=lambda c: -_tok_score(c))
+    substr = [c for c in candidates if q in c[1].lower() or c[1].lower() in q]
+    pool = exact or token or substr
     if not pool:
         return None
     # Prefer an ONLINE match — device names are often generic/duplicated

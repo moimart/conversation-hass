@@ -391,6 +391,31 @@ def test_resolve_target_prefers_online_among_duplicates():
     assert got[0] == pid("air") and got[2] is True   # the connected one wins
 
 
+def _state_named(**names):
+    """A state with the given token→device_name devices (all full-scope, online)."""
+    pairing = _FakePairing({t: {"device_name": n, "scope": "full"} for t, n in names.items()})
+    return SimpleNamespace(
+        pairing=pairing, satellite_ws={t: object() for t in names},
+        intercom_sessions={}, audio_websocket=None,
+        runtime_config=SimpleNamespace(get=lambda k, d=None: d),
+    )
+
+
+def test_resolve_target_tolerates_extra_and_missing_nouns():
+    # Device literally named "Cheesy": generic/extra words must not break it.
+    st = _state_named(X="Cheesy")
+    assert intercom.resolve_target(st, "Cheesy")[0] == pid("X")
+    assert intercom.resolve_target(st, "the Cheesy phone")[0] == pid("X")   # the reported bug
+    assert intercom.resolve_target(st, "Cheesy's phone")[0] == pid("X")
+    assert intercom.resolve_target(st, "chee")[0] == pid("X")               # partial word
+    # Device named WITH a trailing noun: the shorter spoken name still resolves.
+    assert intercom.resolve_target(_state_named(Y="Cheesy phone"), "Cheesy")[0] == pid("Y")
+    # A multi-word device, addressed with reordered/extra words.
+    assert intercom.resolve_target(_state_named(K="Kitchen Display"), "the kitchen")[0] == pid("K")
+    # A filler-only phrase must NOT false-match a specific device.
+    assert intercom.resolve_target(_state_named(Z="Cheesy"), "the tablet") is None
+
+
 @pytest.mark.asyncio
 async def test_signaling_for_unknown_session_is_noop(sent):
     state = _state(online=("A", "B"))
