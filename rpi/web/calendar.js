@@ -37,6 +37,9 @@ export function mountCalendar(root) {
             <span class="cal-status-dot"></span>
             <span class="cal-status-label">IDLE</span>
           </div>
+          <button class="cal-close" aria-label="Close calendar" hidden>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
           <div class="cal-countdown-bar"></div>
         </div>
         <div class="cal-body"></div>
@@ -48,6 +51,15 @@ export function mountCalendar(root) {
     const bodyEl = overlay.querySelector(".cal-body");
     const countdownEl = overlay.querySelector(".cal-countdown-bar");
     const statusLabelEl = overlay.querySelector(".cal-status-label");
+
+    // Satellites (mobile) get a manual close button — auto-dismiss alone is too
+    // slow to wait out on a phone. The kiosk (no window.HAL_CONFIG) keeps its
+    // hands-free timed dismiss only.
+    const closeBtn = overlay.querySelector(".cal-close");
+    if (window.HAL_CONFIG) {
+        closeBtn.hidden = false;
+        closeBtn.addEventListener("click", () => { void dismiss("explicit"); });
+    }
 
     // Mirror body.state-* into the calendar status label text. The dot
     // colour is purely CSS-driven from body.state-* (see calendar.css).

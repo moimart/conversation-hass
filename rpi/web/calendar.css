@@ -114,6 +114,25 @@ body.show-calendar .calendar-overlay { opacity: 1; }
     background: var(--text-dim);
     transition: background 0.2s, box-shadow 0.2s;
 }
+
+/* Manual close — satellites only (revealed from calendar.js when window.HAL_CONFIG
+   is present). The kiosk never shows it (auto-dismiss only). */
+.cal-close {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: none;
+    color: var(--text);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.cal-close:active { background: rgba(var(--accent-rgb), 0.15); }
+.cal-close[hidden] { display: none; }
 body.state-listening .cal-status-dot {
     background: var(--accent);
     box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6);
