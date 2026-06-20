@@ -206,6 +206,29 @@ def _match_intent_hint(text: str) -> IntentHint | None:
     return None
 
 
+def _augment_call_hint_with_directory(hint: IntentHint | None, provider) -> IntentHint | None:
+    """Enrich the intercom-call hint with the live device list so the LLM maps
+    the spoken name to a real device using its own fuzziness — the server-side
+    matcher then only has to bind an exact name (and stays the fallback). No-op
+    for non-call hints, a missing provider, or an empty directory."""
+    if hint is None or hint.tool != "intercom_call" or provider is None:
+        return hint
+    try:
+        devs = provider() or []
+    except Exception:
+        return hint
+    if not devs:
+        return hint
+    listing = ", ".join(
+        f"{d['name']} ({'online' if d.get('online') else 'offline'})" for d in devs)
+    hint.sentence += (
+        f" The actual callable devices right now are: {listing}. If that target "
+        f"isn't an exact device name, map it to the closest one of these and pass "
+        f"that device's EXACT name as `target`; if none clearly matches, ask which "
+        f"device rather than guessing.")
+    return hint
+
+
 def _with_hint(user_text: str, hint: IntentHint | None) -> str:
     """Engine input for the turn: the user's words plus the steering note.
     History always stores the CLEAN text — the note is per-turn steering,
@@ -250,6 +273,11 @@ class ConversationManager:
         # LocalToolsClient's call log — `probe(tool_name, since_monotonic)`
         # answers "did the engine actually invoke this tool during the turn?"
         self.tool_call_probe: Callable[[str, float], bool] | None = None
+        # Live intercom device directory provider (injected by main.py as a
+        # closure over AppState). Lets the call-intent hint show the model the
+        # ACTUAL paired devices each turn, so it maps the spoken name to a real
+        # one (instead of forwarding raw words to the server-side matcher).
+        self.intercom_directory: Callable[[], list] | None = None
         self.num_ctx = num_ctx
         self.num_predict = num_predict
         # Conversation log sink (injected by main.py; resolves origin tokens to
@@ -465,6 +493,7 @@ class ConversationManager:
             # text) and arm the post-turn guard below. The LLM stays in the
             # loop for every turn.
             intent = _match_intent_hint(full_text)
+            intent = _augment_call_hint_with_directory(intent, self.intercom_directory)
             t_intent = time.monotonic()
             if intent is not None:
                 log.info(f"[intent] hinting {intent.tool} "

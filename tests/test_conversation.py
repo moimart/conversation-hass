@@ -531,3 +531,42 @@ class TestToolResultTruncation:
         assert len(content) <= _MAX_TOOL_RESULT_CHARS + 200
         assert "truncated" in content
         assert huge not in content                 # the full blob never reaches the model
+
+
+# --- intercom call-intent hint: live device directory injection -------------
+
+def test_call_hint_augmented_with_live_directory():
+    from server.app.conversation import (
+        _match_intent_hint, _augment_call_hint_with_directory)
+    hint = _match_intent_hint("call the cheesy phone")
+    assert hint is not None and hint.tool == "intercom_call"
+    devs = [{"name": "Cheesy", "online": True}, {"name": "Hub", "online": True},
+            {"name": "Office iPad", "online": False}]
+    out = _augment_call_hint_with_directory(hint, lambda: devs)
+    assert "Cheesy (online)" in out.sentence
+    assert "Office iPad (offline)" in out.sentence
+    assert "EXACT name" in out.sentence
+    # guard still carries the raw spoken target as the deterministic fallback
+    assert out.guard_args == {"target": "the cheesy phone"}
+
+
+def test_call_hint_augment_noops_without_provider_or_devices():
+    from server.app.conversation import (
+        _match_intent_hint, _augment_call_hint_with_directory)
+    hint = _match_intent_hint("call cheesy")
+    base = hint.sentence
+    assert _augment_call_hint_with_directory(hint, None).sentence == base       # no provider
+    assert _augment_call_hint_with_directory(hint, lambda: []).sentence == base  # empty dir
+
+    def boom():
+        raise RuntimeError("directory unavailable")
+    assert _augment_call_hint_with_directory(hint, boom).sentence == base        # provider raises
+
+
+def test_augment_ignores_non_call_hints():
+    from server.app.conversation import (
+        _match_intent_hint, _augment_call_hint_with_directory)
+    hint = _match_intent_hint("set a timer for 5 minutes")
+    assert hint is not None and hint.tool == "start_timer"
+    out = _augment_call_hint_with_directory(hint, lambda: [{"name": "Cheesy", "online": True}])
+    assert "Cheesy" not in out.sentence   # a timer hint is left untouched

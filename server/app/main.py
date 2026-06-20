@@ -674,6 +674,10 @@ async def lifespan(app: FastAPI):
     # single dispatch point for both the local tool loop and OpenClaw's MCP
     # path, so its call log sees every engine).
     state.conversation.tool_call_probe = state.local_tools.called_since
+    # Live device directory for the call-intent hint (the LLM maps the spoken
+    # name against the REAL paired devices each turn).
+    from .intercom import directory as _intercom_directory
+    state.conversation.intercom_directory = lambda: _intercom_directory(state)
 
     # Apply tts_voice from runtime config (overrides whatever the engine
     # was initialized with from env).
