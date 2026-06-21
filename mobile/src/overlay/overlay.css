@@ -84,6 +84,13 @@
 .hal-mirror { right: 96px; }
 .hal-mirror[hidden] { display: none; }
 
+/* Home Assistant launcher — leftmost of the cluster, accent-tinted so it reads
+   as a distinct shortcut while the others stay faint white. Android-only;
+   revealed by overlay.ts when the HA app is installed. */
+.hal-ha { right: 138px; color: rgb(var(--accent-rgb)); }
+.hal-ha:active { color: var(--accent-glow, rgb(var(--accent-rgb))); }
+.hal-ha[hidden] { display: none; }
+
 /* While a fullscreen layer is open (conversation log has its own ✕; the mirror
    has its own close button) hide the floating gear cluster so they don't sit on
    top of (and tap-fight with) that close affordance. */

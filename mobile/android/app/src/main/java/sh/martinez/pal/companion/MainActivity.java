@@ -30,6 +30,8 @@ public class MainActivity extends BridgeActivity {
         // created (i.e. before super.onCreate). PalMirror gates the front-camera
         // "mirror" button by reporting whether a front camera exists.
         registerPlugin(PalMirrorPlugin.class);
+        // PalApps gates the Home Assistant launcher shortcut (is HA installed?).
+        registerPlugin(PalAppsPlugin.class);
         super.onCreate(savedInstanceState);
         // Draw edge-to-edge, including INTO the camera cutout (must call
         // setAttributes() to actually apply the layout mode, not just mutate

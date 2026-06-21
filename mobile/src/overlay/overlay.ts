@@ -8,6 +8,7 @@ import { sendCommand } from "./command";
 import { startListening, stopListening, isListening } from "./mic";
 import { unlockAudio } from "./satellite-audio";
 import { mountMirror, hasFrontCamera } from "./mirror";
+import { hasHomeAssistant, openHomeAssistant } from "./apps";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 
 export function mountOverlay(cfg: HalConfig): void {
@@ -82,6 +83,17 @@ export function mountOverlay(cfg: HalConfig): void {
   mirrorBtn.addEventListener("click", () => { void haptic(); void mountMirror(cfg); });
   root.appendChild(mirrorBtn);
   void hasFrontCamera().then((ok) => { mirrorBtn.hidden = !ok; });
+
+  // Home Assistant launcher — leftmost of the cluster, accent-tinted. Android-
+  // only; revealed (like the mirror) only when the HA companion app is installed.
+  const haBtn = document.createElement("button");
+  haBtn.className = "hal-gear hal-ha";
+  haBtn.setAttribute("aria-label", "Home Assistant");
+  haBtn.hidden = true;
+  haBtn.innerHTML = haIcon();
+  haBtn.addEventListener("click", () => { void haptic(); void openHomeAssistant(); });
+  root.appendChild(haBtn);
+  void hasHomeAssistant().then((ok) => { haBtn.hidden = !ok; });
 
   async function submit() {
     const text = input.value;
@@ -386,6 +398,11 @@ function logIcon(): string {
 
 function mirrorIcon(): string {
   return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
+}
+
+// Official Home Assistant logo (filled → uses currentColor, which we accent-tint).
+function haIcon(): string {
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M22.939 10.627 13.061.749a1.505 1.505 0 0 0-2.121 0l-9.879 9.878C.478 11.21 0 12.363 0 13.187v9c0 .826.675 1.5 1.5 1.5h9.227l-4.063-4.062a2.034 2.034 0 0 1-.664.113c-1.13 0-2.05-.92-2.05-2.05s.92-2.05 2.05-2.05 2.05.92 2.05 2.05c0 .233-.041.456-.113.665l3.163 3.163V9.928a2.05 2.05 0 0 1-1.15-1.84c0-1.13.92-2.05 2.05-2.05s2.05.92 2.05 2.05a2.05 2.05 0 0 1-1.15 1.84v8.127l3.146-3.146A2.051 2.051 0 0 1 18 12.239c1.13 0 2.05.92 2.05 2.05s-.92 2.05-2.05 2.05c-.25 0-.488-.047-.709-.13L12.9 20.602v3.088h9.6c.825 0 1.5-.675 1.5-1.5v-9c0-.825-.477-1.977-1.061-2.561z"/></svg>`;
 }
 
 function micIcon(): string {
