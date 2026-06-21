@@ -33,7 +33,18 @@ export async function ensurePermission(): Promise<boolean> {
   }
 }
 
-export async function startListening(onPartial: (t: string) => void): Promise<void> {
+async function cleanup(): Promise<void> {
+  if (partialHandle) { try { await partialHandle.remove(); } catch { /* ignore */ } partialHandle = null; }
+  if (stateHandle) { try { await stateHandle.remove(); } catch { /* ignore */ } stateHandle = null; }
+}
+
+/** Start a recognition session. `onPartial` streams interim text. `onAutoStop`
+ *  fires with the final transcript when the recognizer ends on its own (silence)
+ *  — in tap-to-toggle that finalizes the turn without a second tap. */
+export async function startListening(
+  onPartial: (t: string) => void,
+  onAutoStop?: (final: string) => void,
+): Promise<void> {
   if (listening) return;
   if (!(await ensurePermission())) throw new Error("speech permission denied");
   lastPartial = "";
@@ -46,9 +57,15 @@ export async function startListening(onPartial: (t: string) => void): Promise<vo
       onPartial(t);
     }
   });
-  // iOS emits a listeningState change when it stops on its own (silence).
+  // The recognizer stops on its own at end-of-speech (silence); finalize then.
   stateHandle = await SpeechRecognition.addListener("listeningState", (data: { status?: string }) => {
-    if (data.status === "stopped") listening = false;
+    if (data.status === "stopped" && listening) {
+      listening = false;
+      const final = lastPartial.trim();
+      lastPartial = "";
+      void cleanup();
+      if (onAutoStop) onAutoStop(final);
+    }
   });
 
   await SpeechRecognition.start({
@@ -66,8 +83,7 @@ export async function stopListening(): Promise<string> {
     console.warn("[hal] speech stop failed", e);
   }
   listening = false;
-  if (partialHandle) { await partialHandle.remove(); partialHandle = null; }
-  if (stateHandle) { await stateHandle.remove(); stateHandle = null; }
+  await cleanup();
   const final = lastPartial.trim();
   lastPartial = "";
   return final;

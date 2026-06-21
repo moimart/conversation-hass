@@ -110,63 +110,66 @@ export function mountOverlay(cfg: HalConfig): void {
   });
   send.addEventListener("click", () => void submit());
 
-  // Mic: PUSH-TO-TALK. Hold the button to dictate (partials stream into the
-  // field); release to send the final transcript. Pointer capture keeps the
-  // release bound to the button even if the finger drifts off it.
-  // serverPtt: this press is using the server-STT capture path (set in startPtt,
-  // read in endPtt) rather than the on-device recognizer.
-  let serverPtt = false;
+  // Mic: TAP-TO-TOGGLE. Tap once to start dictating (partials stream into the
+  // field; the on-device recognizer auto-sends on silence). Tap again to stop +
+  // send. `listenServer` tracks whether the active session is the server-STT
+  // capture path (for devices whose on-device recognizer PAL can't use).
+  let listenServer = false;
+  let serverTimer: ReturnType<typeof setTimeout> | null = null;
   function micActive(on: boolean) {
     mic.classList.toggle("active", on);
     input.placeholder = on ? "Listening…" : "Message PAL…";
   }
-  async function startPtt() {
-    if (isListening() || isCapturing()) return;
-    void haptic();
-    unlockAudio();   // mic tap doubles as the autoplay-unlock gesture
-    input.value = "";
-    micActive(true);
-    serverPtt = false;
-    // Devices that have already fallen back skip the on-device attempt entirely.
-    if (sttMode() === "server") {
-      serverPtt = true;
-      try { await startCapture(); }
-      catch (e) { serverPtt = false; micActive(false); console.warn("[hal] mic capture failed", e); }
-      return;
-    }
+  async function beginServer() {
+    listenServer = true;
     try {
-      await startListening((partial) => { input.value = partial; });
+      await startCapture();
+      // Safety: never record forever if the user forgets to tap again.
+      serverTimer = setTimeout(() => { void endListen(); }, 15000);
     } catch (e) {
-      // The on-device recognizer can't start (e.g. a Meta Portal whose only
-      // recognizer is HA's). Latch server STT and capture the rest of THIS press
-      // over the server path — the on-device start fails ~instantly.
-      console.warn("[hal] on-device STT unavailable; switching to server STT", e);
-      setSttMode("server");
-      serverPtt = true;
-      try { await startCapture(); }
-      catch (e2) { serverPtt = false; micActive(false); console.warn("[hal] mic capture failed", e2); }
+      listenServer = false; micActive(false);
+      console.warn("[hal] mic capture failed", e);
     }
   }
-  async function endPtt() {
-    if (serverPtt) {
-      serverPtt = false;
-      micActive(false);
+  async function beginListen() {
+    if (isListening() || isCapturing()) return;
+    void haptic();
+    unlockAudio();   // the tap doubles as the autoplay-unlock gesture
+    input.value = "";
+    micActive(true);
+    listenServer = false;
+    // Devices that have already fallen back skip the on-device attempt entirely.
+    if (sttMode() === "server") { await beginServer(); return; }
+    try {
+      await startListening(
+        (partial) => { input.value = partial; },
+        (final) => { micActive(false); if (final) { input.value = final; void submit(); } },
+      );
+    } catch (e) {
+      // On-device recognizer can't start (e.g. a Meta Portal whose only
+      // recognizer is HA's). Latch server STT for good and use it now.
+      console.warn("[hal] on-device STT unavailable; switching to server STT", e);
+      setSttMode("server");
+      await beginServer();
+    }
+  }
+  async function endListen() {
+    if (serverTimer !== null) { clearTimeout(serverTimer); serverTimer = null; }
+    micActive(false);
+    if (listenServer) {
+      listenServer = false;
       const text = await stopCaptureAndTranscribe(cfg);
       if (text) { input.value = text; void submit(); }
       return;
     }
-    if (!isListening()) return;
-    micActive(false);
+    if (!isListening()) return;   // already auto-stopped/sent on silence
     const final = await stopListening();
     if (final) { input.value = final; void submit(); }
   }
-  mic.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    try { mic.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    void startPtt();
+  mic.addEventListener("click", () => {
+    if (isListening() || isCapturing()) void endListen();
+    else void beginListen();
   });
-  mic.addEventListener("pointerup", (e) => { e.preventDefault(); void endPtt(); });
-  mic.addEventListener("pointercancel", () => { void endPtt(); });
 }
 
 function showSettings(cfg: HalConfig): void {
