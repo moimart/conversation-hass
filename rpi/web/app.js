@@ -49,7 +49,14 @@
     // first activation, and lazy-imports its optional effect.js module.
     const THEME_KEY = "hal-theme";
     const SAT_THEME_KEY = "hal-sat-theme";   // per-satellite local theme override
+    const SAT_PF_KEY = "hal-sat-photoframe"; // per-satellite photo-frame override ("off" = suppress)
     const ORIENTATION_KEY = "hal-orientation";
+
+    // Per-device photo-frame override: the hub still drives the photo frame, but
+    // a satellite can locally refuse to display it. Default ON (absent key).
+    function photoFrameEnabled() {
+        try { return localStorage.getItem(SAT_PF_KEY) !== "off"; } catch (e) { return true; }
+    }
     const ORB_SIDE_KEY = "hal-orb-side";
     // Satellites (mobile companions) carry window.HAL_CONFIG; the kiosk doesn't.
     const isSatellite = !!(typeof window !== "undefined" && window.HAL_CONFIG);
@@ -564,6 +571,20 @@
         }
     }
 
+    // Per-device photo-frame toggle, driven by the satellite settings sheet
+    // (overlay.ts). Turning it off suppresses incoming photo-frame shows AND
+    // dismisses one that's currently up; turning it back on lets the hub's next
+    // push show it again. Device-local (localStorage) — no server, no effect on
+    // the hub or other devices.
+    window.HALPhotoFrameLocal = {
+        get() { return photoFrameEnabled(); },
+        set(enabled) {
+            try { localStorage.setItem(SAT_PF_KEY, enabled ? "on" : "off"); } catch (e) { /* ignore */ }
+            if (!enabled) maybeDismissPhotoFrame("local-off");
+            return !!enabled;
+        },
+    };
+
     // Protection window for HAL's own confirmation TTS when the LLM
     // just called show_photo_frame this turn. Set when a show message
     // arrives, cleared when the turn ends (state→idle) or a new user
@@ -792,6 +813,8 @@
                 }
                 break;
             case "show_photo_frame":
+                // Per-device override: this satellite has hidden the photo frame.
+                if (!photoFrameEnabled()) break;
                 // Protect through HAL's confirmation TTS for THIS turn —
                 // see the "state" case above. Flip to the image layer so a
                 // previously-shown video can't bleed through.
@@ -806,6 +829,7 @@
                     .catch((e) => console.error("[photo-frame] show failed:", e));
                 break;
             case "show_photo_frame_video":
+                if (!photoFrameEnabled()) break;
                 pfProtectedTurn = true;
                 pfShowLayer("video");
                 applyPhotoFrameClock(msg.show_clock !== false);
@@ -814,6 +838,7 @@
                     .catch((e) => console.error("[photo-frame] video show failed:", e));
                 break;
             case "photo_frame_update":
+                if (!photoFrameEnabled()) break;
                 if (msg.show_clock !== undefined) applyPhotoFrameClock(msg.show_clock !== false);
                 if (pfController) pfController.update(msg);
                 break;

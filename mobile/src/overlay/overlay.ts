@@ -179,6 +179,14 @@ function showSettings(cfg: HalConfig): void {
           <button class="hal-switch" id="hal-theme-os" role="switch" aria-checked="false" aria-label="Follow system dark mode"></button>
         </div>
       </div>
+      <div class="hal-sheet-title" style="margin-top:14px">Photo frame</div>
+      <div class="hal-sheet-row">
+        <div class="hal-sheet-row-text">
+          <div class="hal-sheet-row-label">Show on this device</div>
+          <div class="hal-sheet-row-sub">Hide the hub's photo frame here, without affecting other devices.</div>
+        </div>
+        <button class="hal-switch on" id="hal-pf-toggle" role="switch" aria-checked="true" aria-label="Show photo frame"></button>
+      </div>
       <button class="hal-sheet-btn danger" id="hal-repair">Re-pair / change server</button>
       <button class="hal-sheet-btn" id="hal-cancel">Cancel</button>
     </div>`;
@@ -193,6 +201,26 @@ function showSettings(cfg: HalConfig): void {
   void mountDeviceRename(cfg, back);
   void mountCloudToggle(cfg, back);
   mountDeviceTheme(back);
+  mountPhotoFrameToggle(back);
+}
+
+// Per-device photo-frame override: the hub keeps driving the photo frame, but
+// this device can locally refuse to display it. Lives in the WebView via
+// window.HALPhotoFrameLocal (exposed by app.js) — device-local, no server.
+type PhotoFrameLocalApi = { get(): boolean; set(enabled: boolean): unknown };
+function mountPhotoFrameToggle(back: HTMLElement): void {
+  const api = (window as unknown as { HALPhotoFrameLocal?: PhotoFrameLocalApi }).HALPhotoFrameLocal;
+  const sw = back.querySelector<HTMLButtonElement>("#hal-pf-toggle");
+  if (!api || !sw) return;
+  const setSwitch = (on: boolean) => {
+    sw.classList.toggle("on", on); sw.setAttribute("aria-checked", String(on));
+  };
+  setSwitch(api.get());
+  sw.addEventListener("click", () => {
+    const next = !sw.classList.contains("on");
+    api.set(next);
+    setSwitch(next);
+  });
 }
 
 // Per-device theme: follow the hub (default) or pick a local day/night theme
