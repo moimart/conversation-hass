@@ -601,6 +601,80 @@ async def test_photo_broadcast_empty_body_400(fake_main_pbcast, monkeypatch):
     assert (await post_satellite_photo_broadcast(_req_body("full_tok", b""))).status_code == 400
 
 
+# --- POST /api/satellite/stt (server-side speech-to-text) -------------------
+
+def _req_audio(token=None, body=b"", sr="16000"):
+    headers = {}
+    if token:
+        headers["authorization"] = f"Bearer {token}"
+    if sr is not None:
+        headers["x-sample-rate"] = sr
+
+    async def _body():
+        return body
+
+    return SimpleNamespace(app=SimpleNamespace(), headers=headers,
+                           query_params={}, body=_body)
+
+
+@pytest.fixture
+def fake_main_stt(monkeypatch):
+    st = _state()
+    st.pairing = SimpleNamespace(
+        is_valid_token=lambda t: t in ("full_tok", "watch_tok"),
+        scope_allows=lambda t, perm: t == "full_tok",   # watch denied
+    )
+    st.pipeline = SimpleNamespace(
+        transcriber=SimpleNamespace(transcribe=AsyncMock(return_value="hello there")))
+    fake = SimpleNamespace(_get_state=lambda app: st)
+    monkeypatch.setitem(sys.modules, "server.app.main", fake)
+    return st
+
+
+@pytest.mark.asyncio
+async def test_satellite_stt_transcribes(fake_main_stt):
+    import numpy as np
+    from server.app.routes_http import post_satellite_stt
+    body = np.linspace(-0.4, 0.4, 16000, dtype=np.float32).tobytes()
+    resp = await post_satellite_stt(_req_audio("full_tok", body, "16000"))
+    assert resp == {"text": "hello there"}
+    tr = fake_main_stt.pipeline.transcriber.transcribe
+    tr.assert_awaited_once()
+    arr = tr.await_args.args[0]
+    assert arr.dtype == np.float32 and arr.shape[0] == 16000   # 16k in → no resample
+
+
+@pytest.mark.asyncio
+async def test_satellite_stt_resamples_non_16k(fake_main_stt):
+    import numpy as np
+    pytest.importorskip("librosa")   # resampling dep — present on the ai-server
+    from server.app.routes_http import post_satellite_stt
+    body = np.zeros(4800, dtype=np.float32).tobytes()         # 0.1s @ 48 kHz
+    resp = await post_satellite_stt(_req_audio("full_tok", body, "48000"))
+    assert resp == {"text": "hello there"}
+    arr = fake_main_stt.pipeline.transcriber.transcribe.await_args.args[0]
+    assert 1500 <= arr.shape[0] <= 1700                       # ~1600 = 4800·16/48
+
+
+@pytest.mark.asyncio
+async def test_satellite_stt_requires_valid_token(fake_main_stt):
+    from server.app.routes_http import post_satellite_stt
+    assert (await post_satellite_stt(_req_audio())).status_code == 401
+    assert (await post_satellite_stt(_req_audio("bogus", b"\x00\x00\x00\x00"))).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_satellite_stt_watch_scope_forbidden(fake_main_stt):
+    from server.app.routes_http import post_satellite_stt
+    assert (await post_satellite_stt(_req_audio("watch_tok", b"\x00\x00\x00\x00"))).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_satellite_stt_empty_body_400(fake_main_stt):
+    from server.app.routes_http import post_satellite_stt
+    assert (await post_satellite_stt(_req_audio("full_tok", b""))).status_code == 400
+
+
 @pytest.mark.asyncio
 async def test_satellite_tts_404_when_empty_or_expired(fake_main):
     from server.app.routes_http import get_satellite_tts

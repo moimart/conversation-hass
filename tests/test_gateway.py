@@ -162,6 +162,16 @@ async def test_photo_broadcast_allowed_with_token(client):
 
 
 @pytest.mark.asyncio
+async def test_satellite_stt_allowed_with_token(client):
+    """A phone POSTs captured mic audio for server-side STT (token-gated)."""
+    cl, state = client
+    assert (await cl.post("/api/satellite/stt")).status == 401   # no token
+    good = await cl.post("/api/satellite/stt", headers=_auth())
+    assert good.status == 200
+    assert ("POST", "/api/satellite/stt") in state["proxied"]
+
+
+@pytest.mark.asyncio
 async def test_token_via_query_param(client):
     """The MJPEG <img> tag and WS upgrade can only carry ?token=."""
     cl, state = client

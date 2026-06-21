@@ -6,6 +6,7 @@
 import { clearConfig, type HalConfig } from "../config/hal-config";
 import { sendCommand } from "./command";
 import { startListening, stopListening, isListening } from "./mic";
+import { sttMode, setSttMode, startCapture, stopCaptureAndTranscribe, isCapturing } from "./stt";
 import { unlockAudio } from "./satellite-audio";
 import { mountMirror, hasFrontCamera } from "./mirror";
 import { hasHomeAssistant, openHomeAssistant } from "./apps";
@@ -112,25 +113,50 @@ export function mountOverlay(cfg: HalConfig): void {
   // Mic: PUSH-TO-TALK. Hold the button to dictate (partials stream into the
   // field); release to send the final transcript. Pointer capture keeps the
   // release bound to the button even if the finger drifts off it.
+  // serverPtt: this press is using the server-STT capture path (set in startPtt,
+  // read in endPtt) rather than the on-device recognizer.
+  let serverPtt = false;
+  function micActive(on: boolean) {
+    mic.classList.toggle("active", on);
+    input.placeholder = on ? "Listening…" : "Message PAL…";
+  }
   async function startPtt() {
-    if (isListening()) return;
+    if (isListening() || isCapturing()) return;
+    void haptic();
+    unlockAudio();   // mic tap doubles as the autoplay-unlock gesture
+    input.value = "";
+    micActive(true);
+    serverPtt = false;
+    // Devices that have already fallen back skip the on-device attempt entirely.
+    if (sttMode() === "server") {
+      serverPtt = true;
+      try { await startCapture(); }
+      catch (e) { serverPtt = false; micActive(false); console.warn("[hal] mic capture failed", e); }
+      return;
+    }
     try {
-      void haptic();
-      unlockAudio();   // mic tap doubles as the autoplay-unlock gesture
-      mic.classList.add("active");
-      input.value = "";
-      input.placeholder = "Listening…";
       await startListening((partial) => { input.value = partial; });
     } catch (e) {
-      mic.classList.remove("active");
-      input.placeholder = "Message PAL…";
-      console.warn("[hal] mic start failed", e);
+      // The on-device recognizer can't start (e.g. a Meta Portal whose only
+      // recognizer is HA's). Latch server STT and capture the rest of THIS press
+      // over the server path — the on-device start fails ~instantly.
+      console.warn("[hal] on-device STT unavailable; switching to server STT", e);
+      setSttMode("server");
+      serverPtt = true;
+      try { await startCapture(); }
+      catch (e2) { serverPtt = false; micActive(false); console.warn("[hal] mic capture failed", e2); }
     }
   }
   async function endPtt() {
+    if (serverPtt) {
+      serverPtt = false;
+      micActive(false);
+      const text = await stopCaptureAndTranscribe(cfg);
+      if (text) { input.value = text; void submit(); }
+      return;
+    }
     if (!isListening()) return;
-    mic.classList.remove("active");
-    input.placeholder = "Message PAL…";
+    micActive(false);
     const final = await stopListening();
     if (final) { input.value = final; void submit(); }
   }

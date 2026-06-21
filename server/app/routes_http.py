@@ -658,6 +658,49 @@ async def post_satellite_photo_broadcast(request: Request):
     return {"status": "ok"}
 
 
+@router.post("/api/satellite/stt")
+async def post_satellite_stt(request: Request):
+    """Server-side speech-to-text for a paired phone whose on-device recognizer
+    can't be used (e.g. a Meta Portal whose only recognizer is HA's, which PAL
+    can't bind to). Body is raw float32 PCM at the capture rate (X-Sample-Rate
+    header, default 16000); we resample to 16 kHz and run the SAME remote
+    transcriber the hub uses (state.pipeline.transcriber → hal-stt-service).
+    Returns {"text": ...} ("" on any issue). Restricted (`watch`) scopes denied."""
+    from .main import _get_state
+    from .pairing import extract_bearer
+    state = _get_state(request.app)
+    token = extract_bearer(request)
+    if not (token and state.pairing and state.pairing.is_valid_token(token)):
+        return Response(status_code=401)
+    if not state.pairing.scope_allows(token, "stt"):
+        return Response(status_code=403)
+    body = await request.body()
+    if not body or len(body) > 16 * 1024 * 1024:
+        return Response(status_code=400)
+    pipeline = getattr(state, "pipeline", None)
+    transcriber = getattr(pipeline, "transcriber", None)
+    if transcriber is None:
+        return {"text": ""}
+    try:
+        sr = int(request.headers.get("x-sample-rate", "16000"))
+    except (TypeError, ValueError):
+        sr = 16000
+    try:
+        import numpy as np
+        usable = len(body) - (len(body) % 4)        # whole float32 samples only
+        audio = np.frombuffer(body[:usable], dtype=np.float32).copy()
+        if audio.size == 0:
+            return {"text": ""}
+        if sr != 16000:
+            import librosa
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+        text = await transcriber.transcribe(audio)
+    except Exception:
+        log.warning("[satellite-stt] transcription failed", exc_info=True)
+        return {"text": ""}
+    return {"text": text or ""}
+
+
 @router.post("/api/openclaw/response")
 async def post_openclaw_response(request: Request):
     """Callback endpoint for OpenClaw channel plugin to deliver agent responses."""

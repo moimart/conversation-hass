@@ -71,6 +71,9 @@ _ALLOWLIST = [
     ("POST", r"^/api/satellite/photo_frame/stop$",      True,  False),
     # Mirror shutter: a phone broadcasts a captured still to the home surfaces.
     ("POST", r"^/api/satellite/photo-broadcast$",       True,  False),
+    # Server-side STT: a phone POSTs captured mic audio, gets back a transcript
+    # (for devices whose on-device recognizer PAL can't use).
+    ("POST", r"^/api/satellite/stt$",                   True,  False),
     ("GET",  r"^/api/conversation/log$",                True,  False),
     ("GET",  r"^/api/conversation/log/image$",          True,  False),
     ("GET",  r"^/api/cloud_llm$",                        True,  False),
