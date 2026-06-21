@@ -14,7 +14,7 @@
 - 🗣️ **Talks back** in a voice you pick, through a Wyoming-protocol TTS service
 - 🏠 **Controls Home Assistant** via MCP tool-calling — switches, scenes, climate, media, all of it
 - 🧠 **Remembers** what you've told it (Shodh Hebbian long-term memory) so context survives across days
-- 👁️ **Shows itself** through a hub styled after fiction's iconic AIs — an animated eye and 16 switchable themes, including two with looping in-orb state videos that change with PAL's mood
+- 👁️ **Shows itself** through a hub styled after fiction's iconic AIs — an animated eye and 17 switchable themes, including those with looping in-orb state videos that change with PAL's mood
 - 📸 **Displays cameras, images, and videos** inside the orb (HA snapshots, live WebRTC, RTSP, HLS playlists)
 - 📅 **Pops up a calendar overlay** (month / week / day) pulled from any HA calendar, on voice or HA button
 - 📜 **Keeps a conversation log** — every request, answer, and announcement persisted forever in PostgreSQL, browsable full-screen on the hub (by voice or HA button) and in the companion app, with timestamps, origin labels (which phone asked, which channel announced), and inline thumbnails of every image shown on the orb
@@ -22,7 +22,7 @@
 - 🖼️ **Photo frame mode** — ambient full-screen image from a configurable HA `image.*` entity, white drop-shadow clock + Ken-Burns zoom, auto-crossfades when HA rotates the photo, dismisses on any hub action; **optional auto-activate after N minutes of inactivity**
 - 💤 **Display power (DPMS)** — actually powers the panel off (not just a black overlay), with optional idle auto-blank; wakes automatically on the next wake word / PTT / TTS / takeover. Same code path on RPi (Wayland) and x86 (Wayland or X11).
 - 🎯 **Wake word** *or* **Push-to-Talk** — your choice per situation (PTT triggerable from HA, an HTTP call, a WebSocket, or the desktop popup app)
-- 📱 **Companion app (iOS + Android)** — pair a phone as a **satellite**: talk to PAL by text or push-to-talk voice and hear replies in PAL's own server voice, while household broadcasts (spoken announcements, theme changes, live cameras/RTSP) get pushed to your screen — all sharing the hub's conversation, history, and memory. Capacitor app that reuses the hub display verbatim. See [`mobile/`](./mobile/README.md).
+- 📱 **Companion app (iOS + Android)** — pair a phone as a **satellite**: talk to PAL by text or tap-to-talk voice (on-device speech, with an automatic server-side STT fallback for devices whose recognizer PAL can't use) and hear replies in PAL's own server voice, while household broadcasts (spoken announcements, theme changes, live cameras/RTSP) get pushed to your screen — all sharing the hub's conversation, history, and memory. Each satellite can override its own theme and photo-frame display locally. Capacitor app that reuses the hub display verbatim. See [`mobile/`](./mobile/README.md).
 - 🎵 **Multi-room audio** via an optional Music-Assistant Sendspin sidecar with PulseAudio role-ducking
 - 🔌 **Speaks every protocol your house already speaks** — REST, MQTT, WebSocket — and HA auto-discovers it as a single device with sensors, switches, selects, text inputs, and buttons
 
@@ -32,7 +32,7 @@ Setup is two `docker compose` commands. See [Quick start](#quick-start) below.
 
 ## Themes
 
-Sixteen built-in themes, switchable from the hub's picker, the LLM (`ui_set_theme` tool), the MQTT `Theme` select, or the auto day/night scheduler. Two of them (`birch_animated`, `sunset_animated`) declare per-state looping videos in their manifest — short clips that play inside the orb and crossfade as PAL moves between idle / listening / processing / speaking. Any theme can opt in via the `state_videos` field. Authoring guide: [`THEMES.md`](./THEMES.md).
+Seventeen built-in themes, switchable from the hub's picker, the LLM (`ui_set_theme` tool), the MQTT `Theme` select, or the auto day/night scheduler. Two of them (`birch_animated`, `sunset_animated`) declare per-state looping videos in their manifest — short clips that play inside the orb and crossfade as PAL moves between idle / listening / processing / speaking. Any theme can opt in via the `state_videos` field. Authoring guide: [`THEMES.md`](./THEMES.md).
 
 | Preview | Theme | Vibe |
 |---|---|---|
@@ -52,6 +52,7 @@ Sixteen built-in themes, switchable from the hub's picker, the LLM (`ui_set_them
 | <img src="docs/themes/forest.jpg" width="200"> | `forest` | Moss green + amber on dark walnut — calm and organic |
 | <img src="docs/themes/sunset.jpg" width="200"> | `sunset` | Coral + peach on dusk plum — warm and gentle, with drifting golden-hour bokeh |
 | <img src="docs/themes/sunset_animated.jpg" width="200"> | `sunset_animated` | Sunset's plum/coral palette and bokeh drift, plus looping in-orb state videos that change with PAL's mood |
+| <img src="docs/themes/card_table.jpg" width="200"> | `card_table` | Classic card-room baize — velvety felt green with a soft vignette and warm table-gold accents, white type, plus looping in-orb state videos |
 
 ---
 
