@@ -1,0 +1,71 @@
+/* Card Table — velvety baize-green felt with a soft vignette, warm table-gold
+   accents and white type. Mirrors the structural variable contract of the base
+   themes (dark/sunset_animated) so the registry treats it symmetrically; the
+   in-orb state videos come from the manifest's state_videos. */
+body.theme-card_table {
+    --bg: #1c4a34;                 /* solid felt — also feeds color-mix() in style.css */
+    --surface: #16392a;
+    --border: #2c5d45;
+    --text: #ffffff;              /* fonts: white */
+    --text-dim: rgba(255, 255, 255, 0.62);
+    --accent: #d9b65c;            /* warm table gold */
+    --accent-rgb: 217, 182, 92;
+    --accent-glow: #ecd089;
+    --accent-glow-rgb: 236, 208, 137;
+    --accent-deep: #8a6d2a;
+    --accent-warm: #e8c878;
+    --accent-warm-rgb: 232, 200, 120;
+    --success: #5fbf8a;
+
+    --speak-core-1: rgba(255, 255, 255, 0.95);
+    --speak-core-2: rgba(245, 230, 190, 0.82);
+    --speak-pupil: rgba(255, 255, 255, 0.6);
+    --speak-pupil-2: rgba(255, 255, 255, 0.2);
+    --speak-reflection: rgba(255, 250, 235, 0.5);
+    --speak-glow: rgba(217, 182, 92, 0.18);
+
+    --bezel-1: #2c4a3a;
+    --bezel-2: #3f6b54;
+    --bezel-3: #6f9a82;
+    --bezel-4: #b6d0c0;
+    --bezel-inner: #0c241a;
+    --bezel-inner-edge: #173f2e;
+    --bezel-shadow: rgba(0, 0, 0, 0.6);
+    --lens-rim: #000000;
+
+    --core-deep-stop: #123a28;
+    --core-shadow: rgba(0, 0, 0, 0.3);
+    --core-shadow-deep: rgba(0, 0, 0, 0.85);
+
+    --iris-highlight: rgba(236, 208, 137, 0.42);
+    --pupil-1: rgba(0, 0, 0, 0.8);
+    --pupil-2: rgba(0, 0, 0, 0.4);
+    --reflection: rgba(255, 250, 235, 0.28);
+
+    --scan-line: rgba(236, 208, 137, 0.28);
+    --grid-line: rgba(255, 255, 255, 0.012);
+    --ambient-radial: rgba(217, 182, 92, 0.05);
+
+    --status-speak: #ffffff;
+    --status-speak-glow: rgba(236, 208, 137, 0.8);
+    --vol-hover-bg: rgba(236, 208, 137, 0.08);
+
+    /* Velvety felt: a soft sheen pools toward the centre, the edges fall into a
+       gentle vignette, and a fine cross-weave gives the cloth its nap. Overrides
+       the flat `background: var(--bg)` on <body>. */
+    background:
+        radial-gradient(ellipse 120% 95% at 50% 36%,
+            rgba(74, 140, 100, 0.55) 0%,
+            rgba(40, 95, 68, 0.18) 40%,
+            rgba(0, 0, 0, 0) 68%),
+        radial-gradient(ellipse 150% 135% at 50% 46%,
+            rgba(0, 0, 0, 0) 48%,
+            rgba(0, 0, 0, 0.42) 84%,
+            rgba(0, 0, 0, 0.62) 100%),
+        repeating-linear-gradient(0deg,
+            rgba(0, 0, 0, 0.035) 0 1px, rgba(255, 255, 255, 0.012) 1px 4px),
+        repeating-linear-gradient(90deg,
+            rgba(0, 0, 0, 0.035) 0 1px, rgba(255, 255, 255, 0.012) 1px 4px),
+        #163d2b;
+    background-attachment: fixed;
+}

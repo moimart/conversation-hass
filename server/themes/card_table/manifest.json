@@ -1,0 +1,13 @@
+{
+    "name": "card_table",
+    "display_name": "Card Table",
+    "description": "Classic card-room elegance — velvety baize-green felt with a soft vignette, warm table-gold accents and crisp white type. Reuses the cinematic in-orb video clips that follow PAL's state.",
+    "version": "1.0.0",
+    "kind": "dark",
+    "state_videos": {
+        "idle":       "idle_2.mp4",
+        "listening":  "listening_320.mp4",
+        "processing": "idle_320.mp4",
+        "speaking":   "speaking_320.mp4"
+    }
+}
