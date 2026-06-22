@@ -1007,6 +1007,14 @@
             // renders on top of the (black, srcObject-less) video element.
             img.className = "eye-stream";
             img.id = "eye-stream-fallback";
+            // A fallback that can't load (the stream ended server-side and the
+            // MJPEG 404s, or no stream_stop ever reached this device) must NOT
+            // sit forever as a black orb — tear the stream down so the orb
+            // reverts to idle / the theme's state video.
+            img.onerror = () => {
+                console.warn("Stream: MJPEG fallback failed to load — clearing orb");
+                stopStream();
+            };
             (video && video.parentElement ? video.parentElement : container).appendChild(img);
             streamFallbackImg = img;
         }
@@ -1015,6 +1023,14 @@
             + "sid=" + encodeURIComponent(streamSessionId);
         container.classList.add("camera-active", "stream-active");
         console.log("Stream: WebRTC unreachable — falling back to server-proxied MJPEG");
+        // No-frames watchdog: a fallback that never renders a frame (a silently
+        // dead MJPEG that doesn't fire `error`) shouldn't leave a stuck black orb.
+        streamFallbackTimer = setTimeout(() => {
+            if (streamFallbackImg && !streamFallbackImg.naturalWidth) {
+                console.warn("Stream: MJPEG fallback produced no frames — clearing orb");
+                stopStream();
+            }
+        }, 8000);
     }
     function startStream(msg) {
         const container = document.querySelector(".eye-container");
