@@ -500,28 +500,37 @@ def test_demo_code_off_by_default_is_invalid(pmod):
     assert mgr.redeem("000000", "x") is None
 
 
-def test_demo_code_issues_stable_full_token(pmod, monkeypatch):
+def test_demo_code_issues_unique_full_tokens(pmod, monkeypatch):
     monkeypatch.setenv("HAL_DEMO_PAIR_CODE", "000000")
     mgr = pmod.PairingManager()
     t1 = mgr.redeem("000000", "App Review")
-    assert t1 and mgr.is_valid_token(t1)
-    assert mgr.token_scope(t1) == "full"
-    # Idempotent: redeeming again (even a different device name) returns the SAME
-    # token, and no code needed to be pre-created on any display.
     t2 = mgr.redeem("000000", "A Different Reviewer")
-    assert t2 == t1
-    # Exactly one demo token exists.
-    assert sum(1 for m in mgr._tokens.values() if m.get("demo")) == 1
+    # UNIQUE per device: satellite_ws is keyed by token (one live socket per
+    # token), so a shared token would evict concurrent demo devices.
+    assert t1 and t2 and t1 != t2
+    assert mgr.is_valid_token(t1) and mgr.is_valid_token(t2)
+    assert mgr.token_scope(t1) == "full" and mgr.token_scope(t2) == "full"
+    assert all(m.get("demo") for m in mgr._tokens.values())
+
+
+def test_demo_tokens_capped(pmod, monkeypatch):
+    monkeypatch.setenv("HAL_DEMO_PAIR_CODE", "000000")
+    mgr = pmod.PairingManager()
+    for _ in range(pmod._DEMO_TOKEN_CAP + 12):
+        mgr.redeem("000000", "x")
+    assert sum(1 for m in mgr._tokens.values() if m.get("demo")) == pmod._DEMO_TOKEN_CAP
 
 
 def test_demo_token_persists_across_instances(pmod, monkeypatch):
     monkeypatch.setenv("HAL_DEMO_PAIR_CODE", "000000")
     mgr = pmod.PairingManager()
     t1 = mgr.redeem("000000", "App Review")
-    # A fresh manager loads the persisted token and reuses the same one.
+    # A fresh manager loads the persisted token; it stays valid, and a new
+    # redeem mints a DIFFERENT valid token.
     mgr2 = pmod.PairingManager()
     assert mgr2.is_valid_token(t1)
-    assert mgr2.redeem("000000", "App Review") == t1
+    t2 = mgr2.redeem("000000", "App Review")
+    assert t2 != t1 and mgr2.is_valid_token(t2)
 
 
 def test_demo_code_does_not_disturb_normal_codes(pmod, monkeypatch):

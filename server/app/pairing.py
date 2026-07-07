@@ -29,6 +29,7 @@ CODE_TTL_S = 120.0
 CODE_LEN = 6
 REDEEM_WINDOW_S = 60.0          # throttle window
 MAX_REDEEM_ATTEMPTS = 10        # max redeem attempts per window
+_DEMO_TOKEN_CAP = 50            # public demo: cap accumulated demo tokens
 
 # --- Token scopes -------------------------------------------------------------
 # A token's scope bounds what it may do. "full" (the phone app, and every token
@@ -164,9 +165,9 @@ class PairingManager:
         code = (code or "").strip()
         demo = demo_pair_code()
         if demo is not None and code == demo:
-            # Public review demo: a standing code always redeems to the SAME
-            # long-lived full token (idempotent across re-pairs/reinstalls),
-            # so a reviewer never needs a code shown on a display they can't see.
+            # Public review demo: the standing code always redeems (no code shown
+            # on a display the reviewer can't see), minting a UNIQUE per-device
+            # token so each device keeps its own satellite socket.
             return self._demo_token(device_name)
         if code not in self._codes:
             return None
@@ -183,15 +184,14 @@ class PairingManager:
         return token
 
     def _demo_token(self, device_name: str) -> str:
-        """Return the standing demo device token, minting+persisting it once.
+        """Mint a UNIQUE full token for each demo redeem.
 
-        Reuses any existing token tagged `demo:true` so repeated redeems of the
-        demo code hand back the SAME token — no pile-up, and a reviewer who
-        reinstalls keeps working. Always `full` scope (the app needs the
-        satellite socket + TTS)."""
-        for tok, meta in self._tokens.items():
-            if isinstance(meta, dict) and meta.get("demo"):
-                return tok
+        The demo code is shared (000000), but each device MUST get its own token:
+        `state.satellite_ws` is keyed by token and enforces one live socket per
+        token (routes_ws.py), so a shared token makes concurrent demo devices
+        evict each other's /ws/ui socket mid-turn — replies never arrive. Unique
+        tokens keep each device's socket alive. Tagged `demo:true` and capped so
+        the public demo can't grow the token file without bound."""
         token = secrets.token_urlsafe(32)
         self._tokens[token] = {
             "device_name": (device_name or "App Review")[:64],
@@ -199,8 +199,15 @@ class PairingManager:
             "scope": "full",
             "demo": True,
         }
+        # Cap accumulation: keep only the newest _DEMO_TOKEN_CAP demo tokens.
+        demo_toks = sorted(
+            ((m.get("created_at", 0.0), t) for t, m in self._tokens.items()
+             if isinstance(m, dict) and m.get("demo")),
+        )
+        for _, old in demo_toks[:-_DEMO_TOKEN_CAP]:
+            self._tokens.pop(old, None)
         self._save()
-        log.info("pairing: issued standing DEMO token "
+        log.info("pairing: issued demo token "
                  f"for {self._tokens[token]['device_name']!r}")
         return token
 

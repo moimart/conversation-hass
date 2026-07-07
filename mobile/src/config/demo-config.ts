@@ -11,8 +11,13 @@
 export const DEMO_SERVER_BASE_URL = "https://demohal.martinez.sh";
 export const DEMO_PAIRING_CODE = "000000";
 
-/** The default URL prefilled on the first onboarding screen. */
-export const DEFAULT_SERVER_BASE_URL = DEMO_SERVER_BASE_URL;
+/** The default prefilled on the first onboarding screen. Deliberately EMPTY:
+ *  the app must NOT auto-connect every user to the hosted demo box (that would
+ *  hand any installer access to it). Real users enter their own server (or LAN
+ *  discovery fills the field); an App Store reviewer types the demo URL + code
+ *  000000 from the App Review notes. isDemoUrl() still recognises it so the
+ *  reachability gate is bypassed when they do. */
+export const DEFAULT_SERVER_BASE_URL = "";
 
 /** True when the entered URL is the reserved demo endpoint. */
 export function isDemoUrl(url: string): boolean {
