@@ -729,6 +729,32 @@ async def lifespan(app: FastAPI):
         app.mount("/mcp", hal_mcp.sse_app())
         log.info("MCP server mounted at /mcp")
 
+    # Demo has NO hub on /ws/audio, so the conversation callbacks that deliver a
+    # turn's reply are never wired (audio_endpoint sets them). Without them a
+    # satellite turn produces a reply that never reaches the phone's /ws/ui.
+    # Wire satellite-only delivery here (mirrors audio_endpoint's origin branch).
+    if demo_mode() and state.conversation is not None:
+        async def _demo_on_response(text: str, audio_bytes: bytes | None):
+            origin = getattr(state.conversation, "_turn_origin", None)
+            if origin is None:
+                return
+            await send_to_device(state, origin, {"type": "response", "text": text})
+            if audio_bytes:
+                seq = cache_satellite_tts(state, origin, audio_bytes, "audio/wav")
+                await send_to_device(state, origin, {
+                    "type": "tts_play", "url": "/api/satellite/tts",
+                    "mime": "audio/wav", "seq": seq,
+                })
+
+        async def _demo_on_state_change(new_state: str):
+            origin = getattr(state.conversation, "_turn_origin", None)
+            if origin is not None:
+                await send_to_device(state, origin, {"type": "state", "state": new_state})
+
+        state.conversation.on_response = _demo_on_response
+        state.conversation.on_state_change = _demo_on_state_change
+        log.info("Demo mode: satellite conversation callbacks wired (no hub)")
+
     # OpenClaw: optional alternative conversation engine.
     # Client creation is deferred to avoid interfering with MCP client
     # startup. The MQTT callback or a background task will wire it up.
