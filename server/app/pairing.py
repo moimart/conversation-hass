@@ -56,6 +56,16 @@ def require_token_enabled() -> bool:
     return os.environ.get("HAL_REQUIRE_TOKEN", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def demo_pair_code() -> str | None:
+    """The standing pairing code accepted by the public demo instance, or None.
+
+    Set HAL_DEMO_PAIR_CODE (e.g. "000000") ONLY on the App-Store-review demo
+    server. Unset in every real deployment ⇒ this whole path is dead code and
+    the normal random single-use code flow is unchanged."""
+    c = os.environ.get("HAL_DEMO_PAIR_CODE", "").strip()
+    return c or None
+
+
 def extract_bearer(request: Request) -> str | None:
     """Pull a Bearer token from the Authorization header, or None."""
     auth = request.headers.get("authorization") or ""
@@ -144,6 +154,12 @@ class PairingManager:
             return None
         self._purge_expired()
         code = (code or "").strip()
+        demo = demo_pair_code()
+        if demo is not None and code == demo:
+            # Public review demo: a standing code always redeems to the SAME
+            # long-lived full token (idempotent across re-pairs/reinstalls),
+            # so a reviewer never needs a code shown on a display they can't see.
+            return self._demo_token(device_name)
         if code not in self._codes:
             return None
         del self._codes[code]                       # single-use
@@ -156,6 +172,28 @@ class PairingManager:
         self._save()
         log.info(f"pairing: issued {scope!r} token for device "
                  f"{self._tokens[token]['device_name']!r}")
+        return token
+
+    def _demo_token(self, device_name: str) -> str:
+        """Return the standing demo device token, minting+persisting it once.
+
+        Reuses any existing token tagged `demo:true` so repeated redeems of the
+        demo code hand back the SAME token — no pile-up, and a reviewer who
+        reinstalls keeps working. Always `full` scope (the app needs the
+        satellite socket + TTS)."""
+        for tok, meta in self._tokens.items():
+            if isinstance(meta, dict) and meta.get("demo"):
+                return tok
+        token = secrets.token_urlsafe(32)
+        self._tokens[token] = {
+            "device_name": (device_name or "App Review")[:64],
+            "created_at": time.time(),
+            "scope": "full",
+            "demo": True,
+        }
+        self._save()
+        log.info("pairing: issued standing DEMO token "
+                 f"for {self._tokens[token]['device_name']!r}")
         return token
 
     def derive(self, parent_token: str | None, scope: str,

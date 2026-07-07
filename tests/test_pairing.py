@@ -18,6 +18,7 @@ def pmod(monkeypatch, tmp_path):
     # Point token persistence at a temp file before importing/using the manager.
     monkeypatch.setenv("PAIRING_TOKENS_FILE", str(tmp_path / "tokens.json"))
     monkeypatch.delenv("HAL_REQUIRE_TOKEN", raising=False)
+    monkeypatch.delenv("HAL_DEMO_PAIR_CODE", raising=False)
     import server.app.pairing as p
     return p
 
@@ -477,3 +478,58 @@ async def test_pair_redeem_route_scope(pmod, fake_main):
     bad = await pmod.pair_redeem(SimpleNamespace(app=SimpleNamespace()),
                                  pmod.RedeemRequest(code=code2, device_name="x", scope="root"))
     assert bad.status_code == 400
+
+
+# --- Standing demo pair code (App Store review instance) ---------------------
+# HAL_DEMO_PAIR_CODE lets the public demo server accept a fixed code that always
+# redeems to the SAME long-lived full token. Unset in every real deployment.
+
+def test_demo_pair_code_env_default_off(pmod, monkeypatch):
+    monkeypatch.delenv("HAL_DEMO_PAIR_CODE", raising=False)
+    assert pmod.demo_pair_code() is None
+    monkeypatch.setenv("HAL_DEMO_PAIR_CODE", "000000")
+    assert pmod.demo_pair_code() == "000000"
+    monkeypatch.setenv("HAL_DEMO_PAIR_CODE", "   ")   # blank -> disabled
+    assert pmod.demo_pair_code() is None
+
+
+def test_demo_code_off_by_default_is_invalid(pmod):
+    # With no HAL_DEMO_PAIR_CODE, "000000" is just an unknown random code.
+    mgr = pmod.PairingManager()
+    assert mgr.redeem("000000", "x") is None
+
+
+def test_demo_code_issues_stable_full_token(pmod, monkeypatch):
+    monkeypatch.setenv("HAL_DEMO_PAIR_CODE", "000000")
+    mgr = pmod.PairingManager()
+    t1 = mgr.redeem("000000", "App Review")
+    assert t1 and mgr.is_valid_token(t1)
+    assert mgr.token_scope(t1) == "full"
+    # Idempotent: redeeming again (even a different device name) returns the SAME
+    # token, and no code needed to be pre-created on any display.
+    t2 = mgr.redeem("000000", "A Different Reviewer")
+    assert t2 == t1
+    # Exactly one demo token exists.
+    assert sum(1 for m in mgr._tokens.values() if m.get("demo")) == 1
+
+
+def test_demo_token_persists_across_instances(pmod, monkeypatch):
+    monkeypatch.setenv("HAL_DEMO_PAIR_CODE", "000000")
+    mgr = pmod.PairingManager()
+    t1 = mgr.redeem("000000", "App Review")
+    # A fresh manager loads the persisted token and reuses the same one.
+    mgr2 = pmod.PairingManager()
+    assert mgr2.is_valid_token(t1)
+    assert mgr2.redeem("000000", "App Review") == t1
+
+
+def test_demo_code_does_not_disturb_normal_codes(pmod, monkeypatch):
+    monkeypatch.setenv("HAL_DEMO_PAIR_CODE", "000000")
+    mgr = pmod.PairingManager()
+    # A normal random code still works and stays single-use.
+    code, _ = mgr.create_code()
+    assert code != "000000"           # astronomically unlikely, guards the test
+    tok = mgr.redeem(code, "phone")
+    assert tok is not None and mgr.token_scope(tok) == "full"
+    assert not mgr._tokens[tok].get("demo")
+    assert mgr.redeem(code, "phone") is None    # consumed

@@ -4,6 +4,11 @@ server/models/*
 !server/models/.gitkeep
 server/runtime/*
 !server/runtime/.gitkeep
+
+# PAL demo instance: its own pairing tokens/runtime + env are host-local secrets.
+demo/demo.env
+demo/runtime/*
+!demo/runtime/.gitkeep
 rpi/media/*
 !rpi/media/.gitkeep
 __pycache__/

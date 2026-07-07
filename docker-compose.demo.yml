@@ -1,0 +1,113 @@
+# PAL public DEMO instance — for App Store review.
+#
+# A throwaway, internet-exposed PAL that a reviewer connects to with no home of
+# their own. The mobile app prefills https://demo.hal.martinez.sh and the
+# reviewer pairs with the standing code 000000 (HAL_DEMO_PAIR_CODE), then can
+# talk (voice + text) and hear replies.
+#
+# It REUSES 185's existing ollama / Wyoming TTS / stt-service (reached over the
+# LAN) — no second ML stack. It has NO Home Assistant, MQTT, or postgres, so it
+# can't touch the real house and holds no secrets. It co-runs on 185 next to the
+# real stack WITHOUT clashing: the ai-server publishes no host port, the gateway
+# binds only to loopback :8767, and cloudflared makes an OUTBOUND tunnel.
+#
+# The app/gateway code is live-mounted (like the real stack) so `git pull` on
+# main ships the gated demo-code changes — NO image rebuild needed.
+#
+# Deploy on 185:
+#   cp demo/demo.env.example demo/demo.env   # fill DEMO_TUNNEL_TOKEN etc.
+#   docker compose -f docker-compose.demo.yml --env-file demo/demo.env \
+#                  --profile tunnel up -d
+# Drop `--profile tunnel` to run without the bundled tunnel (e.g. to point an
+# existing Cloudflare tunnel at http://127.0.0.1:8767 instead).
+
+name: pal-demo
+
+services:
+  ai-server:
+    image: ghcr.io/moimart/conversation-hass/hal-ai-server:latest
+    container_name: pal-demo-ai-server
+    restart: unless-stopped
+    # No published host port: only the demo gateway reaches it (compose net).
+    environment:
+      # --- LLM / TTS / STT: reuse 185's existing services over the LAN --------
+      - OLLAMA_HOST=${DEMO_OLLAMA_HOST:-http://10.20.30.185:11434}
+      - OLLAMA_MODEL=${DEMO_OLLAMA_MODEL:-gpt-oss:20b}
+      - OLLAMA_NUM_CTX=${DEMO_OLLAMA_NUM_CTX:-32768}
+      - OLLAMA_NUM_PREDICT=${DEMO_OLLAMA_NUM_PREDICT:-512}
+      - WYOMING_TTS_HOST=${DEMO_WYOMING_TTS_HOST:-10.20.30.185}
+      - WYOMING_TTS_PORT=${DEMO_WYOMING_TTS_PORT:-10300}
+      - WYOMING_TTS_VOICE=${DEMO_WYOMING_TTS_VOICE:-}
+      - STT_ENGINE=remote
+      - STT_REMOTE_URL=${DEMO_STT_REMOTE_URL:-http://10.20.30.185:8770}
+      - SAMPLE_RATE=48000
+      # --- Everything home-side OFF: no HA, no MQTT, no postgres, no memory ---
+      - HA_URL=
+      - HA_TOKEN=
+      - MCP_SERVER_URL=
+      - MQTT_BROKER_HOST=
+      - CONVERSATION_LOG_DSN=
+      - MEMORY_URL=
+      - OPENCLAW_ENABLED=false
+      - ROUTER_ENABLED=false
+      # --- Demo identity + the standing pairing code -------------------------
+      - HAL_DEVICE_NAME=PAL Demo
+      - HAL_DEMO_PAIR_CODE=${DEMO_PAIR_CODE:-000000}
+      - HAL_GATEWAY_URL=${DEMO_GATEWAY_URL:-https://demo.hal.martinez.sh}
+      # Enforce the token (defense in depth). The demo token from 000000
+      # satisfies it; tokenless callers are rejected.
+      - HAL_REQUIRE_TOKEN=1
+      # Themes are baked into the image; day/night default to shipped ones.
+      - AUTO_THEME=false
+      - THEME_DAY=${DEMO_THEME:-sunset_animated}
+      - THEME_NIGHT=${DEMO_THEME:-sunset_animated}
+    volumes:
+      # Live-mount so `git pull` on main ships the gated demo-code change with
+      # no image rebuild (mirrors the real ghcr compose).
+      - ./server/app:/app/app:ro
+      - ./server/themes:/app/themes:ro
+      - ./demo/system_prompt.txt:/app/system_prompt.txt:ro
+      # DEDICATED runtime: the demo's own pairing_tokens.json — never the real one.
+      - ./demo/runtime:/app/runtime
+      - demo-hf-cache:/root/.cache/huggingface
+      - /etc/localtime:/etc/localtime:ro
+
+  gateway:
+    image: ghcr.io/moimart/conversation-hass/hal-gateway:latest
+    container_name: pal-demo-gateway
+    restart: unless-stopped
+    # Loopback-only publish: reachable for a local curl AND by an existing
+    # host-side Cloudflare tunnel, but NOT exposed on the LAN.
+    ports:
+      - "127.0.0.1:8767:8766"
+    environment:
+      - AI_SERVER_URL=http://ai-server:8765
+      - GATEWAY_PORT=8766
+      # Demo-only: let the reviewer redeem 000000 through the tunnel.
+      - GATEWAY_ALLOW_PAIR_REDEEM=1
+      - TRUST_CF_IP=1
+      - RATE_LIMIT_RPM=${DEMO_RATE_LIMIT_RPM:-120}
+    volumes:
+      # Live-mount the gateway code so the GATEWAY_ALLOW_PAIR_REDEEM change
+      # ships via `git pull` (the ghcr image bakes gateway.py otherwise).
+      - ./gateway/gateway.py:/app/gateway.py:ro
+    depends_on:
+      - ai-server
+
+  # Bundled outbound tunnel (optional — enable with `--profile tunnel`). A
+  # dashboard-managed (token) tunnel; point the demo.hal.martinez.sh public
+  # hostname at http://gateway:8766 in the Cloudflare dashboard. Do NOT put a
+  # Cloudflare Access / SSO policy in front (it breaks the app's token auth).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: pal-demo-cloudflared
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${DEMO_TUNNEL_TOKEN:-}
+    depends_on:
+      - gateway
+
+volumes:
+  demo-hf-cache:

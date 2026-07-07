@@ -293,3 +293,41 @@ async def test_ws_proxies_both_directions_with_token(client):
     await ws.send_str("ping")
     assert (await ws.receive()).data == "echo:ping"
     await ws.close()
+
+
+# --- demo-only pairing passthrough (GATEWAY_ALLOW_PAIR_REDEEM) ----------------
+# The public review demo needs /api/pair/redeem reachable over the tunnel so a
+# reviewer can pair with the standing 000000 code. It is OFF by default (pinned
+# by the default-deny parametrize above, which 404s POST /api/pair/redeem).
+
+def test_pair_redeem_off_by_default_in_module():
+    # The module loaded at import time (no env) must NOT allowlist redeem.
+    assert gw_mod.ALLOW_PAIR_REDEEM is False
+    assert not any(m == "POST" and rx.match("/api/pair/redeem")
+                   for (m, rx, a, s) in gw_mod._ALLOWLIST)
+
+
+@pytest.mark.asyncio
+async def test_pair_redeem_passthrough_when_enabled(upstream, monkeypatch):
+    """With GATEWAY_ALLOW_PAIR_REDEEM=1, redeem is proxied WITHOUT a token (the
+    demo code in the body is the gate) — so a remote reviewer can pair."""
+    state, _server = upstream
+    monkeypatch.setenv("GATEWAY_ALLOW_PAIR_REDEEM", "1")
+    mod = _load_gateway()                       # re-exec with the env set
+    assert mod.ALLOW_PAIR_REDEEM is True
+    monkeypatch.setattr(mod, "AI_SERVER_URL", state["url"])
+    monkeypatch.setattr(mod, "AUTH_CACHE_TTL", 30)
+    cl = TestClient(TestServer(mod.build_app()))
+    await cl.start_server()
+    try:
+        resp = await cl.post("/api/pair/redeem", json={"code": "000000"})  # no token
+        assert resp.status == 200
+        assert ("POST", "/api/pair/redeem") in state["proxied"]
+        assert state["status_hits"] == 0        # never auth-subrequested
+        # A DIFFERENT unlisted pairing route is still denied even in demo mode.
+        assert (await cl.post("/api/pair/request", headers=_auth())).status == 404
+    finally:
+        await cl.close()
+    # Restore the shared module to deny-by-default for any later reload.
+    monkeypatch.delenv("GATEWAY_ALLOW_PAIR_REDEEM", raising=False)
+    _load_gateway()

@@ -45,6 +45,10 @@ GATEWAY_PORT = int(os.environ.get("GATEWAY_PORT", "8766"))
 AUTH_CACHE_TTL = float(os.environ.get("AUTH_CACHE_TTL", "30"))
 RATE_LIMIT_RPM = int(os.environ.get("RATE_LIMIT_RPM", "240"))
 TRUST_CF_IP = os.environ.get("TRUST_CF_IP", "1").strip().lower() in ("1", "true", "yes", "on")
+# Demo-only: expose the pairing redeem endpoint through the gateway so an App
+# Store reviewer can pair over the internet (a token can normally only be minted
+# on the LAN). OFF by default — real deployments keep pairing home-side.
+ALLOW_PAIR_REDEEM = os.environ.get("GATEWAY_ALLOW_PAIR_REDEEM", "").strip().lower() in ("1", "true", "yes", "on")
 
 # Hop-by-hop headers that must not be forwarded verbatim.
 _HOP_HEADERS = {
@@ -87,6 +91,10 @@ _ALLOWLIST = [
     # gateway exposes it tokenless — the .jpg anchor keeps the surface tight.
     ("GET",  r"^/api/push/image/\d+\.jpg$",             False, False),
 ]
+if ALLOW_PAIR_REDEEM:
+    # Pre-auth: the redeem body's (demo) code is the gate, so no token here.
+    _ALLOWLIST.append(("POST", r"^/api/pair/redeem$", False, False))
+    log.info("gateway: /api/pair/redeem allowlisted (GATEWAY_ALLOW_PAIR_REDEEM)")
 _ALLOWLIST = [(m, re.compile(p), a, s) for (m, p, a, s) in _ALLOWLIST]
 
 # /ws/ui is handled by a dedicated WebSocket route (always token-required).
