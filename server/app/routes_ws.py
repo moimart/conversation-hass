@@ -128,6 +128,9 @@ async def audio_endpoint(websocket: WebSocket):
         _record_user_activity(state)
 
         origin = getattr(state.conversation, "_turn_origin", None)
+        log.info(f"[dbg on_response] turn_origin={str(origin)[:8]!r} "
+                 f"connected={origin in state.satellite_ws if origin else None} "
+                 f"sat_count={len(state.satellite_ws)} audio={bool(audio_bytes)}")
         if origin is not None:
             # Satellite turn: response text + HAL-voice audio go ONLY to the
             # phone. Nothing to the RPi/broadcast/MQTT, and we don't touch the
