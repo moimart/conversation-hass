@@ -8,7 +8,7 @@
 //
 // WSS/HTTPS also satisfies iOS ATS for the demo path (no cleartext exception).
 
-export const DEMO_SERVER_BASE_URL = "https://demo.hal.martinez.sh";
+export const DEMO_SERVER_BASE_URL = "https://demohal.martinez.sh";
 export const DEMO_PAIRING_CODE = "000000";
 
 /** The default URL prefilled on the first onboarding screen. */

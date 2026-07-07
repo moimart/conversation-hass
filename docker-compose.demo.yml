@@ -53,7 +53,7 @@ services:
       # --- Demo identity + the standing pairing code -------------------------
       - HAL_DEVICE_NAME=PAL Demo
       - HAL_DEMO_PAIR_CODE=${DEMO_PAIR_CODE:-000000}
-      - HAL_GATEWAY_URL=${DEMO_GATEWAY_URL:-https://demo.hal.martinez.sh}
+      - HAL_GATEWAY_URL=${DEMO_GATEWAY_URL:-https://demohal.martinez.sh}
       # Enforce the token (defense in depth). The demo token from 000000
       # satisfies it; tokenless callers are rejected.
       - HAL_REQUIRE_TOKEN=1
