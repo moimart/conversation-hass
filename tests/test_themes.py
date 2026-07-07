@@ -174,3 +174,26 @@ async def test_registry_polling_fires_listener(tmp_path):
     await asyncio.sleep(0.2)
     await reg.stop_polling()
     assert any("beta" in entry for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_list_themes_endpoint_demo_locks_sunset(tmp_path, monkeypatch):
+    """In demo mode /api/themes exposes ONLY sunset_animated; otherwise all."""
+    import sys
+    from types import SimpleNamespace
+    _make_theme(tmp_path, "sunset_animated")
+    _make_theme(tmp_path, "birch")
+    reg = ThemeRegistry(str(tmp_path)); reg.scan()
+    st = SimpleNamespace(themes=reg)
+    monkeypatch.setitem(sys.modules, "server.app.main",
+                        SimpleNamespace(_get_state=lambda app: st))
+    from server.app.routes_http import list_themes_endpoint
+    req = SimpleNamespace(app=SimpleNamespace())
+
+    monkeypatch.delenv("HAL_DEMO_MODE", raising=False)
+    names = {t["name"] for t in (await list_themes_endpoint(req))["themes"]}
+    assert {"sunset_animated", "birch"} <= names
+
+    monkeypatch.setenv("HAL_DEMO_MODE", "1")
+    demo_names = [t["name"] for t in (await list_themes_endpoint(req))["themes"]]
+    assert demo_names == ["sunset_animated"]

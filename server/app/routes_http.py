@@ -351,7 +351,13 @@ async def get_conversation_log(request: Request):
     pages (the view scrolls up to load history). LAN-open like /api/command —
     the kiosk has no token; satellites send their Bearer anyway."""
     from .main import _get_state
+    from .pairing import demo_mode
     state = _get_state(request.app)
+    # Demo: no Postgres, so serve a fixed believable log (newest page only;
+    # older-page requests fall through to the empty response below).
+    if demo_mode() and not request.query_params.get("before_id"):
+        from .demo_content import dummy_conversation_log
+        return dummy_conversation_log()
     clog = state.conversation_log
     if clog is None or not clog.enabled:
         return {"rows": [], "has_more": False, "disabled": True}
@@ -906,11 +912,16 @@ async def list_themes_endpoint(request: Request):
     """JSON list of installed themes. Kiosk fetches this on startup
     and on `themes_changed` to build the picker dropdown."""
     from .main import _get_state
+    from .pairing import demo_mode
     from .themes import ThemeRegistry
     state = _get_state(request.app)
     if not isinstance(state.themes, ThemeRegistry):
         return {"themes": []}
-    return {"themes": [t.to_public() for t in state.themes.themes]}
+    themes = [t.to_public() for t in state.themes.themes]
+    # Demo: only the sunset_animated theme is selectable in the picker.
+    if demo_mode():
+        themes = [t for t in themes if t.get("name") == "sunset_animated"]
+    return {"themes": themes}
 
 
 @router.get("/api/intercom/devices")

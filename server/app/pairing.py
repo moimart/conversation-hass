@@ -66,6 +66,14 @@ def demo_pair_code() -> str | None:
     return c or None
 
 
+def demo_mode() -> bool:
+    """Public-demo behaviour switch (App Store review instance). When on, the
+    assistant is a PURE LLM chat: no tools, no MCP, no intent-guard direct calls,
+    a dummy activity log, and a locked theme. Set HAL_DEMO_MODE=1 ONLY on the demo
+    server; unset everywhere else so real deployments are untouched."""
+    return os.environ.get("HAL_DEMO_MODE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def extract_bearer(request: Request) -> str | None:
     """Pull a Bearer token from the Authorization header, or None."""
     auth = request.headers.get("authorization") or ""

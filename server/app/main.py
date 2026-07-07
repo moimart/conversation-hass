@@ -718,11 +718,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning(f"Cloud LLM model prefetch failed: {type(e).__name__}")
 
-    # MCP server: expose HAL's tools to external MCP clients.
-    from .mcp_server import build_mcp_server
-    hal_mcp = build_mcp_server(state)
-    app.mount("/mcp", hal_mcp.sse_app())
-    log.info("MCP server mounted at /mcp")
+    # MCP server: expose HAL's tools to external MCP clients. Skipped entirely in
+    # demo mode — the review demo has no MCP surface at all.
+    from .pairing import demo_mode
+    if demo_mode():
+        log.info("Demo mode: /mcp NOT mounted (no tools/MCP)")
+    else:
+        from .mcp_server import build_mcp_server
+        hal_mcp = build_mcp_server(state)
+        app.mount("/mcp", hal_mcp.sse_app())
+        log.info("MCP server mounted at /mcp")
 
     # OpenClaw: optional alternative conversation engine.
     # Client creation is deferred to avoid interfering with MCP client

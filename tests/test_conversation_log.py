@@ -250,3 +250,39 @@ async def test_endpoint_503_when_db_down(fake_main):
         resp = await get_conversation_log(_req())
     assert resp.status_code == 503
     assert json.loads(resp.body)["error"] == "log_unavailable"
+
+
+def test_dummy_conversation_log_shape():
+    from server.app.demo_content import dummy_conversation_log
+    d = dummy_conversation_log()
+    assert d["has_more"] is False and "disabled" not in d
+    rows = d["rows"]
+    assert len(rows) >= 8
+    assert [r["id"] for r in rows] == sorted(r["id"] for r in rows)      # ASC by id
+    assert [r["ts"] for r in rows] == sorted(r["ts"] for r in rows)      # oldest first
+    for r in rows:
+        assert set(r.keys()) == {"id", "ts", "kind", "text", "origin", "meta", "has_image"}
+        assert r["kind"] in {"user", "assistant", "announcement", "image"}
+        assert r["has_image"] is False
+
+
+@pytest.mark.asyncio
+async def test_endpoint_demo_serves_dummy_log(fake_main, monkeypatch):
+    from server.app.routes_http import get_conversation_log
+    monkeypatch.setenv("HAL_DEMO_MODE", "1")
+    fake_main.conversation_log = None                       # no DB in the demo
+    out = await get_conversation_log(_req())
+    assert "disabled" not in out and out["has_more"] is False
+    assert len(out["rows"]) >= 8
+    # older-page requests do NOT serve dummy data (fall through to empty)
+    out2 = await get_conversation_log(_req(before_id="1"))
+    assert out2["rows"] == []
+
+
+@pytest.mark.asyncio
+async def test_endpoint_no_dummy_without_demo(fake_main, monkeypatch):
+    from server.app.routes_http import get_conversation_log
+    monkeypatch.delenv("HAL_DEMO_MODE", raising=False)
+    fake_main.conversation_log = ConversationLog("")        # disabled, not demo
+    out = await get_conversation_log(_req())
+    assert out.get("disabled") is True and out["rows"] == []

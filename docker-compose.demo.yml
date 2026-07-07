@@ -52,6 +52,8 @@ services:
       - ROUTER_ENABLED=false
       # --- Demo identity + the standing pairing code -------------------------
       - HAL_DEVICE_NAME=PAL Demo
+      # Pure-LLM demo behaviour: no tools/MCP, dummy activity log, locked theme.
+      - HAL_DEMO_MODE=1
       - HAL_DEMO_PAIR_CODE=${DEMO_PAIR_CODE:-000000}
       - HAL_GATEWAY_URL=${DEMO_GATEWAY_URL:-https://demohal.martinez.sh}
       # Enforce the token (defense in depth). The demo token from 000000

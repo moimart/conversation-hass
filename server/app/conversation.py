@@ -21,6 +21,7 @@ import httpx
 
 from .mcp_client import MCPClient, MultiMCPClient
 from .memory import MemoryClient
+from .pairing import demo_mode
 from .tts import TTSEngine
 
 log = logging.getLogger("hal.conversation")
@@ -492,7 +493,9 @@ class ConversationManager:
             # note appended to the ENGINE input (history keeps the clean
             # text) and arm the post-turn guard below. The LLM stays in the
             # loop for every turn.
-            intent = _match_intent_hint(full_text)
+            # Demo mode is a pure LLM chat: no intent hints, so the post-turn
+            # guard (which calls tools DIRECTLY, bypassing the LLM) never fires.
+            intent = None if demo_mode() else _match_intent_hint(full_text)
             intent = _augment_call_hint_with_directory(intent, self.intercom_directory)
             t_intent = time.monotonic()
             if intent is not None:
@@ -1005,7 +1008,7 @@ class ConversationManager:
             response = await self.cloud_llm.chat(
                 self.cloud_llm_model,
                 messages,
-                self.mcp.tools_for_llm or None,
+                None if demo_mode() else (self.mcp.tools_for_llm or None),
                 temperature=0.7,
                 # Reasoning models (gpt-5 family) spend completion budget on
                 # hidden reasoning tokens — the local num_predict (512) leaves
@@ -1036,7 +1039,7 @@ class ConversationManager:
 
         # Include tools if available (skipped for utility calls like
         # summarization that must produce plain text, never a tool call).
-        tools = self.mcp.tools_for_llm if with_tools else None
+        tools = None if demo_mode() else (self.mcp.tools_for_llm if with_tools else None)
         if tools:
             payload["tools"] = tools
             log.debug(f"Sending {len(tools)} tools to Ollama")

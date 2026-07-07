@@ -19,6 +19,7 @@ def pmod(monkeypatch, tmp_path):
     monkeypatch.setenv("PAIRING_TOKENS_FILE", str(tmp_path / "tokens.json"))
     monkeypatch.delenv("HAL_REQUIRE_TOKEN", raising=False)
     monkeypatch.delenv("HAL_DEMO_PAIR_CODE", raising=False)
+    monkeypatch.delenv("HAL_DEMO_MODE", raising=False)
     import server.app.pairing as p
     return p
 
@@ -533,3 +534,12 @@ def test_demo_code_does_not_disturb_normal_codes(pmod, monkeypatch):
     assert tok is not None and mgr.token_scope(tok) == "full"
     assert not mgr._tokens[tok].get("demo")
     assert mgr.redeem(code, "phone") is None    # consumed
+
+
+def test_demo_mode_env(pmod, monkeypatch):
+    monkeypatch.delenv("HAL_DEMO_MODE", raising=False)
+    assert pmod.demo_mode() is False
+    monkeypatch.setenv("HAL_DEMO_MODE", "1")
+    assert pmod.demo_mode() is True
+    monkeypatch.setenv("HAL_DEMO_MODE", "off")
+    assert pmod.demo_mode() is False
