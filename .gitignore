@@ -26,6 +26,10 @@ server/runtime/cloud_providers.json
 
 # Firebase Android config (restricted API key; placed locally, injected at build)
 mobile/android/app/google-services.json
+
+# Android release/upload signing — keystore + its passwords, never commit.
+mobile/android/keystore.properties
+mobile/android/*.jks
 mobile/ios/App/PALWatch/DevConfig.swift
 
 # Rust / desktop client build output (never commit build artifacts)
