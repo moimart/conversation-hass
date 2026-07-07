@@ -54,6 +54,11 @@ services:
       - HAL_DEVICE_NAME=PAL Demo
       # Pure-LLM demo behaviour: no tools/MCP, dummy activity log, locked theme.
       - HAL_DEMO_MODE=1
+      # Runtime config lives OUTSIDE the persisted runtime dir, so it always
+      # bootstraps from THIS compose's env (theme, voice, model) with no drift.
+      # (A persisted config.json would otherwise pin stale values — e.g. an empty
+      # tts_voice from before WYOMING_TTS_VOICE was set, silently overriding it.)
+      - RUNTIME_CONFIG_PATH=/tmp/pal-demo-runtime.json
       - HAL_DEMO_PAIR_CODE=${DEMO_PAIR_CODE:-000000}
       - HAL_GATEWAY_URL=${DEMO_GATEWAY_URL:-https://demohal.martinez.sh}
       # Enforce the token (defense in depth). The demo token from 000000
