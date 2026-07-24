@@ -587,5 +587,10 @@ async def pair_push_register(request: Request, req: PushRegisterRequest):
     push_token = (req.push_token or "").strip()
     if not push_token:
         return _json_error({"error": "missing_push_token"}, 400)
+    # Demo instance never stores device push tokens: it holds no push credentials
+    # (dispatch is a no-op) and it is public, so every app installer would leave a
+    # token here on first pair. Accept the call so the app is happy, but drop it.
+    if demo_mode():
+        return {"status": "ok", "service": service, "stored": False}
     state.pairing.set_push_token(token, service, push_token)
     return {"status": "ok", "service": service}

@@ -266,6 +266,21 @@ async def test_push_register_route(pmod, fake_main):
 
 
 @pytest.mark.asyncio
+async def test_push_register_is_noop_in_demo_mode(pmod, fake_main, monkeypatch):
+    """The public demo holds no push creds and must not accumulate installers'
+    device tokens: accept the call but store nothing."""
+    monkeypatch.setenv("HAL_DEMO_MODE", "1")
+    pairing = fake_main.state.pairing
+    token = pairing.redeem(pairing.create_code()[0], "iPhone")
+    ok = await pmod.pair_push_register(
+        SimpleNamespace(app=SimpleNamespace(), headers={"authorization": f"Bearer {token}"}),
+        pmod.PushRegisterRequest(platform="ios", push_token="apns-demo"))
+    assert ok == {"status": "ok", "service": "apns", "stored": False}
+    assert pairing.push_targets() == []          # nothing stored
+    assert pairing.list_devices()[0]["has_push"] is False
+
+
+@pytest.mark.asyncio
 async def test_pair_status_valid_and_invalid(pmod, fake_main):
     code, _ = fake_main.state.pairing.create_code()
     token = fake_main.state.pairing.redeem(code, "x")
