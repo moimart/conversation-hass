@@ -1,5 +1,6 @@
 """Tests for the MCP client."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -161,6 +162,9 @@ class TestMCPClientConnect:
         mock_session = AsyncMock()
         mock_session.initialize = AsyncMock()
         mock_session.list_tools = AsyncMock(return_value=mock_tools_result)
+        # `async with ClientSession(...) as session` binds the __aenter__ result,
+        # so the mock must hand back itself.
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
 
         with patch("server.app.mcp_client.streamablehttp_client") as mock_transport, \
              patch("server.app.mcp_client.ClientSession", return_value=mock_session):
@@ -176,6 +180,49 @@ class TestMCPClientConnect:
             assert len(client.tools_for_llm) == 1
             assert client.tools_for_llm[0]["function"]["name"] == "ha_test_tool"
 
+            await client.disconnect()
+
+
+class _RecordingCM:
+    """Async CM that records which asyncio task entered and exited it.
+
+    Stands in for `streamablehttp_client` / `ClientSession`, whose anyio cancel
+    scopes must be entered and exited in the SAME task.
+    """
+
+    def __init__(self, aenter_result=None):
+        self.enter_task = None
+        self.exit_task = None
+        self._aenter_result = aenter_result
+
+    async def __aenter__(self):
+        self.enter_task = asyncio.current_task()
+        return self._aenter_result if self._aenter_result is not None else self
+
+    async def __aexit__(self, *exc):
+        self.exit_task = asyncio.current_task()
+        return False
+
+
+class _FakeSession(_RecordingCM):
+    def __init__(self, tools_result):
+        super().__init__()
+        self._tools_result = tools_result
+        self.initialize = AsyncMock()
+
+    async def list_tools(self):
+        return self._tools_result
+
+
+def _tools_result(name="ha_test_tool"):
+    tool = MagicMock()
+    tool.name = name
+    tool.description = "A test tool"
+    tool.inputSchema = {"type": "object", "properties": {}}
+    res = MagicMock()
+    res.tools = [tool]
+    return res
+
 
 class TestMCPClientDisconnect:
     @pytest.mark.asyncio
@@ -185,11 +232,54 @@ class TestMCPClientDisconnect:
         await client.disconnect()
 
     @pytest.mark.asyncio
-    async def test_disconnect_cleans_up(self):
-        client = MCPClient(server_url="http://x")
-        client._session = AsyncMock()
-        client._context_manager = AsyncMock()
+    async def test_scopes_enter_and_exit_in_the_same_task(self):
+        """Regression: the transport/session cancel scopes must be entered and
+        exited by ONE task (the owner), never by whoever calls connect/disconnect.
 
-        await client.disconnect()
-        client._session.__aexit__.assert_awaited_once()
-        client._context_manager.__aexit__.assert_awaited_once()
+        Driving `__aexit__` from a different task raises anyio's "Attempted to
+        exit cancel scope in a different task than it was entered in", which
+        leaves the scope re-delivering cancellation forever — a livelock that
+        pegged a whole CPU core in production until the container was restarted.
+        """
+        transport = _RecordingCM(aenter_result=(AsyncMock(), AsyncMock(), None))
+        session = _FakeSession(_tools_result())
+
+        with patch("server.app.mcp_client.streamablehttp_client", return_value=transport), \
+             patch("server.app.mcp_client.ClientSession", return_value=session):
+            client = MCPClient(server_url="http://fake")
+            await client.connect()
+            assert "ha_test_tool" in client.tool_names
+            caller = asyncio.current_task()
+            await client.disconnect()
+
+        # entered and exited by the same task ...
+        assert transport.enter_task is not None
+        assert transport.enter_task is transport.exit_task
+        assert session.enter_task is session.exit_task
+        # ... and that task is the owner, NOT the one calling connect/disconnect
+        assert transport.enter_task is not caller
+        assert client._session is None
+
+    @pytest.mark.asyncio
+    async def test_disconnect_is_idempotent(self):
+        transport = _RecordingCM(aenter_result=(AsyncMock(), AsyncMock(), None))
+        session = _FakeSession(_tools_result())
+        with patch("server.app.mcp_client.streamablehttp_client", return_value=transport), \
+             patch("server.app.mcp_client.ClientSession", return_value=session):
+            client = MCPClient(server_url="http://fake")
+            await client.connect()
+            await client.disconnect()
+            await client.disconnect()   # must not raise
+        assert client._session is None
+
+    @pytest.mark.asyncio
+    async def test_connect_raises_when_transport_fails(self):
+        """A failing transport must surface as an exception (add_server catches
+        it) rather than leaving a half-open session behind."""
+        with patch("server.app.mcp_client.streamablehttp_client",
+                   side_effect=RuntimeError("502 Bad Gateway")):
+            client = MCPClient(server_url="http://fake")
+            with pytest.raises(RuntimeError):
+                await client.connect()
+        assert client._session is None
+        assert client.tool_names == []

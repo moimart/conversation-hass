@@ -39,14 +39,19 @@ class MCPClient:
         self._session: ClientSession | None = None
         self._tools: list[dict] = []
         self._tools_for_llm: list[dict] = []
-        self._context_manager = None
+        # The session lives inside `_owner` (see _serve): anyio cancel scopes
+        # must be entered/exited in one task, so nothing else touches them.
+        self._owner: asyncio.Task | None = None
+        self._ready: asyncio.Event = asyncio.Event()
+        self._closing: asyncio.Event = asyncio.Event()
+        self._error: Exception | None = None
 
     @property
     def transport_type(self) -> str:
         return "stdio" if self.command else "http"
 
-    async def connect(self):
-        """Connect to the MCP server and discover tools."""
+    def _transport(self):
+        """Build the (not yet entered) transport context manager."""
         if self.command:
             log.info(f"Starting stdio MCP server: {self.command} {' '.join(self.args)}")
             # Resolve env vars (replace $VAR with actual values from host env)
@@ -66,53 +71,102 @@ class MCPClient:
                 val = full_env.get(k, "")
                 log.info(f"  final env {k}: {'(set, ' + str(len(val)) + ' chars)' if val else '(MISSING)'}")
 
-            server_params = StdioServerParameters(
+            return stdio_client(StdioServerParameters(
                 command=self.command,
                 args=self.args,
                 env=full_env,
-            )
-            self._context_manager = stdio_client(server_params)
-        else:
-            log.info(f"Connecting to HTTP MCP server at {self.server_url}...")
-            self._context_manager = streamablehttp_client(self.server_url)
+            ))
+        log.info(f"Connecting to HTTP MCP server at {self.server_url}...")
+        return streamablehttp_client(self.server_url)
 
-        read, write = (await self._context_manager.__aenter__())[:2]
-
-        self._session = ClientSession(read, write)
-        await self._session.__aenter__()
-        await self._session.initialize()
-
-        # Discover available tools
-        tools_result = await self._session.list_tools()
+    def _store_tools(self, tools_result) -> None:
         self._tools = []
         self._tools_for_llm = []
-
         for tool in tools_result.tools:
-            tool_info = {
+            schema = tool.inputSchema if hasattr(tool, "inputSchema") else {}
+            self._tools.append({
                 "name": tool.name,
                 "description": tool.description or "",
-                "input_schema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
-            }
-            self._tools.append(tool_info)
-
+                "input_schema": schema,
+            })
             # Format for Ollama tool-calling (OpenAI-compatible function format)
             self._tools_for_llm.append({
                 "type": "function",
                 "function": {
                     "name": tool.name,
                     "description": tool.description or "",
-                    "parameters": tool.inputSchema if hasattr(tool, "inputSchema") else {"type": "object", "properties": {}},
+                    "parameters": schema or {"type": "object", "properties": {}},
                 },
             })
-
         log.info(f"Discovered {len(self._tools)} MCP tools: {[t['name'] for t in self._tools]}")
 
+    async def _serve(self) -> None:
+        """Own the transport + session for their whole lifetime.
+
+        Both `streamablehttp_client` and `ClientSession` open anyio task groups,
+        whose cancel scopes MUST be entered and exited in the SAME task. This
+        task does nothing but hold them open until `disconnect()` sets the event,
+        so entry and exit are always here. Tool calls still run from whatever
+        task needs them — that is ordinary cross-task use of an open session and
+        is safe; only the enter/exit must not straddle tasks.
+        """
+        try:
+            async with self._transport() as streams:
+                read, write = streams[0], streams[1]
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    self._store_tools(await session.list_tools())
+                    self._session = session
+                    self._ready.set()
+                    await self._closing.wait()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self._error = e
+            log.error(f"MCP session ended ({self.server_url or self.command}): {e}")
+        finally:
+            self._session = None
+            self._ready.set()          # unblock a connect() still waiting
+
+    async def connect(self, timeout: float = 60.0):
+        """Connect to the MCP server and discover tools.
+
+        Starts the owner task and waits for it to report ready. Raises if the
+        session could not be established (callers already handle that).
+        """
+        self._ready = asyncio.Event()
+        self._closing = asyncio.Event()
+        self._error = None
+        self._owner = asyncio.create_task(
+            self._serve(), name=f"mcp-session:{self.server_url or self.command}")
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            self._closing.set()
+            self._owner.cancel()
+            raise RuntimeError(f"MCP connect timed out after {timeout}s")
+        if self._session is None:
+            raise RuntimeError(str(self._error) if self._error else "MCP connect failed")
+
     async def disconnect(self):
-        """Clean up the MCP connection."""
-        if self._session:
-            await self._session.__aexit__(None, None, None)
-        if self._context_manager:
-            await self._context_manager.__aexit__(None, None, None)
+        """Clean up the MCP connection.
+
+        Signals the owner task to unwind so the transport/session scopes are
+        exited in the task that entered them. Never drives `__aexit__` here.
+        """
+        self._closing.set()
+        owner, self._owner = self._owner, None
+        if owner is None or owner.done():
+            self._session = None
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(owner), timeout=10)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            owner.cancel()
+        except Exception as e:
+            log.warning(f"MCP disconnect error (ignoring): {e}")
+        finally:
+            self._session = None
 
     @property
     def tools_for_llm(self) -> list[dict]:
