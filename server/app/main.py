@@ -142,6 +142,12 @@ class AppState:
     # up (user setting, default on). Pushed to the kiosk on connect and on
     # change as a set_photo_frame_clock message.
     photo_frame_show_clock: bool = True
+    # Photo-frame presentation, pushed to the kiosk + satellites on connect, on
+    # change (set_photo_frame_style) and inside every frame payload.
+    #   animate=False    -> no Ken-Burns pan/zoom, the photo sits still
+    #   fit_contain=True -> object-fit:contain, the whole photo fits, no crop
+    photo_frame_animate: bool = True
+    photo_frame_fit_contain: bool = False
     # Display power (DPMS). state is "on" or "off"; auto_off_seconds
     # of 0 means "no idle blanking" (manual control only).
     display_state: str = "on"
@@ -785,6 +791,8 @@ async def lifespan(app: FastAPI):
     state.photo_frame_video_url = str(cfg.get("photo_frame_video_url", "") or "")
     state.photo_frame_video_mode = bool(cfg.get("photo_frame_video_mode", False))
     state.photo_frame_show_clock = bool(cfg.get("photo_frame_show_clock", True))
+    state.photo_frame_animate = bool(cfg.get("photo_frame_animate", True))
+    state.photo_frame_fit_contain = bool(cfg.get("photo_frame_fit_contain", False))
     _load_photo_frame_video_hash(state)
     if state.photo_frame_video_url and not state.photo_frame_video_hash:
         asyncio.create_task(_download_photo_frame_video(state, state.photo_frame_video_url))

@@ -72,6 +72,14 @@ async def audio_endpoint(websocket: WebSocket):
     except Exception as e:
         log.warning(f"Could not push photo-frame clock setting to RPi: {e}")
 
+    # Same for the presentation settings (animation / fit), so a frame that
+    # re-mounts after a reconnect renders with the right style straight away.
+    try:
+        from .photo_frame import _style
+        await websocket.send_json({"type": "set_photo_frame_style", **_style(state)})
+    except Exception as e:
+        log.warning(f"Could not push photo-frame style to RPi: {e}")
+
     # Replay the current weather (unlike theme, the kiosk has no localStorage
     # copy — it relies entirely on the server push).
     if state.current_weather:

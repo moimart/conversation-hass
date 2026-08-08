@@ -134,6 +134,53 @@ async def test_video_show_payload_carries_show_clock(fake_fetch):
 
 
 @pytest.mark.asyncio
+async def test_show_payload_carries_style_defaults(fake_fetch):
+    """Unset settings keep today's look: Ken-Burns on, fill-and-crop."""
+    state = _state(configured_entity="image.weather_radar")
+    await photo_frame.start_photo_frame(state)
+    msg = _pushed(state, "show_photo_frame")
+    assert msg["animate"] is True
+    assert msg["fit"] == "cover"
+
+
+@pytest.mark.asyncio
+async def test_show_payload_carries_static_and_contain(fake_fetch):
+    """Animation off + fit-whole-photo ride with the frame, so a kiosk that
+    connects late still renders it right the moment the frame opens."""
+    state = _state(configured_entity="image.weather_radar")
+    state.photo_frame_animate = False
+    state.photo_frame_fit_contain = True
+    await photo_frame.start_photo_frame(state)
+    msg = _pushed(state, "show_photo_frame")
+    assert msg["animate"] is False
+    assert msg["fit"] == "contain"
+
+
+@pytest.mark.asyncio
+async def test_video_show_payload_carries_style(fake_fetch):
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=True, video_hash="abc123")
+    state.photo_frame_animate = False
+    state.photo_frame_fit_contain = True
+    await photo_frame.start_photo_frame(state)
+    msg = _pushed(state, "show_photo_frame_video")
+    assert msg["animate"] is False and msg["fit"] == "contain"
+
+
+@pytest.mark.asyncio
+async def test_update_payload_carries_style(fake_fetch):
+    """Rotations must carry it too — each new photo re-applies the style."""
+    state = _state(configured_entity="image.weather_radar")
+    state.photo_frame_fit_contain = True
+    await photo_frame.start_photo_frame(state)
+    state.audio_websocket.send_json.reset_mock()
+    await photo_frame._on_state_changed(state, "image.weather_radar", None)
+    msg = _pushed(state, "photo_frame_update")
+    if msg is not None:            # only pushed when the image actually changed
+        assert msg["fit"] == "contain"
+
+
+@pytest.mark.asyncio
 async def test_start_with_arg_overrides_config(fake_fetch):
     state = _state(configured_entity="image.default")
     result = await photo_frame.start_photo_frame(state, entity_id="image.override")

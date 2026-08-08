@@ -586,6 +586,7 @@ class AudioManager:
             "ptt_active",
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
             "show_photo_frame_video", "set_photo_frame_clock",
+            "set_photo_frame_style",
             "show_pairing_code", "hide_pairing_code",
         ):
             # Cache the photo-frame state so a reconnecting page re-mounts it.
@@ -602,6 +603,14 @@ class AudioManager:
             elif msg_type == "hide_photo_frame":
                 self.last_photo_faces = None
                 self.last_photo_frame = None
+            elif msg_type == "set_photo_frame_style" and self.last_photo_frame:
+                # Fold a live style change into the cached frame, else a page
+                # reload would replay the frame with the pre-change style.
+                self.last_photo_frame = {
+                    **self.last_photo_frame,
+                    "animate": msg.get("animate", True),
+                    "fit": msg.get("fit", "cover"),
+                }
             await self.broadcast_to_ui(msg)
 
         elif msg_type == "photo_faces":

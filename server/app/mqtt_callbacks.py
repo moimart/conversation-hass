@@ -426,6 +426,12 @@ async def wire(state, bridge) -> None:
     bridge._cached_config["photo_frame_show_clock"] = bool(
         state.runtime_config.get("photo_frame_show_clock", True)
     )
+    bridge._cached_config["photo_frame_animate"] = bool(
+        state.runtime_config.get("photo_frame_animate", True)
+    )
+    bridge._cached_config["photo_frame_fit_contain"] = bool(
+        state.runtime_config.get("photo_frame_fit_contain", False)
+    )
     bridge._cached_config["photo_frame_faces_entity"] = str(
         state.runtime_config.get("photo_frame_faces_entity", "") or ""
     )
@@ -577,6 +583,41 @@ async def wire(state, bridge) -> None:
         msg = {"type": "set_photo_frame_clock", "show": bool(val)}
         await _push_to_rpi(state, msg)
         await broadcast_to_ui(state, msg)
+
+    async def _push_photo_frame_style():
+        """Push the current presentation to every surface showing a frame.
+
+        The kiosk and mirror UIs take the broadcast; satellites are excluded
+        from `broadcast_to_ui` by design, so each one with an open per-device
+        session is messaged directly. Applying it is a class toggle on the
+        client — no frame restart, so a mid-frame change is seamless.
+        """
+        from .photo_frame import _style
+        msg = {"type": "set_photo_frame_style", **_style(state)}
+        await _push_to_rpi(state, msg)
+        await broadcast_to_ui(state, msg)
+        from .main import send_to_device
+        for token in list(getattr(state, "satellite_photo_sessions", {}) or {}):
+            try:
+                await send_to_device(state, token, msg)
+            except Exception as e:
+                log.debug(f"photo-frame style push to satellite failed: {e}")
+
+    async def _cfg_photo_frame_animate(enabled):
+        val = str(enabled).strip().lower() in ("true", "1", "yes", "on") \
+            if not isinstance(enabled, bool) else enabled
+        state.photo_frame_animate = bool(val)
+        await _persist("photo_frame_animate", bool(val))
+        await bridge.publish_config("photo_frame_animate", bool(val))
+        await _push_photo_frame_style()
+
+    async def _cfg_photo_frame_fit_contain(enabled):
+        val = str(enabled).strip().lower() in ("true", "1", "yes", "on") \
+            if not isinstance(enabled, bool) else enabled
+        state.photo_frame_fit_contain = bool(val)
+        await _persist("photo_frame_fit_contain", bool(val))
+        await bridge.publish_config("photo_frame_fit_contain", bool(val))
+        await _push_photo_frame_style()
 
     async def _cfg_photo_frame_faces_entity(value: str):
         value = (value or "").strip()
@@ -862,6 +903,8 @@ async def wire(state, bridge) -> None:
     bridge.set_config_callback("photo_frame_video_url", _cfg_photo_frame_video_url)
     bridge.set_config_callback("photo_frame_video_mode", _cfg_photo_frame_video_mode)
     bridge.set_config_callback("photo_frame_show_clock", _cfg_photo_frame_show_clock)
+    bridge.set_config_callback("photo_frame_animate", _cfg_photo_frame_animate)
+    bridge.set_config_callback("photo_frame_fit_contain", _cfg_photo_frame_fit_contain)
     bridge.set_config_callback("photo_frame_faces_entity", _cfg_photo_frame_faces_entity)
     bridge.set_config_callback("weather_entity", _cfg_weather_entity)
     bridge.set_config_callback("weather_enabled", _cfg_weather_enabled)

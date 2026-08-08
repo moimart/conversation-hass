@@ -244,6 +244,19 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
         parse=_switch_parse, serialize=_switch_serialize,
     ),
     ConfigEntity(
+        key="photo_frame_animate", platform="switch",
+        name="Photo Frame Animation", icon="mdi:pan", default=True,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        parse=_switch_parse, serialize=_switch_serialize,
+    ),
+    ConfigEntity(
+        key="photo_frame_fit_contain", platform="switch",
+        name="Photo Frame Fit Whole Photo", icon="mdi:fit-to-screen-outline",
+        default=False,
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+        parse=_switch_parse, serialize=_switch_serialize,
+    ),
+    ConfigEntity(
         key="photo_frame_faces_entity", platform="text",
         name="Photo Frame Faces Sensor", icon="mdi:face-recognition",
         extra={"mode": "text"}, serialize=lambda v: v or "",

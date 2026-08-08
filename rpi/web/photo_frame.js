@@ -136,8 +136,27 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         return order;
     }
 
+    // Server setting photo_frame_animate (app.js owns it). Off ⇒ the photo sits
+    // perfectly still: no CSS Ken Burns, no face pan. Read live (not cached) so
+    // a mid-frame toggle takes effect on the next photo with no reload.
+    function animEnabled() {
+        try {
+            return window.HALPhotoFrameAnimate ? window.HALPhotoFrameAnimate() !== false : true;
+        } catch (_) { return true; }
+    }
+
+    // Strip every animation + inline transform from a layer (used when
+    // animation is turned off, including mid-frame).
+    function freezeLayer(layer) {
+        if (!layer) return;
+        layer.classList.remove("ken-burns");
+        layer.getAnimations().forEach((a) => { try { a.cancel(); } catch (_) { /* ignore */ } });
+        layer.style.transform = "";
+    }
+
     function startFacePan() {
         if (!curFaces) return;
+        if (!animEnabled()) { freezeLayer(active); return; }
         const layer = active;                      // the currently-shown photo
         // Use the LAYOUT box (offsetWidth/Height), not getBoundingClientRect:
         // the rect is affected by the element's own (animating) transform AND by
@@ -227,7 +246,7 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         try {
             layer.animate(keyframes, opts);
         } catch (_) {
-            layer.classList.add("ken-burns");      // WAA unavailable → default
+            if (animEnabled()) layer.classList.add("ken-burns");  // WAA unavailable → default
         }
     }
 
@@ -284,7 +303,8 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         // when we re-add the class).
         buffer.classList.remove("ken-burns");
         void buffer.offsetWidth;   // force reflow
-        buffer.classList.add("ken-burns");
+        if (animEnabled()) buffer.classList.add("ken-burns");
+        else freezeLayer(buffer);
         // Swap: buffer becomes active, active becomes hidden buffer.
         buffer.classList.add("active");
         active.classList.remove("active");
@@ -308,7 +328,8 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         await paintInto(buffer, payload);
         buffer.classList.remove("ken-burns");
         void buffer.offsetWidth;
-        buffer.classList.add("ken-burns");
+        if (animEnabled()) buffer.classList.add("ken-burns");
+        else freezeLayer(buffer);
         buffer.classList.add("active");
         active.classList.remove("active");
         [active, buffer] = [buffer, active];
@@ -364,7 +385,20 @@ export function mountPhotoFrame(root, { onDismiss } = {}) {
         return shown;
     }
 
-    return { show, update, dismiss, isShown, setFaces };
+    // Apply an animation setting change to the photo ALREADY on screen, so the
+    // toggle reads instantly instead of waiting for the next photo rotation.
+    function restyle() {
+        if (!shown) return;
+        if (!animEnabled()) {
+            freezeLayer(active);
+            freezeLayer(buffer);
+            return;
+        }
+        active.classList.add("ken-burns");
+        if (curFaces) startFacePan();
+    }
+
+    return { show, update, dismiss, isShown, setFaces, restyle };
 }
 
 

@@ -1220,6 +1220,58 @@
     }
   ],
   [
+    "homeassistant/switch/hal-default/config_photo_frame_animate/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/photo_frame_animate/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:pan",
+      "name": "Photo Frame Animation",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/photo_frame_animate/state",
+      "unique_id": "hal-default_config_photo_frame_animate"
+    }
+  ],
+  [
+    "homeassistant/switch/hal-default/config_photo_frame_fit_contain/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/photo_frame_fit_contain/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:fit-to-screen-outline",
+      "name": "Photo Frame Fit Whole Photo",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "state_topic": "hal/hal-default/config/photo_frame_fit_contain/state",
+      "unique_id": "hal-default_config_photo_frame_fit_contain"
+    }
+  ],
+  [
     "homeassistant/switch/hal-default/config_photo_frame_show_clock/config",
     {
       "availability": [

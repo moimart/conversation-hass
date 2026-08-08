@@ -79,6 +79,20 @@ def _show_clock(state: "AppState") -> bool:
     return bool(getattr(state, "photo_frame_show_clock", True))
 
 
+def _style(state: "AppState") -> dict:
+    """Presentation settings carried in every show/update payload (same reason
+    as `_show_clock`: the value rides with the frame it affects).
+
+      animate     False -> no Ken-Burns pan/zoom; the photo sits perfectly still
+      fit         "contain" -> the whole photo fits on screen, nothing cropped
+                  "cover"   -> fill the screen, cropping the overflow (default)
+    """
+    return {
+        "animate": bool(getattr(state, "photo_frame_animate", True)),
+        "fit": "contain" if getattr(state, "photo_frame_fit_contain", False) else "cover",
+    }
+
+
 def _video_available(state: "AppState") -> Optional[str]:
     """Return the cached video's sha256 if video mode is ON and a video has
     been downloaded (hash known), else None. `photo_frame_video_hash` is set
@@ -185,7 +199,7 @@ async def start_photo_frame(
             existing.last_hash = sha
             update_msg = {
                 "type": "photo_frame_update", "image": b64, "mime": mime,
-                "entity_id": entity, "show_clock": _show_clock(state),
+                "entity_id": entity, "show_clock": _show_clock(state), **_style(state),
             }
             await _push_to_rpi(state, update_msg)
             from .main import broadcast_to_ui
@@ -227,7 +241,7 @@ async def start_photo_frame(
     )
 
     msg = {"type": "show_photo_frame", "image": b64, "mime": mime,
-           "entity_id": entity, "show_clock": _show_clock(state)}
+           "entity_id": entity, "show_clock": _show_clock(state), **_style(state)}
     await _push_to_rpi(state, msg)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, msg)
@@ -270,7 +284,7 @@ async def _start_video_frame(state: "AppState", video_hash: str) -> Optional[dic
         return None
 
     show = {"type": "show_photo_frame_video", "src": VIDEO_SRC,
-            "hash": video_hash, "show_clock": _show_clock(state)}
+            "hash": video_hash, "show_clock": _show_clock(state), **_style(state)}
     await _push_to_rpi(state, show)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, show)
@@ -320,7 +334,7 @@ async def _on_state_changed(
     session.last_hash = sha
     session.media_item_id = _media_item_id(new_state)
     msg = {"type": "photo_frame_update", "image": b64, "mime": mime,
-           "entity_id": entity_id, "show_clock": _show_clock(state)}
+           "entity_id": entity_id, "show_clock": _show_clock(state), **_style(state)}
     await _push_to_rpi(state, msg)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, msg)
@@ -400,7 +414,7 @@ async def start_photo_frame_for_device(
             existing.last_hash = sha
             await send_to_device(state, token, {
                 "type": "photo_frame_update", "image": b64, "mime": mime,
-                "entity_id": entity, "show_clock": _show_clock(state),
+                "entity_id": entity, "show_clock": _show_clock(state), **_style(state),
             })
             return {"status": "already_active", "session": True}
         await stop_photo_frame_for_device(state, token, reason="entity_switch")
@@ -429,7 +443,7 @@ async def start_photo_frame_for_device(
     )
     ok = await send_to_device(state, token, {
         "type": "show_photo_frame", "image": b64, "mime": mime,
-        "entity_id": entity, "show_clock": _show_clock(state),
+        "entity_id": entity, "show_clock": _show_clock(state), **_style(state),
     })
     if not ok:
         await stop_photo_frame_for_device(state, token, reason="device_gone")
@@ -457,7 +471,7 @@ async def _on_device_state_changed(
     from .main import send_to_device
     await send_to_device(state, token, {
         "type": "photo_frame_update", "image": b64, "mime": mime,
-        "entity_id": entity_id, "show_clock": _show_clock(state),
+        "entity_id": entity_id, "show_clock": _show_clock(state), **_style(state),
     })
     if _faces_entity(state):
         await _push_device_faces(state, token, _clear_faces_msg())

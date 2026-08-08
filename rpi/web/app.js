@@ -485,6 +485,23 @@
         document.body.classList.toggle("pf-hide-clock", !show);
     }
 
+    // Presentation settings (server: photo_frame_animate / fit_contain). Like
+    // the clock they ride with every frame payload AND arrive as a live
+    // set_photo_frame_style, so a mid-frame change applies without a restart.
+    // Both are body classes the CSS keys off; photo_frame.js reads
+    // window.HALPhotoFrameAnimate() so it can skip the JS face animation too.
+    let pfAnimate = true;
+    function applyPhotoFrameStyle(msg) {
+        if (msg.animate !== undefined) {
+            pfAnimate = msg.animate !== false;
+            document.body.classList.toggle("pf-static", !pfAnimate);
+        }
+        if (msg.fit !== undefined) {
+            document.body.classList.toggle("pf-fit-contain", msg.fit === "contain");
+        }
+    }
+    window.HALPhotoFrameAnimate = () => pfAnimate;
+
     async function getPhotoFrame() {
         if (pfController) return pfController;
         if (!pfLoading) {
@@ -715,6 +732,13 @@
                 // live if a frame is already on screen.
                 applyPhotoFrameClock(msg.show !== false);
                 break;
+            case "set_photo_frame_style":
+                // Live animation/fit change. Body classes only, so it applies
+                // mid-frame with no restart; photo_frame.js re-reads the
+                // animate flag on the next crossfade.
+                applyPhotoFrameStyle(msg);
+                if (pfController && pfController.restyle) pfController.restyle();
+                break;
             case "themes_changed":
                 loadThemes().then(() => {
                     if (currentTheme && !themes.some(t => t.name === currentTheme)) {
@@ -824,6 +848,7 @@
                 // payload (a browser that reconnected late can't rely on the
                 // connect-time push), so apply it as the frame opens.
                 applyPhotoFrameClock(msg.show_clock !== false);
+                applyPhotoFrameStyle(msg);
                 if (pfVideoController) pfVideoController.dismiss("explicit").catch(() => {});
                 getPhotoFrame().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] show failed:", e));
@@ -833,6 +858,7 @@
                 pfProtectedTurn = true;
                 pfShowLayer("video");
                 applyPhotoFrameClock(msg.show_clock !== false);
+                applyPhotoFrameStyle(msg);
                 if (pfController) pfController.dismiss("explicit").catch(() => {});
                 getPhotoFrameVideo().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] video show failed:", e));
@@ -840,6 +866,7 @@
             case "photo_frame_update":
                 if (!photoFrameEnabled()) break;
                 if (msg.show_clock !== undefined) applyPhotoFrameClock(msg.show_clock !== false);
+                applyPhotoFrameStyle(msg);
                 if (pfController) pfController.update(msg);
                 break;
             case "hide_photo_frame":

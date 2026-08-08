@@ -1290,6 +1290,23 @@ body:not(.photo-frame-active) .photo-frame-stage {
     0%   { transform: scale(1)    translate(0, 0); }
     100% { transform: scale(1.12) translate(-1.5%, -1.5%); }
 }
+/* Server settings (photo_frame_animate / photo_frame_fit_contain), delivered
+   with every frame payload and on live change. `pf-static` must also clear the
+   transform: the face-aware pan is a Web Animations API animation, which JS
+   cancels, but a half-applied inline transform would otherwise stay behind. */
+body.pf-static .photo-frame-stage .pf-img {
+    animation: none !important;
+    transform: none !important;
+}
+/* Whole photo visible, nothing cropped. The stage's black backdrop letterboxes
+   whatever the aspect ratio doesn't fill. */
+body.pf-fit-contain .photo-frame-stage .pf-img,
+body.pf-fit-contain .photo-frame-stage .pf-video {
+    object-fit: contain;
+}
+@media (prefers-reduced-motion: reduce) {
+    .photo-frame-stage .pf-img.ken-burns { animation: none; }
+}
 /* Looping video frame — single fullscreen layer, no crossfade buffer.
    The stage's own opacity transition handles the fade in/out. */
 .photo-frame-stage .pf-video {

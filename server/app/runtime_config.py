@@ -37,6 +37,12 @@ DEFAULT_KEYS: dict[str, tuple[str, Any]] = {
     "photo_frame_video_url":     ("PHOTO_FRAME_VIDEO_URL", ""),
     "photo_frame_video_mode":    ("PHOTO_FRAME_VIDEO_MODE", False),
     "photo_frame_show_clock":    ("PHOTO_FRAME_SHOW_CLOCK", True),
+    # Ken-Burns pan/zoom (CSS + the face-aware JS animation). Off = photos sit
+    # perfectly still.
+    "photo_frame_animate":       ("PHOTO_FRAME_ANIMATE", True),
+    # True = object-fit:contain — the WHOLE photo fits on screen (letterboxed),
+    # nothing cropped. False keeps the default fill-and-crop (object-fit:cover).
+    "photo_frame_fit_contain":   ("PHOTO_FRAME_FIT_CONTAIN", False),
     "photo_frame_faces_entity":  ("PHOTO_FRAME_FACES_ENTITY", ""),
     "openclaw_enabled":          ("OPENCLAW_ENABLED", False),
     "openclaw_gateway_url":      ("OPENCLAW_GATEWAY_URL", ""),
