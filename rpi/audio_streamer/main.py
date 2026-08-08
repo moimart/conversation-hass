@@ -105,6 +105,9 @@ class AudioManager:
         # `update`s while the session is active, which a fresh page drops). Stored
         # as a `show_*` so the replay mounts the controller. None when no frame.
         self.last_photo_frame: dict | None = None
+        # Latest photo-frame presentation (animation/fit). Replayed on web-client
+        # connect: a page reload otherwise reverts to defaults until a frame opens.
+        self.last_photo_style: dict | None = None
 
         # Sendspin coordination: when a Sendspin stream is active on
         # the local daemon, hardware volume buttons target the MA
@@ -603,7 +606,9 @@ class AudioManager:
             elif msg_type == "hide_photo_frame":
                 self.last_photo_faces = None
                 self.last_photo_frame = None
-            elif msg_type == "set_photo_frame_style" and self.last_photo_frame:
+            elif msg_type == "set_photo_frame_style":
+                self.last_photo_style = msg
+            if msg_type == "set_photo_frame_style" and self.last_photo_frame:
                 # Fold a live style change into the cached frame, else a page
                 # reload would replay the frame with the pre-change style.
                 self.last_photo_frame = {
@@ -807,6 +812,9 @@ class AudioManager:
         await ws.send_json({"type": "volume_sync", "level": self.tts_volume})
         if self.last_weather:
             await ws.send_json(self.last_weather)
+        # Presentation first, so a re-mounted frame renders already styled.
+        if self.last_photo_style:
+            await ws.send_json(self.last_photo_style)
         # Re-mount the photo frame (if one is open) BEFORE its faces, so the
         # face boxes apply on top of the freshly-shown photo.
         if self.last_photo_frame:
