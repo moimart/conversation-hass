@@ -4,7 +4,18 @@ import { inlineMediaList } from "./media.js";
 import type { HalResolvedAccount } from "./types.js";
 
 const CHANNEL_ID = "hal" as const;
-const meta = { ...getChatChannelMeta(CHANNEL_ID) };
+// getChatChannelMeta only carries defaults for OpenClaw's BUNDLED channels, so
+// a third-party channel like ours arrives with label/selectionLabel/docsPath/
+// blurb missing. Since 2026.7 the gateway logs "registered incomplete metadata"
+// and back-fills placeholders; supplying them keeps our own naming in the
+// channel picker and control UI instead.
+const meta = {
+  ...getChatChannelMeta(CHANNEL_ID),
+  label: "PAL",
+  selectionLabel: "PAL kiosk",
+  blurb: "Voice assistant kiosk — speaks agent replies aloud and shows media on the orb.",
+  docsPath: "https://github.com/moimart/conversation-hass/tree/main/openclaw-channel/hal",
+};
 
 function resolveHalAccount(
   cfg: any,

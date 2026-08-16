@@ -2,15 +2,17 @@
   "name": "@openclaw/hal",
   "version": "1.0.0",
   "type": "module",
-  "description": "OpenClaw channel plugin for HAL voice assistant kiosk",
+  "description": "OpenClaw channel plugin for the PAL voice assistant kiosk",
   "license": "MIT",
   "openclaw": {
-    "extensions": ["./dist/index.js"],
+    "extensions": [
+      "./dist/index.js"
+    ],
     "setupEntry": "./dist/setup-entry.js",
     "channel": {
       "id": "hal",
-      "label": "HAL Kiosk",
-      "blurb": "Connect OpenClaw to a HAL voice assistant kiosk."
+      "label": "PAL",
+      "blurb": "Connect OpenClaw to a PAL voice assistant kiosk."
     }
   },
   "scripts": {
