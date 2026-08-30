@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>MinimumOSVersion</key>
 	<string>10.0</string>
 	<key>MinimumOSVersion~ipad</key>
@@ -29,12 +29,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>PAL finds your home server on the local network so you don't have to type its address.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_pal._tcp</string>
 	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>PAL finds your home server on the local network so you don't have to type its address.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>PAL listens while you speak a command.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
