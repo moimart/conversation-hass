@@ -476,6 +476,33 @@ async def _fetch_ha_image_entity(entity_id: str) -> tuple[bytes, str] | None:
     return await _fetch_image_url(f"{ha_url}/api/image_proxy/{entity_id}")
 
 
+async def _fetch_ha_entity_attrs(entity_id: str) -> dict | None:
+    """Read one entity's attributes from HA's REST API.
+
+    Used for metadata the image bytes don't carry (e.g. the photo frame's
+    `taken_at`). Returns None when HA isn't configured or the read fails —
+    callers treat that as "no metadata" rather than an error.
+    """
+    ha_url = os.environ.get("HA_URL", "").strip().rstrip("/")
+    ha_token = os.environ.get("HA_TOKEN", "").strip()
+    if not ha_url or not ha_token:
+        return None
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                f"{ha_url}/api/states/{entity_id}",
+                headers={"Authorization": f"Bearer {ha_token}"},
+            )
+            r.raise_for_status()
+            data = r.json()
+        attrs = data.get("attributes") if isinstance(data, dict) else None
+        return attrs if isinstance(attrs, dict) else None
+    except Exception as e:
+        log.debug(f"HA state fetch failed for {entity_id}: {e}")
+        return None
+
+
 async def apply_theme(state: AppState, theme: str) -> bool:
     """Update server-side theme and push to RPi web UI."""
     if not _is_valid_theme(state, theme):

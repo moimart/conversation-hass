@@ -485,6 +485,34 @@
         document.body.classList.toggle("pf-hide-clock", !show);
     }
 
+    // Date the photo was taken — rendered bottom-right inside the stage as
+    // "Month YYYY" (e.g. "December 2021"). The server sends `taken_at` (ISO)
+    // with every frame payload; entities that don't publish it (cameras, most
+    // image.* sensors) send "" and we simply render nothing.
+    const PF_MONTHS = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ];
+    function formatTakenAt(iso) {
+        if (!iso || typeof iso !== "string") return "";
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return "";     // unparseable -> no caption
+        return `${PF_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    function applyPhotoFrameTakenAt(msg) {
+        if (!("taken_at" in msg)) return;      // older server / unrelated message
+        const root = document.getElementById("photo-frame-root");
+        if (!root) return;
+        let el = document.getElementById("pf-taken");
+        if (!el) {
+            el = document.createElement("div");
+            el.id = "pf-taken";
+            el.className = "pf-taken";
+            root.appendChild(el);
+        }
+        el.textContent = formatTakenAt(msg.taken_at);
+    }
+
     // Presentation settings (server: photo_frame_animate / fit_contain). Like
     // the clock they ride with every frame payload AND arrive as a live
     // set_photo_frame_style, so a mid-frame change applies without a restart.
@@ -737,6 +765,7 @@
                 // mid-frame with no restart; photo_frame.js re-reads the
                 // animate flag on the next crossfade.
                 applyPhotoFrameStyle(msg);
+                applyPhotoFrameTakenAt(msg);
                 if (pfController && pfController.restyle) pfController.restyle();
                 break;
             case "themes_changed":
@@ -849,6 +878,7 @@
                 // connect-time push), so apply it as the frame opens.
                 applyPhotoFrameClock(msg.show_clock !== false);
                 applyPhotoFrameStyle(msg);
+                applyPhotoFrameTakenAt(msg);
                 if (pfVideoController) pfVideoController.dismiss("explicit").catch(() => {});
                 getPhotoFrame().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] show failed:", e));
@@ -859,6 +889,7 @@
                 pfShowLayer("video");
                 applyPhotoFrameClock(msg.show_clock !== false);
                 applyPhotoFrameStyle(msg);
+                applyPhotoFrameTakenAt(msg);
                 if (pfController) pfController.dismiss("explicit").catch(() => {});
                 getPhotoFrameVideo().then((pf) => pf.show(msg))
                     .catch((e) => console.error("[photo-frame] video show failed:", e));
@@ -867,6 +898,7 @@
                 if (!photoFrameEnabled()) break;
                 if (msg.show_clock !== undefined) applyPhotoFrameClock(msg.show_clock !== false);
                 applyPhotoFrameStyle(msg);
+                applyPhotoFrameTakenAt(msg);
                 if (pfController) pfController.update(msg);
                 break;
             case "hide_photo_frame":

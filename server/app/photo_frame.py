@@ -52,6 +52,9 @@ class PhotoFrameSession:
     # the (separately-arriving, possibly-delayed) faces sensor with this photo
     # so late face boxes never land on the next image. "" when unknown.
     media_item_id: str = ""
+    # ISO timestamp the photo was taken (gphotos `taken_at`), "" when the
+    # entity doesn't publish one (cameras, other image sensors).
+    taken_at: str = ""
 
 
 @dataclass
@@ -91,6 +94,35 @@ def _style(state: "AppState") -> dict:
         "animate": bool(getattr(state, "photo_frame_animate", True)),
         "fit": "contain" if getattr(state, "photo_frame_fit_contain", False) else "cover",
     }
+
+
+def _taken_at_value(attrs: Optional[dict]) -> str:
+    """Normalize the `taken_at` attribute to a string.
+
+    Entirely optional: gphotos publishes it, but plain cameras and other
+    image.* sensors do not — those simply get "" and the caption is skipped
+    client-side rather than showing a placeholder.
+    """
+    if not isinstance(attrs, dict):
+        return ""
+    return str(attrs.get("taken_at") or "").strip()
+
+
+async def _resolve_taken_at(entity_id: str, new_state: Optional[dict] = None) -> str:
+    """`taken_at` for an entity, free when we already hold its state.
+
+    A state_changed blob carries the attributes, so the event paths cost
+    nothing; opening a frame has no such blob and falls back to one REST read.
+    Any failure degrades to "" (no caption) — never blocks showing the photo.
+    """
+    if new_state is not None:
+        return _taken_at_value((new_state or {}).get("attributes"))
+    try:
+        from .main import _fetch_ha_entity_attrs
+        return _taken_at_value(await _fetch_ha_entity_attrs(entity_id))
+    except Exception as e:
+        log.debug(f"taken_at lookup failed for {entity_id}: {e}")
+        return ""
 
 
 def _video_available(state: "AppState") -> Optional[str]:
@@ -193,13 +225,17 @@ async def start_photo_frame(
     # entity, just push the freshly-fetched image as an update so the
     # kiosk crossfades to it (the entity may have rotated since the
     # previous session started).
+    taken_at = await _resolve_taken_at(entity)
+
     existing: Optional[PhotoFrameSession] = state.photo_frame_session
     if existing is not None:
         if existing.entity_id == entity:
             existing.last_hash = sha
+            existing.taken_at = taken_at
             update_msg = {
                 "type": "photo_frame_update", "image": b64, "mime": mime,
-                "entity_id": entity, "show_clock": _show_clock(state), **_style(state),
+                "entity_id": entity, "show_clock": _show_clock(state),
+                "taken_at": taken_at, **_style(state),
             }
             await _push_to_rpi(state, update_msg)
             from .main import broadcast_to_ui
@@ -237,11 +273,12 @@ async def start_photo_frame(
             sub_id = None
 
     state.photo_frame_session = PhotoFrameSession(
-        entity_id=entity, sub_id=sub_id, last_hash=sha,
+        entity_id=entity, sub_id=sub_id, last_hash=sha, taken_at=taken_at,
     )
 
     msg = {"type": "show_photo_frame", "image": b64, "mime": mime,
-           "entity_id": entity, "show_clock": _show_clock(state), **_style(state)}
+           "entity_id": entity, "show_clock": _show_clock(state),
+           "taken_at": taken_at, **_style(state)}
     await _push_to_rpi(state, msg)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, msg)
@@ -283,8 +320,11 @@ async def _start_video_frame(state: "AppState", video_hash: str) -> Optional[dic
     if not synced:
         return None
 
+    # taken_at is explicitly "" so switching photos -> video clears any
+    # caption left over from the last photo.
     show = {"type": "show_photo_frame_video", "src": VIDEO_SRC,
-            "hash": video_hash, "show_clock": _show_clock(state), **_style(state)}
+            "hash": video_hash, "show_clock": _show_clock(state),
+            "taken_at": "", **_style(state)}
     await _push_to_rpi(state, show)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, show)
@@ -333,8 +373,10 @@ async def _on_state_changed(
         return
     session.last_hash = sha
     session.media_item_id = _media_item_id(new_state)
+    session.taken_at = await _resolve_taken_at(entity_id, new_state)
     msg = {"type": "photo_frame_update", "image": b64, "mime": mime,
-           "entity_id": entity_id, "show_clock": _show_clock(state), **_style(state)}
+           "entity_id": entity_id, "show_clock": _show_clock(state),
+           "taken_at": session.taken_at, **_style(state)}
     await _push_to_rpi(state, msg)
     from .main import broadcast_to_ui
     await broadcast_to_ui(state, msg)
@@ -408,13 +450,17 @@ async def start_photo_frame_for_device(
         return {"status": "fetch_failed", "session": False}
     b64, mime, sha = fetched
 
+    taken_at = await _resolve_taken_at(entity)
+
     existing: Optional[PhotoFrameSession] = state.satellite_photo_sessions.get(token)
     if existing is not None:
         if existing.entity_id == entity:
             existing.last_hash = sha
+            existing.taken_at = taken_at
             await send_to_device(state, token, {
                 "type": "photo_frame_update", "image": b64, "mime": mime,
-                "entity_id": entity, "show_clock": _show_clock(state), **_style(state),
+                "entity_id": entity, "show_clock": _show_clock(state),
+                "taken_at": taken_at, **_style(state),
             })
             return {"status": "already_active", "session": True}
         await stop_photo_frame_for_device(state, token, reason="entity_switch")
@@ -439,11 +485,12 @@ async def start_photo_frame_for_device(
             sub_id = None
 
     state.satellite_photo_sessions[token] = PhotoFrameSession(
-        entity_id=entity, sub_id=sub_id, last_hash=sha,
+        entity_id=entity, sub_id=sub_id, last_hash=sha, taken_at=taken_at,
     )
     ok = await send_to_device(state, token, {
         "type": "show_photo_frame", "image": b64, "mime": mime,
-        "entity_id": entity, "show_clock": _show_clock(state), **_style(state),
+        "entity_id": entity, "show_clock": _show_clock(state),
+        "taken_at": taken_at, **_style(state),
     })
     if not ok:
         await stop_photo_frame_for_device(state, token, reason="device_gone")
@@ -468,10 +515,12 @@ async def _on_device_state_changed(
         return
     session.last_hash = sha
     session.media_item_id = _media_item_id(new_state)
+    session.taken_at = await _resolve_taken_at(entity_id, new_state)
     from .main import send_to_device
     await send_to_device(state, token, {
         "type": "photo_frame_update", "image": b64, "mime": mime,
-        "entity_id": entity_id, "show_clock": _show_clock(state), **_style(state),
+        "entity_id": entity_id, "show_clock": _show_clock(state),
+        "taken_at": session.taken_at, **_style(state),
     })
     if _faces_entity(state):
         await _push_device_faces(state, token, _clear_faces_msg())
