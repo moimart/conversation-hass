@@ -72,6 +72,16 @@ def fake_fetch(monkeypatch):
         return getattr(state, "ha_ws", None)
     fake_main._ensure_ha_ws = ensure_ha_ws
 
+    # Entity attributes (for the optional `taken_at`). Tests populate
+    # `_attrs_by_entity`; anything absent resolves to None like a real HA read
+    # of an entity that publishes no such attribute.
+    fake_main._attrs_by_entity = {}
+
+    async def fetch_attrs(entity_id):
+        return fake_main._attrs_by_entity.get(entity_id)
+
+    fake_main._fetch_ha_entity_attrs = fetch_attrs
+
     monkeypatch.setitem(sys.modules, "server.app.main", fake_main)
     return fake_main
 
@@ -612,3 +622,88 @@ async def test_faces_event_stale_media_id_is_skipped():
              "media_item_id": "OTHER", "faces": [{"x": 0.1, "y": 0.2, "w": 0.1, "h": 0.1}]}
     await photo_frame._handle_faces_event(state, session, {"attributes": attrs}, push)
     assert pushed == []     # faces belong to a different photo
+
+
+# ---------------------------------------------------------------------------
+# taken_at — the optional "when was this photo taken" caption
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("attrs,expected", [
+    ({"taken_at": "2021-12-01T12:48:57Z"}, "2021-12-01T12:48:57Z"),
+    ({"taken_at": "  2021-12-01T12:48:57Z  "}, "2021-12-01T12:48:57Z"),
+    ({}, ""),                     # entity publishes no such attribute
+    ({"taken_at": None}, ""),
+    ({"taken_at": ""}, ""),
+    (None, ""),                   # no attributes at all
+    ("not-a-dict", ""),
+])
+def test_taken_at_value_handles_missing_and_junk(attrs, expected):
+    """Cameras and most image.* sensors don't publish taken_at — every one of
+    those shapes must degrade to "" (no caption) rather than raise."""
+    assert photo_frame._taken_at_value(attrs) == expected
+
+
+@pytest.mark.asyncio
+async def test_resolve_taken_at_prefers_the_state_blob(fake_fetch):
+    """A state_changed blob already carries the attributes, so a rotation must
+    read them directly instead of paying for another HA round-trip."""
+    fake_fetch._attrs_by_entity["image.x"] = {"taken_at": "1999-01-01T00:00:00Z"}
+    new_state = {"attributes": {"taken_at": "2021-12-01T12:48:57Z"}}
+    got = await photo_frame._resolve_taken_at("image.x", new_state)
+    assert got == "2021-12-01T12:48:57Z"      # from the blob, not the REST stub
+
+
+@pytest.mark.asyncio
+async def test_resolve_taken_at_falls_back_to_a_state_read(fake_fetch):
+    fake_fetch._attrs_by_entity["image.x"] = {"taken_at": "2021-12-01T12:48:57Z"}
+    assert await photo_frame._resolve_taken_at("image.x") == "2021-12-01T12:48:57Z"
+
+
+@pytest.mark.asyncio
+async def test_resolve_taken_at_survives_a_failing_lookup(fake_fetch):
+    """A metadata read must never take the photo down with it."""
+    async def boom(entity_id):
+        raise RuntimeError("HA unreachable")
+    fake_fetch._fetch_ha_entity_attrs = boom
+    assert await photo_frame._resolve_taken_at("image.x") == ""
+
+
+@pytest.mark.asyncio
+async def test_show_payload_carries_taken_at(fake_fetch):
+    fake_fetch._attrs_by_entity["image.weather_radar"] = {
+        "taken_at": "2021-12-01T12:48:57Z"}
+    state = _state(configured_entity="image.weather_radar")
+    await photo_frame.start_photo_frame(state)
+    assert _pushed(state, "show_photo_frame")["taken_at"] == "2021-12-01T12:48:57Z"
+    assert state.photo_frame_session.taken_at == "2021-12-01T12:48:57Z"
+
+
+@pytest.mark.asyncio
+async def test_show_payload_taken_at_empty_when_entity_lacks_it(fake_fetch):
+    """The key is always present so the client can distinguish "no date" from
+    "old server"; it is simply empty and the client renders no caption."""
+    state = _state(configured_entity="image.weather_radar")   # no attrs registered
+    await photo_frame.start_photo_frame(state)
+    msg = _pushed(state, "show_photo_frame")
+    assert msg["taken_at"] == ""
+
+
+@pytest.mark.asyncio
+async def test_video_payload_clears_taken_at(fake_fetch):
+    """Switching photos -> video must not leave the last photo's caption up."""
+    state = _state(configured_entity="image.weather_radar",
+                   video_mode=True, video_hash="abc123")
+    await photo_frame.start_photo_frame(state)
+    assert _pushed(state, "show_photo_frame_video")["taken_at"] == ""
+
+
+@pytest.mark.asyncio
+async def test_satellite_show_payload_carries_taken_at(fake_fetch):
+    fake_fetch._attrs_by_entity["image.weather_radar"] = {
+        "taken_at": "2018-06-15T09:00:00Z"}
+    state = _state(configured_entity="image.weather_radar")
+    state.satellite_photo_sessions = {}
+    await photo_frame.start_photo_frame_for_device(state, "tok-1")
+    sent = [c.args[2] for c in fake_fetch.send_to_device.await_args_list]
+    show = next(m for m in sent if m.get("type") == "show_photo_frame")
+    assert show["taken_at"] == "2018-06-15T09:00:00Z"
