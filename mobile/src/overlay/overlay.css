@@ -299,3 +299,12 @@ body.show-mirror .hal-input-bar { display: none; }   /* mirror owns the screen *
     0%, 100% { box-shadow: 0 0 0 0 rgba(224, 85, 69, 0.5); }
     50% { box-shadow: 0 0 0 10px rgba(224, 85, 69, 0); }
 }
+
+/* Photo-frame "taken at" caption: on the phone the input bar owns the bottom of
+   the screen (it stays up during photo mode — only intercom/mirror hide it), so
+   the kiosk's bottom:28px would put the date behind it. Lift it above the bar:
+   10px top padding + 44px input + 10px bottom padding = 64px, plus the safe-area
+   inset and a 16px gap. Same inset pattern as .mirror-shutter. */
+.photo-frame-stage .pf-taken {
+    bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--hal-inset-bottom, 0px)) + 80px);
+}
