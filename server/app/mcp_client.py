@@ -243,9 +243,24 @@ class MultiMCPClient:
     def __init__(self):
         self._clients: dict[str, MCPClient] = {}  # name → client
         self._tool_to_server: dict[str, str] = {}  # tool_name → server_name
+        # Servers whose connect failed, kept so `retry_failed` can reconnect
+        # them later: name → kwargs for add_server.
+        self._failed: dict[str, dict] = {}
+
+    @property
+    def failed_servers(self) -> list[str]:
+        """Names of configured servers that are currently NOT connected."""
+        return sorted(self._failed)
 
     async def add_server(self, name: str, url: str = "", command: str = "", args: list[str] | None = None, env: dict[str, str] | None = None):
-        """Connect to an MCP server (HTTP or stdio) and register its tools."""
+        """Connect to an MCP server (HTTP or stdio) and register its tools.
+
+        A failure is recorded rather than forgotten: `retry_failed` reconnects
+        it later. A transient blip while this server boots used to disable that
+        MCP's tools until somebody noticed and restarted the container — and
+        because callers guard with `"tool" in tool_names`, the symptom is
+        silence (no weather, no theme scheduling), not an error.
+        """
         client = MCPClient(server_url=url, command=command, args=args, env=env)
         desc = url or f"{command} {' '.join(args or [])}"
         try:
@@ -256,9 +271,24 @@ class MultiMCPClient:
                     existing = self._tool_to_server[tool_name]
                     log.warning(f"Tool '{tool_name}' from '{name}' shadows same tool from '{existing}'")
                 self._tool_to_server[tool_name] = name
+            self._failed.pop(name, None)
             log.info(f"MCP server '{name}' ({client.transport_type}): {len(client.tool_names)} tools from {desc}")
+            return True
         except Exception as e:
-            log.error(f"Failed to connect to MCP server '{name}' ({desc}): {e}")
+            self._failed[name] = {"url": url, "command": command, "args": args, "env": env}
+            log.error(f"Failed to connect to MCP server '{name}' ({desc}): {e} "
+                      f"— its tools are unavailable; will retry")
+            return False
+
+    async def retry_failed(self) -> list[str]:
+        """Re-attempt every server that isn't connected. Returns those recovered."""
+        recovered = []
+        for name, kw in list(self._failed.items()):
+            if await self.add_server(name, **kw):
+                recovered.append(name)
+        if recovered:
+            log.info(f"MCP reconnected: {recovered} (total tools now {len(self.tool_names)})")
+        return recovered
 
     def register_client(self, name: str, client) -> None:
         """Register an already-initialized client (e.g. LocalToolsClient).

@@ -64,6 +64,10 @@ async def health(request: Request):
         "status": "ok",
         "pipeline_ready": state.pipeline is not None,
         "mcp_connected": state.mcp_client is not None and len(state.mcp_client.tool_names) > 0,
+        # Configured servers that are NOT connected. mcp_connected stays true
+        # while ANY server has tools, so on its own it hid a total loss of the
+        # HA tools behind the local/web-search ones still being present.
+        "mcp_failed_servers": list(getattr(state.mcp_client, "failed_servers", []) or []),
         "tts_available": state.tts_engine is not None,
         "memory_available": state.memory_client is not None and state.memory_client.available,
         "openclaw_enabled": state.openclaw_enabled,

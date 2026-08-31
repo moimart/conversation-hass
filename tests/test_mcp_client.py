@@ -283,3 +283,47 @@ class TestMCPClientDisconnect:
                 await client.connect()
         assert client._session is None
         assert client.tool_names == []
+
+
+class TestMultiMCPReconnect:
+    """A failed server must be remembered and retried — losing the HA MCP at
+    boot silently disabled weather + theme scheduling until a human restarted
+    the container (they guard with `"ha_get_state" in tool_names`)."""
+
+    @pytest.mark.asyncio
+    async def test_failed_server_is_recorded_not_forgotten(self):
+        from server.app.mcp_client import MultiMCPClient
+        multi = MultiMCPClient()
+        with patch("server.app.mcp_client.streamablehttp_client",
+                   side_effect=RuntimeError("502 Bad Gateway")):
+            ok = await multi.add_server("home-assistant", url="http://fake")
+        assert ok is False
+        assert multi.failed_servers == ["home-assistant"]
+        assert multi.tool_names == []
+
+    @pytest.mark.asyncio
+    async def test_retry_failed_recovers_and_clears(self):
+        from server.app.mcp_client import MultiMCPClient
+        multi = MultiMCPClient()
+        with patch("server.app.mcp_client.streamablehttp_client",
+                   side_effect=RuntimeError("boom")):
+            await multi.add_server("home-assistant", url="http://fake")
+        assert multi.failed_servers == ["home-assistant"]
+
+        transport = _RecordingCM(aenter_result=(AsyncMock(), AsyncMock(), None))
+        session = _FakeSession(_tools_result("ha_get_state"))
+        with patch("server.app.mcp_client.streamablehttp_client", return_value=transport), \
+             patch("server.app.mcp_client.ClientSession", return_value=session):
+            recovered = await multi.retry_failed()
+
+        assert recovered == ["home-assistant"]
+        assert multi.failed_servers == []          # no longer retried
+        assert "ha_get_state" in multi.tool_names  # the guard callers use
+        await multi._clients["home-assistant"].disconnect()
+
+    @pytest.mark.asyncio
+    async def test_retry_is_a_noop_when_nothing_failed(self):
+        from server.app.mcp_client import MultiMCPClient
+        multi = MultiMCPClient()
+        assert await multi.retry_failed() == []
+        assert multi.failed_servers == []

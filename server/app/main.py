@@ -91,6 +91,7 @@ class AppState:
     # replay to (re)connecting clients) and the poller task.
     current_weather: dict | None = None
     weather_task: object | None = None
+    mcp_retry_task: object | None = None
     # Face-aware Ken Burns: last photo_faces pushed to the KIOSK (for replay to
     # a (re)connecting kiosk/web client). None when no frame / no faces.
     current_photo_faces: dict | None = None
@@ -476,6 +477,31 @@ async def _fetch_ha_image_entity(entity_id: str) -> tuple[bytes, str] | None:
     return await _fetch_image_url(f"{ha_url}/api/image_proxy/{entity_id}")
 
 
+MCP_RETRY_MINUTES = 5
+
+
+async def _mcp_reconnect_loop(state: AppState) -> None:
+    """Reconnect MCP servers that failed to come up.
+
+    A blip while the HA MCP endpoint restarts used to cost every HA tool until
+    someone restarted the container, and it fails SILENTLY: callers guard with
+    `"ha_get_state" in tool_names`, so the weather just stops and the theme
+    scheduler warns into the log. Retrying makes that self-heal.
+    """
+    while True:
+        try:
+            await asyncio.sleep(MCP_RETRY_MINUTES * 60)
+            client = getattr(state, "mcp_client", None)
+            if client is None or not getattr(client, "failed_servers", None):
+                continue
+            await client.retry_failed()
+        except asyncio.CancelledError:
+            log.info("MCP reconnect loop cancelled")
+            return
+        except Exception as e:
+            log.error(f"MCP reconnect loop error: {e}")
+
+
 async def _fetch_ha_entity_attrs(entity_id: str) -> dict | None:
     """Read one entity's attributes from HA's REST API.
 
@@ -835,6 +861,9 @@ async def lifespan(app: FastAPI):
     else:
         state.theme_scheduler_task = None
 
+    # Reconnect any MCP server that failed at boot (see _mcp_reconnect_loop).
+    state.mcp_retry_task = asyncio.create_task(_mcp_reconnect_loop(state))
+
     # Weather under the clock — runs always; no-op (hidden) until a weather
     # entity is configured and the toggle is on.
     from . import weather as _weather
@@ -900,6 +929,8 @@ async def lifespan(app: FastAPI):
         state.theme_scheduler_task.cancel()
     if getattr(state, "weather_task", None):
         state.weather_task.cancel()
+    if getattr(state, "mcp_retry_task", None):
+        state.mcp_retry_task.cancel()
     if state.active_stream:
         await _stop_active_stream(state, notify_kiosk=False)
     if isinstance(state.ha_ws, HAWSClient):
