@@ -3,7 +3,7 @@ pytest-asyncio==0.24.0
 pytest-cov==6.0.0
 numpy==1.26.4
 httpx==0.28.1
-mcp>=1.0.0
+mcp==1.27.2
 # Runtime deps needed to import server.app.main and rpi.audio_streamer at test
 # time. Tests mock the heavy services (Wyoming, Ollama, MCP servers, audio
 # devices) but the modules themselves still import these at module load.
