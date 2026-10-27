@@ -101,6 +101,7 @@
         }
     }
 
+    let dispatchingResize = false;
     function applyOrientation(orientation, orbSide) {
         // The mobile shell pins landscape (no wrapper rotation) so the kiosk's
         // configured portrait mounting doesn't render the phone UI sideways.
@@ -148,7 +149,13 @@
 
         // Effects listen for window resize to re-size their canvases.
         // Wrapper dimension changes don't trigger that, so fire it manually.
-        window.dispatchEvent(new Event("resize"));
+        // Guarded: our own resize listener calls applyOrientation, so an
+        // unguarded dispatch recursed until the stack overflowed.
+        if (!dispatchingResize) {
+            dispatchingResize = true;
+            try { window.dispatchEvent(new Event("resize")); }
+            finally { dispatchingResize = false; }
+        }
     }
 
     async function applyTheme(name) {
@@ -319,6 +326,7 @@
 
     // Reapply wrapper dimensions on resize (e.g., if Chromium resizes).
     window.addEventListener("resize", () => {
+        if (dispatchingResize) return;  // our own synthetic event
         applyOrientation(
             localStorage.getItem(ORIENTATION_KEY) || "landscape",
             localStorage.getItem(ORB_SIDE_KEY) || "left"
@@ -336,6 +344,7 @@
             connectionEl.className = "connection-indicator connected";
             connectionEl.querySelector("span").textContent = "CONNECTED";
             clearTimeout(reconnectTimer);
+            halWsListeners.forEach((l) => { try { l.onOpen && l.onOpen(); } catch (e) { console.error(e); } });
         };
 
         ws.onclose = () => {
@@ -352,14 +361,38 @@
         };
 
         ws.onmessage = (event) => {
+            let msg;
             try {
-                const msg = JSON.parse(event.data);
-                handleMessage(msg);
+                msg = JSON.parse(event.data);
             } catch (e) {
                 console.error("Failed to parse message:", e);
+                return;
+            }
+            // ha_* messages belong to the satellite card layer (mobile/src/ha),
+            // which listens through window.HALWs; the display ignores them.
+            if (typeof msg.type === "string" && msg.type.startsWith("ha_")) {
+                halWsListeners.forEach((l) => { try { l.onMessage && l.onMessage(msg); } catch (e) { console.error(e); } });
+                return;
+            }
+            try {
+                handleMessage(msg);
+            } catch (e) {
+                console.error("Failed to handle message:", e);
             }
         };
     }
+
+    // Shared access to this socket for satellite-only layers (the HA card
+    // layer). Inert on the kiosk: nothing registers a listener there.
+    const halWsListeners = new Set();
+    window.HALWs = {
+        send(msg) {
+            if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify(msg)); return true; }
+            return false;
+        },
+        isOpen() { return !!ws && ws.readyState === WebSocket.OPEN; },
+        listen(listener) { halWsListeners.add(listener); return () => halWsListeners.delete(listener); },
+    };
 
     function scheduleReconnect() {
         clearTimeout(reconnectTimer);
