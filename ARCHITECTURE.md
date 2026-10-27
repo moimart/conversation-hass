@@ -21,6 +21,7 @@ and [`MQTT.md`](./MQTT.md). For theme authoring see
 - [Conversation log](#conversation-log)
 - [Voice timers](#voice-timers)
 - [Mobile satellites & pairing](#mobile-satellites--pairing)
+- [Satellite HA cards + layouts](#satellite-ha-cards--layouts)
 - [Satellite gateway (remote access)](#satellite-gateway-remote-access)
 - [Push notifications](#push-notifications)
 - [Live runtime config](#live-runtime-config)
@@ -451,6 +452,32 @@ quiet** (like a satellite).
 
 Build/deploy gotchas (watchOS portal registration + tunnel flakiness; Wear adb
 quirks) live in `mobile/README.md`.
+
+---
+
+## Satellite HA cards + layouts
+
+Satellites can place Home Assistant Lovelace cards on their display and move
+the orb, clock, transcript and response, with separate portrait and landscape
+layouts stored per device on the server. Ported from the docker-home launcher.
+
+- **Server** — `ha_bridge.py` owns ONE dedicated HA WebSocket (its own
+  reconnect loop; never `state.ha_ws`, so WebRTC streaming and the photo frame
+  are unaffected) with a full state cache. Each satellite *retains* the entity
+  ids on its screen over `/ws/ui` (`ha_retain`) and gets only those changes;
+  relayed subscriptions keep a bridge-local id across HA reconnects. Reads and
+  service calls go through `/api/ha/*` (`routes_ha.py`, `ha` scope);
+  `/local` + `/hacsfiles` are proxied for custom-card scripts. Layouts live in
+  `layouts.py` (`runtime/satellite_layouts.json`, keyed by public id).
+- **App** — `mobile/src/ha` renders every built-in card type natively in the
+  PAL theme (each card re-renders only on its own entities) and runs HACS
+  `custom:` cards with a bridge-backed `hass`. `mobile/src/layout` lays items
+  on a square-cell grid (6 portrait / 12 landscape columns) between the gear
+  row and the input bar; the orb is positioned + scaled in place, never moved
+  in the DOM. No saved layout = the stock phone look. Settings → Layout opens
+  the drag/resize editor (cards from a dashboard, an entity search, or YAML).
+- **Remote** — the gateway allowlists all of it, *including service calls*: a
+  paired token can control HA entities directly, not only through the LLM.
 
 ---
 

@@ -48,6 +48,7 @@ the hub UI.
 - [Photo frame](#photo-frame)
   - [`POST /api/photo_frame/start`](#post-apiphoto_framestart)
   - [`POST /api/photo_frame/end`](#post-apiphoto_frameend)
+- [Satellite HA cards + layouts](#satellite-ha-cards--layouts)
 - [Themes](#themes)
   - [`GET /api/themes`](#get-apithemes)
   - [`GET /themes/{name}/{filename}`](#get-themesnamefilename)
@@ -122,7 +123,8 @@ Pairing tokens carry a **scope** that bounds what they may do *server-side*
 server). `full` — phones, and every token issued before scopes existed —
 is unrestricted. `watch` — the Apple Watch + Pixel Watch companions — may use
 **only** `POST /api/command`, `GET /api/pair/status`, and
-`POST /api/pair/push-register`; anything else returns `403` (or close code
+`POST /api/pair/push-register`; anything else (including the `ha` and
+`layout` permissions behind the satellite card routes) returns `403` (or close code
 `4403` on `/ws/ui` — a scoped token is never downgraded to a tokenless
 mirror). Unknown scopes deny everything.
 
@@ -713,6 +715,63 @@ curl -XPOST http://hal:8765/api/photo_frame/end
 
 ---
 
+## Satellite HA cards + layouts
+
+A paired phone/tablet can place Home Assistant Lovelace cards on its display
+and move/resize the orb, clock, transcript and response — with separate
+portrait and landscape layouts. The card layer lives in the app
+(`mobile/src/ha`, `mobile/src/layout`); the server side is
+`server/app/ha_bridge.py` (one dedicated, self-reconnecting HA WebSocket)
+and `server/app/routes_ha.py`. The HA token never leaves the server.
+
+All routes need a `full` token (`Authorization: Bearer`); `watch` → `403`.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET`  | `/api/ha/status` | `{configured, connected, entities}` |
+| `GET`  | `/api/ha/bootstrap` | `{config, registry, resources}` (5 min cache); `503` while HA is down |
+| `POST` | `/api/ha/ws` | `{msg}` → `{result}`. A card's `hass.callWS`: **read-only allowlist** (`get_config`, history/statistics, registries, `lovelace/*` reads, …) plus `call_service`; anything else `403` |
+| `POST` | `/api/ha/service` | `{domain, service, data, target}` → `{ok}`. Logged with the device name |
+| `GET`  | `/api/ha/entities?q=&domain=` | search, ≤ 80 results |
+| `GET`  | `/api/ha/history?e=a,b&hours=24` | ≤ 10 entities, 1–168 h |
+| `POST` | `/api/ha/template` | `{template}` → `{text}` |
+| `GET`  | `/api/ha/forecast?e=weather.x&type=daily` | |
+| `GET`  | `/api/ha/dashboards` | `[{url_path, title}]` (default first) |
+| `GET`  | `/api/ha/cards?dashboard=` | every card of a dashboard: `[{path, type, title, card}]` |
+| `GET`  | `/api/ha/proxy?path=/api/camera_proxy/…` | camera / media art / `image_proxy` only. Accepts `?token=` (for `<img>`) |
+| `GET`  | `/local/*`, `/hacsfiles/*` | HA's static files for custom cards. **No token** (module scripts can't send one; HA serves them unauthenticated too). Traversal rejected after decoding |
+| `GET` `PUT` `DELETE` | `/api/satellite/layout` | this device's layout (below) |
+
+**Live state** rides the device's `/ws/ui` socket, not HTTP:
+
+| Direction | Message |
+|---|---|
+| → | `{"type":"ha_retain","ids":[…]}` — the entities on screen (replaces the set) |
+| ← | `{"type":"ha_states","states":{id: state\|null},"connected":bool}` then `{"type":"ha_state","states":{…}}` per change, only for retained ids |
+| → | `{"type":"ha_subscribe","req":n,"msg":{…}}` — `render_template`, `weather/subscribe_forecast`, `history/stream`, `logbook/event_stream`, `subscribe_entities`, `energy/solar_forecast` |
+| ← | `{"type":"ha_subscribed","req":n,"sub":id}` (or `error`), then `{"type":"ha_sub","sub":id,"event":…}` |
+| → | `{"type":"ha_unsubscribe","sub":id}` |
+
+Everything a device holds is released when its socket closes.
+
+**Layout** (`runtime/satellite_layouts.json`, keyed by the device's public id —
+never the token; pruned when the device is revoked):
+
+```json
+{"cards": [{"id": "c1", "config": {"type": "tile", "entity": "light.kitchen"}}],
+ "portrait":  {"items": [{"id": "orb", "x": 0, "y": 3, "w": 4, "h": 4},
+                         {"id": "c1",  "x": 0, "y": 7, "w": 3, "h": 2}]},
+ "landscape": {"items": []},
+ "version": 3}
+```
+
+Item ids are `orb`, `clock`, `transcript`, `response` or a card id. Units are
+square grid cells: 6 columns in portrait, 12 in landscape. `PUT` validates
+(≤ 40 cards, ≤ 32 KB per card config, ids `^[a-z0-9-]{1,40}$`), clamps
+rectangles to the grid, drops unknown placements and bumps `version`.
+
+---
+
 ## Themes
 
 ### `GET /api/themes`
@@ -946,6 +1005,10 @@ in addition to the `Authorization: Bearer` header and is redacted from logs.
 | `GET` `POST` | `/api/cloud_llm` | ✓ | settings (toggle allowed) |
 | `POST` | `/api/pair/push-register` | ✓ | register APNs/FCM push token |
 | `GET`  | `/api/push/image/{id}.jpg` | — (signed) | inline push-image thumbnail; **server**-validated HMAC, no token |
+| `GET` `POST` | `/api/ha/*` (status, bootstrap, entities, history, forecast, dashboards, cards / ws, service, template) | ✓ | satellite HA cards — **service calls allowed remotely** |
+| `GET`  | `/api/ha/proxy` | ✓ (`?token=`) | camera / art images for cards |
+| `GET`  | `/local/*`, `/hacsfiles/*` | — | HA static files for custom cards (public, as on HA) |
+| `GET` `PUT` `DELETE` | `/api/satellite/layout` | ✓ | this device's card/orb layout |
 | `WS`   | `/ws/ui` | ✓ (`?token=`) | **valid token required** — no public mirror mode |
 
 Explicitly NOT proxied (LAN-only): `/api/pair/request`, `/api/pair/redeem`
