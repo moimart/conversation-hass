@@ -35,9 +35,50 @@ const DOMAIN_ICONS: Record<string, [string, string?]> = {
   siren: ["bullhorn"], water_heater: ["water-boiler"], remote: ["remote"], event: ["bell-ring-outline"],
 };
 
+// Icons chosen in HA's entity settings live in the entity REGISTRY, not in the
+// state attributes; HA's frontend prefers them over the device-class default.
+// Next in line are the integration's icon translations (icons.json, keyed by
+// the entity's translation_key — e.g. bvg_departures' "next_bus" → mdi:bus),
+// which HA serves via frontend/get_icons. Those are fetched per integration on
+// first use; `onIconsLoaded` repaints the cards when they arrive.
+const registryIcons = new Map<string, string>();
+const registryKeys = new Map<string, { pl: string; tk: string }>();
+const integrationIcons = new Map<string, Record<string, any> | null>();  // null = loading
+let onIconsLoaded: () => void = () => {};
+
+export function setRegistryIcons(
+  entries: { ei: string; ic?: string; pl?: string; tk?: string }[] | undefined,
+  repaint?: () => void,
+): void {
+  registryIcons.clear();
+  registryKeys.clear();
+  for (const e of entries || []) {
+    if (e.ic) registryIcons.set(e.ei, e.ic);
+    if (e.pl && e.tk) registryKeys.set(e.ei, { pl: e.pl, tk: e.tk });
+  }
+  if (repaint) onIconsLoaded = repaint;
+}
+
+function translatedIcon(s: HaState | null | undefined, id: string): string | undefined {
+  const key = registryKeys.get(id);
+  if (!key) return undefined;
+  if (!integrationIcons.has(key.pl)) {
+    integrationIcons.set(key.pl, null);
+    haApi.ws({ type: "frontend/get_icons", category: "entity", integration: key.pl })
+      .then((r: any) => { integrationIcons.set(key.pl, r?.resources?.[key.pl] || {}); onIconsLoaded(); })
+      .catch(() => integrationIcons.set(key.pl, {}));
+    return undefined;
+  }
+  const def = integrationIcons.get(key.pl)?.[domainOf(id)]?.[key.tk];
+  if (!def) return undefined;
+  return (s && def.state?.[s.state]) || def.default;
+}
+
 export function entityIcon(s: HaState | null | undefined, id: string, override?: string): string {
   if (override) return override;
   if (s?.attributes.icon) return s.attributes.icon as string;
+  const reg = registryIcons.get(id) || translatedIcon(s, id);
+  if (reg) return reg;
   const dc = s?.attributes.device_class as string | undefined;
   if (dc && DEVICE_CLASS_ICONS[dc] && domainOf(id) !== "binary_sensor") return `mdi:${DEVICE_CLASS_ICONS[dc]}`;
   const [on, off] = DOMAIN_ICONS[domainOf(id)] || ["help-circle-outline"];
@@ -56,7 +97,11 @@ export function formatState(s: HaState | null | undefined, opts: { precision?: n
     return unit ? `${v}${unit === "%" || unit.startsWith("°") ? "" : " "}${unit}` : v;
   }
   if (s.attributes.device_class === "timestamp" && !Number.isNaN(Date.parse(s.state))) {
-    return new Date(s.state).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+    // Like HA's frontend: timestamps read as relative time ("In 15 minutes",
+    // "3 hours ago"). Cards showing one repaint on a timer (cards.ts), since
+    // the text changes while the state doesn't.
+    const r = relTime(s.state);
+    return r.charAt(0).toUpperCase() + r.slice(1);
   }
   const dc = s.attributes.device_class as string | undefined;
   if (domainOf(s.entity_id) === "binary_sensor") {
@@ -72,13 +117,24 @@ export function formatState(s: HaState | null | undefined, opts: { precision?: n
   return s.state.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 }
 
+/** Relative time in either direction, in the device's language:
+ *  "in 15 minutes", "3 hours ago", "now". */
 export function relTime(iso?: string): string {
   if (!iso) return "";
-  const s = (Date.now() - Date.parse(iso)) / 1000;
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-  return `${Math.floor(s / 86400)} d ago`;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const s = Math.round((t - Date.now()) / 1000);
+  const a = Math.abs(s);
+  const fmt = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  if (a < 45) return fmt.format(0, "second");
+  if (a < 3600) return fmt.format(Math.round(s / 60), "minute");
+  if (a < 86400) return fmt.format(Math.round(s / 3600), "hour");
+  return fmt.format(Math.round(s / 86400), "day");
+}
+
+/** True when a state renders as relative time (needs periodic repaints). */
+export function isTimestamp(s?: HaState | null): boolean {
+  return !!s && s.attributes?.device_class === "timestamp";
 }
 
 export function entityColor(s: HaState | null | undefined): string | undefined {

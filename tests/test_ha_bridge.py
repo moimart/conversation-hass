@@ -163,6 +163,8 @@ async def test_ws_allowlist(monkeypatch):
     c = FakeClient()
     b, _ = await _bridge(monkeypatch, [c])
     assert await b.ws({"type": "get_config", "id": 5}) == {"echo": {"type": "get_config"}}
+    # Integration icon translations (how HA picks e.g. a bus icon for a sensor).
+    assert await b.ws({"type": "frontend/get_icons", "category": "entity", "integration": "x"})
     for bad in ("config/entity_registry/update", "auth/delete_refresh_token",
                 "execute_script", "get_configx"):
         with pytest.raises(HAError) as e:

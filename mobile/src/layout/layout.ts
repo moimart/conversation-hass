@@ -13,8 +13,9 @@
 // class all over) and can only be SCALED (fixed px internals), so it gets
 // inline position + scale. Inline !important beats the stylesheet's !important.
 
-import { layoutApi, type LayoutItem, type SatelliteLayout } from "../ha/api";
-import { createCard, type CardInstance } from "../ha/cards";
+import { haBootstrap, layoutApi, type LayoutItem, type SatelliteLayout } from "../ha/api";
+import { createCard, repaintAllCards, type CardInstance } from "../ha/cards";
+import { setRegistryIcons } from "../ha/helpers";
 import "../ha/custom"; // registers the custom: card factory
 import { haHub } from "../ha/hub";
 
@@ -316,6 +317,13 @@ export function onLayoutApplied(fn: () => void): () => void {
  *  this device's layout and apply it; re-apply on rotation/resize. */
 export async function mountLayout(): Promise<void> {
   haHub.attach();
+  // Entity-registry icons (set in HA's entity settings) for the native cards.
+  const loadIcons = (attempt = 0): void => {
+    haBootstrap()
+      .then((b) => { setRegistryIcons(b.registry?.entities, repaintAllCards); repaintAllCards(); })
+      .catch(() => { if (attempt < 6) setTimeout(() => loadIcons(attempt + 1), 5000 * (attempt + 1)); });
+  };
+  loadIcons();
   let t: number | undefined;
   const relayout = () => { clearTimeout(t); t = window.setTimeout(applyLayout, 80); };
   window.addEventListener("resize", relayout);

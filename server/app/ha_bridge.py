@@ -34,7 +34,7 @@ HA_WS_READ = re.compile(
     r"recorder/(statistics_during_period|statistic_during_period|get_statistics_metadata|list_statistic_ids)|"
     r"logbook/get_events|"
     r"config/(entity_registry/(list_for_display|get)|device_registry/list|area_registry/list|floor_registry/list|label_registry/list)|"
-    r"energy/(get_prefs|info|fossil_energy_consumption)|weather/convertible_units|frontend/get_translations|"
+    r"energy/(get_prefs|info|fossil_energy_consumption)|weather/convertible_units|frontend/get_translations|frontend/get_icons|"
     r"lovelace/(resources|config|dashboards/list)|search/related|calendar/event/list)$"
 )
 # Subscriptions a card may relay via hass.connection.subscribeMessage.

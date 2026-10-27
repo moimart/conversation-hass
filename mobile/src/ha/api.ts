@@ -12,7 +12,7 @@ export interface HaState {
 
 export interface HaBootstrap {
   config: Record<string, any>;
-  registry: { entities?: { ei: string; di?: string; ai?: string; en?: string; ic?: string; ec?: number; hn?: boolean }[] };
+  registry: { entities?: { ei: string; di?: string; ai?: string; en?: string; ic?: string; pl?: string; tk?: string; ec?: number; hn?: boolean }[] };
   resources: { url: string; type: "module" | "js" | "css" | "html" }[];
 }
 

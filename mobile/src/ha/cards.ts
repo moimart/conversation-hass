@@ -14,7 +14,7 @@ import { haHub } from "./hub";
 import { mdiIcon } from "./icons";
 import {
   canToggle, domainOf, entityColor, entityIcon, entityName, formatState, h, isActive,
-  isUnavailable, loadHistory, normEntities, relTime, runAction,
+  isTimestamp, isUnavailable, loadHistory, normEntities, relTime, runAction,
 } from "./helpers";
 
 type Cfg = Record<string, any>;
@@ -25,6 +25,18 @@ const more = (id: string) => openMoreInfo(id);
 const icon = (name: string, size = 24, cls = "") => mdiIcon(name, size, cls);
 
 type Reactive = CardInstance & { hold(b: boolean): void; repaint(): void };
+
+const tickers = new Set<{ paint: () => void; ids: string[] }>();
+/** Re-render every mounted card (e.g. once the registry icons have loaded). */
+export function repaintAllCards(): void {
+  for (const t of tickers) t.paint();
+}
+
+setInterval(() => {
+  for (const t of tickers) {
+    if (t.ids.some((id) => isTimestamp(st(id)))) t.paint();
+  }
+}, 30000);
 
 /** Card shell that re-renders `render()` into `el` whenever `ids` change.
  *  `repaint()` re-renders on demand (async data such as history arrived);
@@ -39,9 +51,13 @@ function reactive(el: HTMLElement, ids: string[], render: () => (Node | string |
   };
   paint();
   const unwatch = haHub.watch(ids.filter(Boolean), paint);
+  // Relative times ("In 15 minutes") change while the state doesn't: cards
+  // showing a timestamp entity, or a row with last-changed/updated, tick.
+  const ticker = { paint, ids };
+  tickers.add(ticker);
   return {
     el,
-    destroy() { unwatch(); },
+    destroy() { unwatch(); tickers.delete(ticker); },
     repaint: paint,
     hold(b: boolean) { blocked = b; if (!b && dirty) { dirty = false; paint(); } },
   };
