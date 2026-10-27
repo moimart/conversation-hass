@@ -108,6 +108,10 @@ class AppState:
     _ma_lock: object = field(default_factory=asyncio.Lock)
     # HA WebSocket client (lazy) used for WebRTC signaling
     ha_ws: object | None = None
+    # Satellite HA cards: the state/subscription bridge (ha_bridge.HABridge,
+    # its own HA connection) and the per-device layout store (layouts.py).
+    ha_bridge: object | None = None
+    layouts: object | None = None
     # go2rtc REST client (lazy) used by stream_rtsp
     go2rtc: object | None = None
     # Active WebRTC session, if any. Shape:
@@ -603,6 +607,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning(f"Push init failed: {type(e).__name__}: {e}")
 
+    # Satellite display layouts (HA cards + orb placement), keyed by the
+    # device's public id. Drop layouts of devices that are no longer paired.
+    from .layouts import LayoutStore
+    state.layouts = LayoutStore()
+    try:
+        state.layouts.prune(state.pairing.public_id(t) for t in state.pairing._tokens)
+    except Exception as e:
+        log.warning(f"layout prune failed: {e}")
+
     # Persistent conversation log (postgres). connect() is backgrounded with
     # retry/backoff — a slow or absent postgres never blocks startup, and
     # writes degrade to warn+drop until it comes up.
@@ -861,6 +874,19 @@ async def lifespan(app: FastAPI):
     else:
         state.theme_scheduler_task = None
 
+    # HA bridge for satellite cards: its own HA WebSocket (never state.ha_ws),
+    # reconnecting in the background. Inert until a satellite places a card.
+    _ha_url = os.environ.get("HA_URL", "").strip()
+    _ha_token = os.environ.get("HA_TOKEN", "").strip()
+    if _ha_url and _ha_token and not demo_mode():
+        from .ha_bridge import HABridge
+        state.ha_bridge = HABridge(
+            _ha_url, _ha_token,
+            send=lambda tok, msg: send_to_device(state, tok, msg),
+            device_name=state.pairing.device_name,
+        )
+        state.ha_bridge.start()
+
     # Reconnect any MCP server that failed at boot (see _mcp_reconnect_loop).
     state.mcp_retry_task = asyncio.create_task(_mcp_reconnect_loop(state))
 
@@ -933,6 +959,8 @@ async def lifespan(app: FastAPI):
         state.mcp_retry_task.cancel()
     if state.active_stream:
         await _stop_active_stream(state, notify_kiosk=False)
+    if state.ha_bridge is not None:
+        await state.ha_bridge.stop()
     if isinstance(state.ha_ws, HAWSClient):
         await state.ha_ws.disconnect()
     if state.mqtt_bridge:
@@ -1211,10 +1239,12 @@ async def announce_everywhere(state: AppState, text: str,
 from .routes_ws import router as _ws_router  # noqa: E402
 from .routes_http import router as _http_router  # noqa: E402
 from .pairing import router as _pairing_router  # noqa: E402
+from .routes_ha import router as _ha_router  # noqa: E402
 
 app.include_router(_ws_router)
 app.include_router(_http_router)
 app.include_router(_pairing_router)
+app.include_router(_ha_router)
 
 # Re-export the moved WS + HTTP handlers and request models so existing
 # callers/tests that do `from .main import <handler>` (or `srv.<handler>`)

@@ -90,6 +90,20 @@ class HAWSClient:
         self._pending.clear()
         self._subscriptions.clear()
 
+    async def wait_closed(self) -> None:
+        """Return once the connection is gone (the reader task ended). Lets an
+        owner run its own reconnect loop."""
+        task = self._reader_task
+        if task is None:
+            return
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if not task.done():
+                raise  # WE were cancelled, not the reader
+        except Exception:
+            pass
+
     async def _send(self, payload: dict) -> int:
         """Assign an id, send, return the id."""
         if not self._ws:

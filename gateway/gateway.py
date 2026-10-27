@@ -90,6 +90,21 @@ _ALLOWLIST = [
     # Push image: signature-gated by the SERVER (short-lived HMAC), so the
     # gateway exposes it tokenless — the .jpg anchor keeps the surface tight.
     ("GET",  r"^/api/push/image/\d+\.jpg$",             False, False),
+    # Satellite HA cards (token-gated; the server also checks the `ha` scope).
+    # Live state rides /ws/ui. Service calls ARE allowed remotely (user decision):
+    # a token-holder can toggle HA entities directly, not only via the LLM.
+    ("GET",  r"^/api/ha/(status|bootstrap|entities|history|forecast|dashboards|cards)$",
+                                                        True,  False),
+    ("POST", r"^/api/ha/(ws|service|template)$",        True,  False),
+    ("GET",  r"^/api/ha/proxy$",                        True,  False),  # <img>: ?token=
+    # HA's own static files for custom cards. Public, like on HA itself: module
+    # scripts + their absolute sibling imports can't carry a token. The server
+    # rejects traversal after decoding.
+    ("GET",  r"^/(local|hacsfiles)/(?!.*\.\.)[^?#\\]+$", False, False),
+    # This device's display layout (token-gated; `layout` scope server-side).
+    ("GET",    r"^/api/satellite/layout$",              True,  False),
+    ("PUT",    r"^/api/satellite/layout$",              True,  False),
+    ("DELETE", r"^/api/satellite/layout$",              True,  False),
 ]
 if ALLOW_PAIR_REDEEM:
     # Pre-auth: the redeem body's (demo) code is the gate, so no token here.

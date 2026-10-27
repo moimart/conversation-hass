@@ -44,6 +44,9 @@ _SCOPE_PERMISSIONS: dict[str, set[str] | None] = {
     "full": None,                                   # None = unrestricted
     "watch": {"command", "pair_status", "push_register"},
 }
+# Permissions checked elsewhere that only "full" grants (watch lacks them):
+#   "ha"     — satellite HA cards: state, reads, service calls (routes_ha.py)
+#   "layout" — the device's own display layout (routes_ha.py)
 DERIVABLE_SCOPES = {"watch"}
 
 
@@ -522,11 +525,24 @@ async def pair_revoke(request: Request, req: RevokeRequest):
     state = _get_state(request.app)
     if req.token:
         ok = state.pairing.revoke(req.token.strip())
+        _prune_layouts(state)
         return {"revoked": 1 if ok else 0}
     if req.device_name:
         n = state.pairing.revoke_by_device_name(req.device_name)
+        _prune_layouts(state)
         return {"revoked": n}
     return _json_error({"error": "device_name or token required"}, 400)
+
+
+def _prune_layouts(state) -> None:
+    """Forget the display layouts of devices that are no longer paired."""
+    store = getattr(state, "layouts", None)
+    if store is None:
+        return
+    try:
+        store.prune(state.pairing.public_id(t) for t in state.pairing._tokens)
+    except Exception as e:
+        log.warning(f"layout prune failed: {e}")
 
 
 class DeriveRequest(BaseModel):

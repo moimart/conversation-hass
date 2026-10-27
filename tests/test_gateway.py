@@ -331,3 +331,55 @@ async def test_pair_redeem_passthrough_when_enabled(upstream, monkeypatch):
     # Restore the shared module to deny-by-default for any later reload.
     monkeypatch.delenv("GATEWAY_ALLOW_PAIR_REDEEM", raising=False)
     _load_gateway()
+
+
+# satellite HA cards + layouts
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path", [
+    ("GET", "/api/ha/bootstrap"), ("GET", "/api/ha/entities"), ("GET", "/api/ha/cards"),
+    ("POST", "/api/ha/service"), ("POST", "/api/ha/ws"), ("POST", "/api/ha/template"),
+    ("GET", "/api/ha/proxy"),
+    ("GET", "/api/satellite/layout"), ("PUT", "/api/satellite/layout"),
+    ("DELETE", "/api/satellite/layout"),
+])
+async def test_ha_card_routes_need_token(client, method, path):
+    cl, state = client
+    assert (await cl.request(method, path)).status == 401
+    good = await cl.request(method, path, headers=_auth())
+    assert good.status == 200
+    assert (method, path) in state["proxied"]
+
+
+@pytest.mark.asyncio
+async def test_ha_proxy_accepts_query_token(client):
+    """<img> can't send headers: camera snapshots authenticate via ?token=."""
+    cl, state = client
+    resp = await cl.get(f"/api/ha/proxy?token={GOOD}&path=/api/camera_proxy/camera.x")
+    assert resp.status == 200
+
+
+@pytest.mark.asyncio
+async def test_ha_static_files_are_public(client):
+    """Custom-card scripts load via <script type=module> (no token possible)."""
+    cl, state = client
+    resp = await cl.get("/hacsfiles/mushroom/mushroom.js")
+    assert resp.status == 200
+    assert (await cl.get("/local/house.png")).status == 200
+    assert state["status_hits"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path", [
+    ("GET", "/api/ha/states"),             # not an exposed HA route
+    ("POST", "/api/ha/bootstrap"),         # wrong method
+    ("POST", "/hacsfiles/x.js"),           # static files are GET-only
+    ("GET", "/local/%2e%2e/api/speak"),    # traversal via the public prefix
+    ("GET", "/hacsfiles/a/../../api/speak"),
+    ("PATCH", "/api/satellite/layout"),
+])
+async def test_ha_card_surface_stays_tight(client, method, path):
+    cl, state = client
+    resp = await cl.request(method, path, headers=_auth())
+    assert resp.status == 404
+    assert state["proxied"] == []

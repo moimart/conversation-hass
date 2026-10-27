@@ -565,6 +565,10 @@ async def ui_endpoint(websocket: WebSocket):
                         asyncio.create_task(_forward_kiosk_candidate(
                             state, session_id, msg, reply_ws=websocket,
                         ))
+            elif mtype and mtype.startswith("ha_") and is_satellite:
+                # Satellite HA cards: live state + relayed subscriptions ride this
+                # socket (see ha_bridge.py). Gated on the token's `ha` scope.
+                await _handle_ha_message(state, token, websocket, mtype, msg)
             elif mtype and mtype.startswith("intercom_") and is_satellite:
                 # 1:1 intercom call signaling — the server is a dumb relay between
                 # the two paired participants (see intercom.py). Media is P2P.
@@ -582,6 +586,11 @@ async def ui_endpoint(websocket: WebSocket):
             if state.satellite_ws.get(tok) is websocket:
                 state.satellite_ws.pop(tok, None)
             state.satellite_tts.pop(tok, None)
+            if getattr(state, "ha_bridge", None) is not None:
+                try:
+                    await state.ha_bridge.drop_device(tok)
+                except Exception as e:
+                    log.debug(f"ha bridge cleanup failed: {e}")
             # Tear down any live call this device was in and hang up its peer.
             try:
                 from . import intercom
@@ -595,3 +604,35 @@ async def ui_endpoint(websocket: WebSocket):
                 except Exception as e:
                     log.debug(f"satellite photo cleanup failed: {e}")
         log.info(f"UI client disconnected (total: {len(state.ui_clients)})")
+
+
+async def _handle_ha_message(state, token: str, websocket, mtype: str, msg: dict) -> None:
+    """ha_retain {ids} / ha_subscribe {req, msg} / ha_unsubscribe {sub} from a
+    satellite's card layer. Replies go back on the same socket."""
+    from .ha_bridge import HAError
+    bridge = getattr(state, "ha_bridge", None)
+    pairing = getattr(state, "pairing", None)
+    if pairing is None or not pairing.scope_allows(token, "ha"):
+        return
+    if bridge is None:
+        if mtype == "ha_subscribe":
+            await websocket.send_json({"type": "ha_subscribed", "req": msg.get("req"),
+                                       "error": "Home Assistant is not configured"})
+        return
+    try:
+        if mtype == "ha_retain":
+            snap = bridge.retain(token, msg.get("ids") or [])
+            await websocket.send_json({"type": "ha_states", "states": snap,
+                                       "connected": bridge.connected})
+        elif mtype == "ha_subscribe":
+            try:
+                sub = await bridge.subscribe(token, msg.get("msg"))
+                await websocket.send_json({"type": "ha_subscribed", "req": msg.get("req"),
+                                           "sub": sub})
+            except HAError as e:
+                await websocket.send_json({"type": "ha_subscribed", "req": msg.get("req"),
+                                           "error": str(e)})
+        elif mtype == "ha_unsubscribe":
+            await bridge.unsubscribe(token, msg.get("sub"))
+    except Exception as e:
+        log.debug(f"ha message {mtype} failed: {e}")
