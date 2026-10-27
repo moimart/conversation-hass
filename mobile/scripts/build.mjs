@@ -4,7 +4,7 @@
 //                       into www/assets/shell.js (ESM)
 //   3. copy shell index.html + overlay/onboarding CSS into www/
 
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
@@ -36,8 +36,22 @@ for (const css of [
   ["overlay", "overlay.css"],
   ["overlay", "hide-kiosk-controls.css"],
   ["onboarding", "onboarding.css"],
+  ["ha", "ha.css"],
+  ["layout", "layout.css"],
 ]) {
   await cp(resolve(srcDir, ...css), resolve(wwwDir, "assets", css[1]));
 }
+
+// 4. MDI icon table for the HA card layer (mobile/src/ha/icons.ts): every
+//    @mdi/js path keyed by its camel name minus "mdi" (mdiMoleculeCo2 →
+//    "MoleculeCo2"); icons.ts maps "mdi:molecule-co2" onto that losslessly.
+//    A local asset so icons work offline and through the gateway (~3 MB,
+//    loaded lazily on the first icon).
+const mdi = await import("@mdi/js");
+const table = {};
+for (const [k, d] of Object.entries(mdi)) {
+  if (k.startsWith("mdi") && typeof d === "string") table[k.slice(3)] = d;
+}
+await writeFile(resolve(wwwDir, "assets", "mdi.json"), JSON.stringify(table));
 
 console.log("build: www/ assembled");

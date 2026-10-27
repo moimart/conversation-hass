@@ -1,0 +1,223 @@
+/* Satellite display layouts (mobile/src/layout). Positions come from
+   layout.ts as inline styles; this file is the chrome: card glass, the
+   overlay-hiding rules, and the editor. */
+
+/* Cards live INSIDE #orientation-wrapper (its stacking context) at z 3: under
+   the orb (6) and the transcript/response (7), under the calendar / log (5) and
+   the photo frame (8). */
+#hal-cards-root {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    color: var(--text);
+    font-family: var(--ll-font);
+    font-size: 14px;
+}
+.hal-card {
+    position: absolute;
+    pointer-events: auto;
+    overflow: hidden;
+    border-radius: var(--ll-radius);
+    background: rgba(8, 10, 14, 0.6);
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-sizing: border-box;
+}
+.hal-card-inner { min-height: 100%; }
+.hal-card-inner > .ll-card, .hal-card-inner > .ll-stack-wrap, .hal-card-inner > .ll-custom { min-height: 100%; }
+
+/* Whole-screen layers own the screen: hide the cards (and, as before, the orb
+   and text — hide-kiosk-controls.css). */
+body.show-calendar #hal-cards-root,
+body.show-conversation-log #hal-cards-root,
+body.photo-frame-active #hal-cards-root,
+body.show-timer-countdown #hal-cards-root,
+body.show-mirror #hal-cards-root { display: none; }
+
+/* In a custom layout the transcript/response panels get an exact box. */
+body.hal-custom-layout #display-root .transcript-container,
+body.hal-custom-layout #display-root .response-container { box-sizing: border-box; }
+
+/* --- editor --------------------------------------------------------------------- */
+
+body.hal-layout-editing .hal-input-bar,
+body.hal-layout-editing .hal-gear { display: none !important; }
+
+.hal-layout-editor {
+    position: fixed;
+    inset: 0;
+    z-index: 2147482500;           /* above input bar / gears, below the settings sheet */
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #fff;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+.hle-grid {
+    position: absolute;
+    background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+    outline: 1px dashed rgba(255, 255, 255, 0.35);
+}
+.hle-box {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid rgba(var(--accent-rgb), 0.9);
+    border-radius: 12px;
+    background: rgba(var(--accent-rgb), 0.12);
+    touch-action: none;
+    transition: background 0.15s;
+}
+.hle-box.orb { border-radius: 50%; }
+.hle-box.dragging { background: rgba(var(--accent-rgb), 0.28); z-index: 2; }
+.hle-label {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    right: 24px;
+    font-size: 12px;
+    font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.hle-box.orb .hle-label { top: 50%; left: 0; right: 0; text-align: center; transform: translateY(-50%); }
+.hle-handle {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgb(var(--accent-rgb));
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+    touch-action: none;
+}
+.hle-hint {
+    position: absolute;
+    top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 14px);
+    left: 12px;
+    right: 12px;
+    text-align: center;
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.6);
+}
+.hle-toolbar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(8, 10, 14, 0.92);
+}
+.hle-spacer { flex: 1; }
+.hle-btn {
+    height: 44px;
+    padding: 0 18px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font: 600 15px 'Inter', system-ui, sans-serif;
+}
+.hle-btn.primary { background: rgb(var(--accent-rgb)); border-color: transparent; color: #0a0c10; }
+.hle-btn.ghost { background: transparent; }
+
+.hle-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2147482800;
+    display: flex;
+    align-items: flex-end;
+    background: rgba(0, 0, 0, 0.45);
+}
+.hle-sheet {
+    width: 100%;
+    max-height: 82vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
+    background: #14171e;
+    color: #e8ecf2;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-overflow-scrolling: touch;
+}
+.hle-sheet-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+.hle-menu { display: flex; flex-direction: column; gap: 8px; }
+.hle-menu-btn, .hle-card-ref {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    font: 15px 'Inter', system-ui, sans-serif;
+    text-align: left;
+}
+.hle-menu-btn.danger { color: #ff7a7a; }
+.hle-card-ref small { color: rgba(255, 255, 255, 0.5); font-size: 12px; }
+.hle-badge {
+    font: 11px 'JetBrains Mono', ui-monospace, monospace;
+    color: rgb(var(--accent-rgb));
+}
+.hle-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.hle-tab {
+    flex: 1;
+    height: 36px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: transparent;
+    color: inherit;
+    font: 600 13px 'Inter', system-ui, sans-serif;
+}
+.hle-tab.on { background: rgba(var(--accent-rgb), 0.25); border-color: rgba(var(--accent-rgb), 0.7); }
+.hle-pane, .hle-list { display: flex; flex-direction: column; gap: 8px; }
+.hle-select, .hle-input {
+    width: 100%;
+    height: 42px;
+    box-sizing: border-box;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: #0d1016;
+    color: #fff;
+    font-size: 16px;
+}
+.hle-empty { color: rgba(255, 255, 255, 0.55); font-size: 14px; padding: 8px 2px; }
+.hle-yaml-wrap { display: flex; flex-direction: column; gap: 10px; }
+.hle-yaml {
+    width: 100%;
+    min-height: 160px;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: #0d1016;
+    color: #e8ecf2;
+    font: 13px/1.5 'JetBrains Mono', ui-monospace, monospace;
+}
+.hle-error { color: #ff7a7a; font-size: 13px; min-height: 1em; }
+.hle-preview {
+    border-radius: var(--ll-radius);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    color: var(--text);
+    font-size: 14px;
+    max-height: 40vh;
+    overflow: auto;
+}

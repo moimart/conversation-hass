@@ -25,11 +25,13 @@
     "@capacitor/push-notifications": "^8.1.1",
     "@capacitor/splash-screen": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
-    "capacitor-zeroconf": "^4.0.0"
+    "capacitor-zeroconf": "^4.0.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.0.0",
+    "@mdi/js": "^7.4.47",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0"
   }

@@ -1,0 +1,194 @@
+/* Satellite HA cards — native Lovelace renderers (mobile/src/ha/cards.ts).
+   Ported from docker-home's styles.css (.ll-*), with its theme variables
+   mapped onto PAL's (THEMES.md): --text, --text-dim, --accent(-rgb), --bg, … */
+
+:root {
+  --ll-font: 'Inter', -apple-system, system-ui, sans-serif;
+  --ll-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --ll-radius: 16px;
+  --ll-spring: cubic-bezier(.34, 1.56, .64, 1);
+}
+@keyframes ll-fade-in { from { opacity: 0 } }
+@keyframes ll-modal-in { from { opacity: 0; transform: translateY(12px) scale(.97) } }
+
+.ll-root { position: relative; height: 100%; }
+.ll-root > .ll-card, .ll-root > .ll-stack-wrap { min-height: 100%; }
+.ll-card { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; min-width: 0; color: inherit; text-align: left; }
+button.ll-card { width: 100%; border: 0; background: none; cursor: pointer; font: inherit; }
+.ll-title { font-family: var(--ll-font); font-size: 1.08em; font-weight: 700; margin-bottom: 2px; }
+.ll-big { font-family: var(--ll-font); font-size: 2.1em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.ll-big small { font-size: 0.5em; color: var(--text-dim); margin-left: 2px; }
+.ll-card .accent, .ll-root .accent { color: var(--accent); }
+.ll-card .dim { color: var(--text-dim); }
+.ll-rows { display: flex; flex-direction: column; gap: 2px; }
+.ll-row { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.ll-row.unavail { opacity: 0.5; }
+.ll-row-name { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.ll-row-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ll-row-name small { color: var(--text-dim); font-size: 0.78em; }
+.ll-state { color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ll-icon {
+  flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.ll-icon.on { color: var(--accent); background: rgba(var(--accent-rgb), 0.16); box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.25); }
+.ll-icon.big { width: 44px; height: 44px; }
+.ll-switch {
+  flex: none; position: relative; width: 40px; height: 24px; border-radius: 999px; border: 0; cursor: pointer; padding: 0;
+  background: color-mix(in srgb, var(--text) 18%, transparent); transition: background 0.25s;
+}
+.ll-switch span { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.3s var(--ll-spring); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.ll-switch.on { background: var(--accent); }
+.ll-switch.on span { transform: translateX(16px); }
+.ll-switch:disabled { opacity: 0.4; }
+.ll-run { border: 0; background: none; color: var(--accent); font-weight: 600; cursor: pointer; font: inherit; }
+.ll-divider { border: 0; border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent); margin: 6px 0; }
+.ll-section { font-size: 0.72em; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin-top: 8px; }
+.ll-entity-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-dim); font-size: 0.9em; }
+.ll-glance { display: grid; gap: 6px; }
+.ll-glance-item { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 2px; border: 0; border-radius: 12px; background: none; cursor: pointer; color: inherit; font: inherit; min-width: 0; }
+.ll-glance-item:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.ll-glance-name { font-size: 0.78em; color: var(--text-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ll-glance-state { font-size: 0.85em; font-variant-numeric: tabular-nums; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ll-tile { flex-direction: row; align-items: center; gap: 12px; }
+.ll-tile-text { display: flex; flex-direction: column; min-width: 0; border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.ll-tile-text strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ll-tile-text span { color: var(--text-dim); font-size: 0.86em; }
+.ll-button { align-items: center; justify-content: center; text-align: center; height: 100%; }
+.ll-button svg { color: var(--text-dim); transition: color 0.2s, filter 0.2s; }
+.ll-button.on svg { color: var(--accent); filter: drop-shadow(0 0 12px rgba(var(--accent-rgb), 0.5)); }
+.ll-spark { width: 100%; display: block; margin-top: auto; }
+.ll-sensor, .ll-root > .ll-card:has(.ll-legend) { height: 100%; }
+.ll-sensor .ll-big { font-size: 1.8em; }
+.ll-spark-empty { width: 100%; }
+.ll-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8em; color: var(--text-dim); }
+.ll-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.ll-legend b { color: var(--text); font-weight: 600; }
+.ll-gauge { align-items: center; justify-content: center; height: 100%; }
+.ll-gauge svg { width: 100%; max-width: 220px; flex: 1; min-height: 0; overflow: visible; }
+.ll-gauge { gap: 2px; padding: 10px 12px; }
+.ll-gauge-value { font-family: var(--ll-font); font-size: 15px; fill: var(--text); }
+.ll-gauge-unit { font-size: 6px; fill: var(--text-dim); }
+.ll-gauge-name { color: var(--text-dim); font-size: 0.88em; }
+.ll-markdown { line-height: 1.5; }
+.ll-markdown h3, .ll-markdown h4, .ll-markdown h5, .ll-markdown h6 { margin: 0 0 4px; font-family: var(--ll-font); }
+.ll-markdown p { margin: 0; }
+.ll-markdown ul, .ll-markdown ol { margin: 2px 0; padding-left: 20px; }
+.ll-markdown code { font-family: var(--ll-mono); font-size: 0.86em; padding: 1px 5px; border-radius: 5px; background: color-mix(in srgb, var(--text) 10%, transparent); }
+.ll-markdown a { color: var(--accent); }
+.ll-weather-now { display: flex; align-items: center; gap: 14px; border: 0; background: none; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ll-forecast { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; margin-top: auto; }
+.ll-forecast > div { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 2px; border-radius: 12px; background: color-mix(in srgb, var(--text) 5%, transparent); font-size: 0.86em; }
+.ll-forecast small { color: var(--text-dim); text-transform: uppercase; font-size: 0.75em; letter-spacing: 0.08em; }
+.ll-thermo { align-items: center; text-align: center; justify-content: center; height: 100%; }
+.ll-thermo-dial {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  width: min(100%, 170px); aspect-ratio: 1; border-radius: 50%;
+  border: 6px solid color-mix(in srgb, var(--text) 10%, transparent);
+  box-shadow: inset 0 0 30px rgba(var(--accent-rgb), 0.12);
+}
+.ll-thermo-dial.heating, .ll-thermo-dial.heat { border-color: rgba(255, 128, 60, 0.7); box-shadow: 0 0 30px rgba(255, 128, 60, 0.25); }
+.ll-thermo-dial.cooling, .ll-thermo-dial.cool { border-color: rgba(60, 170, 255, 0.7); box-shadow: 0 0 30px rgba(60, 170, 255, 0.25); }
+.ll-thermo-dial .dim { font-size: 0.8em; }
+.ll-thermo-btns { display: flex; gap: 16px; }
+.ll-thermo-btns button, .ll-media-ctl button {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 0; cursor: pointer; color: var(--text);
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+}
+.ll-thermo-btns button:hover, .ll-media-ctl button:hover { background: rgba(var(--accent-rgb), 0.25); }
+.ll-light { align-items: center; justify-content: center; text-align: center; height: 100%; }
+.ll-light-bulb { border: 0; background: none; cursor: pointer; color: var(--text-dim); border-radius: 50%; padding: 10px; transition: filter 0.3s, color 0.3s; }
+.ll-light-bulb.on { color: var(--accent); filter: drop-shadow(0 0 18px currentColor); }
+.ll-light input[type='range'] { width: 90%; accent-color: var(--accent); }
+.ll-media { position: relative; overflow: hidden; justify-content: space-between; height: 100%; }
+.ll-media-bg { position: absolute; inset: -20px; background: var(--art) center / cover; filter: blur(30px) saturate(1.4); opacity: 0.35; }
+.ll-media-body, .ll-media-ctl { position: relative; }
+.ll-media-body { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ll-media-body img { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+.ll-media-text { display: flex; flex-direction: column; min-width: 0; }
+.ll-media-text strong, .ll-media-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ll-media-ctl { display: flex; justify-content: center; gap: 14px; }
+.ll-media-ctl .main { width: 52px; height: 52px; background: var(--accent); color: var(--bg); }
+.ll-picture { position: relative; padding: 0; height: 100%; overflow: hidden; }
+.ll-picture img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ll-picture-empty { height: 100%; display: grid; place-items: center; color: var(--text-dim); }
+.ll-picture-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 8px 12px; background: linear-gradient(transparent, rgba(0,0,0,.65)); color: #fff; font-size: 0.86em;
+}
+.ll-picture-icons { display: flex; gap: 2px; }
+.ll-picture-icons button { border: 0; background: none; color: rgba(255,255,255,.7); cursor: pointer; padding: 3px; }
+.ll-picture-icons button.on { color: #fff; filter: drop-shadow(0 0 6px #fff); }
+.ll-stack-wrap { display: flex; flex-direction: column; min-width: 0; }
+.ll-stack-wrap > .ll-title { padding: 14px 16px 0; }
+.ll-stack { display: flex; min-width: 0; }
+.ll-stack.column { flex-direction: column; }
+.ll-stack.row > * { flex: 1; min-width: 0; }
+.ll-stack > .ll-card + .ll-card { border-top: 1px solid color-mix(in srgb, var(--text) 7%, transparent); }
+.ll-stack.row > .ll-card + .ll-card { border-top: 0; border-left: 1px solid color-mix(in srgb, var(--text) 7%, transparent); }
+.ll-grid { display: grid; gap: 0; }
+.ll-heading { display: flex; align-items: center; gap: 8px; padding: 12px 16px 4px; font-family: var(--ll-font); font-weight: 700; }
+.ll-custom { display: flex; flex-direction: column; min-height: 100%; }
+.ll-custom-host { flex: 1; }
+.ll-custom-host > * { display: block; }
+/* HA frontend theme variables, mapped onto the PAL theme so custom
+   cards (which read these inside their shadow DOM) look native here. */
+.ll-root {
+  --primary-text-color: var(--text);
+  --secondary-text-color: var(--text-dim);
+  --disabled-text-color: color-mix(in srgb, var(--text-dim) 60%, transparent);
+  --text-primary-color: var(--bg);
+  --primary-color: var(--accent);
+  --dark-primary-color: var(--accent-deep);
+  --light-primary-color: var(--accent-glow);
+  --accent-color: var(--accent-warm);
+  --rgb-primary-color: var(--accent-rgb);
+  --rgb-accent-color: var(--accent-rgb);
+  --primary-background-color: var(--bg);
+  --secondary-background-color: color-mix(in srgb, var(--text) 6%, transparent);
+  --card-background-color: transparent;
+  --ha-card-background: transparent;
+  --ha-card-border-width: 0;
+  --ha-card-box-shadow: none;
+  --ha-card-border-radius: var(--ll-radius);
+  --divider-color: color-mix(in srgb, var(--text) 12%, transparent);
+  --state-icon-color: var(--text-dim);
+  --state-active-color: var(--accent);
+  --state-icon-active-color: var(--accent);
+  --paper-item-icon-color: var(--text-dim);
+  --paper-item-icon-active-color: var(--accent);
+  --switch-checked-color: var(--accent);
+  --success-color: var(--success);
+  --warning-color: #ffb020;
+  --error-color: #ff5a5a;
+  --info-color: var(--accent);
+  --mdc-theme-primary: var(--accent);
+  --mdc-theme-text-primary-on-background: var(--text);
+  --mdc-typography-font-family: var(--ll-font);
+  --ha-font-family-body: var(--ll-font);
+  --paper-font-body1_-_font-family: var(--ll-font);
+  font-family: var(--ll-font);
+}
+.ll-unsupported { display: flex; gap: 10px; align-items: center; padding: 16px; font-size: 0.84em; color: var(--text-dim); }
+.ll-more { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.4); animation: ll-fade-in 0.2s; }
+.ll-more-card {
+  width: min(420px, 100%); max-height: 80vh; overflow: auto; padding: 18px 20px; border-radius: 20px; display: flex; flex-direction: column; gap: 10px;
+  background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(24px);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+  animation: ll-modal-in 0.35s var(--ll-spring) both;
+}
+.ll-more-head { display: flex; align-items: center; gap: 12px; }
+.ll-more-head > div { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.ll-more-x { border: 0; background: none; color: var(--text-dim); cursor: pointer; }
+.ll-more-state { display: flex; align-items: center; justify-content: space-between; }
+.ll-attrs { margin: 4px 0 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.84em; }
+.ll-attrs div { display: flex; justify-content: space-between; gap: 12px; }
+.ll-attrs dt { color: var(--text-dim); text-transform: capitalize; }
+.ll-attrs dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+
+/* The more-info sheet lives outside a card, so give it the variable mapping. */
+.ll-more { color: var(--text); font-family: var(--ll-font); }
+.mono { font-family: var(--ll-mono); }

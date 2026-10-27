@@ -4,6 +4,8 @@
 // so it never inherits the orb's transform/perspective.
 
 import { clearConfig, type HalConfig } from "../config/hal-config";
+import { getLayout, resetLayout } from "../layout/layout";
+import { startLayoutEditor } from "../layout/editor";
 import { sendCommand } from "./command";
 import { startListening, stopListening, isListening } from "./mic";
 import { sttMode, setSttMode, startCapture, stopCaptureAndTranscribe, isCapturing } from "./stt";
@@ -228,6 +230,15 @@ function showSettings(cfg: HalConfig): void {
         </div>
         <button class="hal-switch on" id="hal-pf-toggle" role="switch" aria-checked="true" aria-label="Show photo frame"></button>
       </div>
+      <div class="hal-sheet-title" style="margin-top:14px">Layout</div>
+      <div class="hal-sheet-row">
+        <div class="hal-sheet-row-text">
+          <div class="hal-sheet-row-label">Home Assistant cards &amp; orb</div>
+          <div class="hal-sheet-row-sub">Place cards and move the orb. Portrait and landscape are separate.</div>
+        </div>
+        <button class="hal-sheet-select" id="hal-layout-edit">Edit</button>
+      </div>
+      <button class="hal-sheet-btn" id="hal-layout-reset" hidden>Reset layout</button>
       <button class="hal-sheet-btn danger" id="hal-repair">Re-pair / change server</button>
       <button class="hal-sheet-btn" id="hal-cancel">Cancel</button>
     </div>`;
@@ -243,6 +254,23 @@ function showSettings(cfg: HalConfig): void {
   void mountCloudToggle(cfg, back);
   mountDeviceTheme(back);
   mountPhotoFrameToggle(back);
+  mountLayoutControls(back, close);
+}
+
+// Satellite layout editor entry (mobile/src/layout). Opens edit mode over the
+// live display; Reset drops this device's saved layout back to the stock look.
+function mountLayoutControls(back: HTMLElement, closeSheet: () => void): void {
+  const edit = back.querySelector<HTMLButtonElement>("#hal-layout-edit");
+  const reset = back.querySelector<HTMLButtonElement>("#hal-layout-reset");
+  if (!edit || !reset) return;
+  const l = getLayout();
+  reset.hidden = !(l.cards.length || l.portrait.items.length || l.landscape.items.length);
+  edit.addEventListener("click", () => { closeSheet(); startLayoutEditor(); });
+  reset.addEventListener("click", async () => {
+    if (!confirm("Reset this device's layout? Its cards are removed.")) return;
+    try { await resetLayout(); closeSheet(); }
+    catch (e) { alert(`Couldn't reset: ${(e as Error).message}`); }
+  });
 }
 
 // Per-device photo-frame override: the hub keeps driving the photo frame, but

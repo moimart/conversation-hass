@@ -12,6 +12,8 @@ import { mountSatelliteAudio } from "./overlay/satellite-audio";
 import { startPhotoFrameIdle } from "./overlay/photo-frame-idle";
 import { configurePlatform, hideSplash, onResume } from "./platform/platform";
 import { registerPush } from "./platform/push";
+import { configureHaApi } from "./ha/api";
+import { mountLayout } from "./layout/layout";
 
 async function main(): Promise<void> {
   await configurePlatform();
@@ -35,6 +37,10 @@ async function main(): Promise<void> {
   mountSatelliteAudio(sessionCfg);  // window.HALSatelliteAudio (HAL's server TTS)
   await mountDisplay();   // loads app.js → connects to HAL_CONFIG.wsUrl
   mountOverlay(sessionCfg);      // text + mic input bar
+  // HA cards + per-orientation layout (orb/clock/text placement). Uses the
+  // ACTIVE base so it works through the gateway too. Non-blocking.
+  configureHaApi(sessionCfg.serverBaseUrl, cfg.token);
+  void mountLayout();
   observeResponses(false); // on-device TTS off (server voice via satellite-audio)
   startPhotoFrameIdle(sessionCfg); // ambient photo frame after the phone goes idle
 
