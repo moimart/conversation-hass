@@ -100,6 +100,8 @@ export interface SatelliteLayout {
   portrait: { items: LayoutItem[] };
   landscape: { items: LayoutItem[] };
   version: number;
+  /** grid resolution the coordinates are in (1 = first release, 2 = current) */
+  res?: number;
 }
 
 export const layoutApi = {

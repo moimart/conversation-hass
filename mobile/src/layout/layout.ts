@@ -5,7 +5,7 @@
 // With NO saved layout nothing changes — hide-kiosk-controls.css keeps the
 // stock phone look. Once a layout exists, `body.hal-custom-layout` is set and
 // this module positions everything on a square-cell grid:
-//   portrait  COLS.portrait  (6) columns,   landscape COLS.landscape (12)
+//   portrait  COLS.portrait  (12) columns,  landscape COLS.landscape (24)
 // spanning the screen between the top gear row and the input bar. Cells are
 // square, so a layout scales with the device instead of being pixel-bound.
 //
@@ -19,7 +19,10 @@ import "../ha/custom"; // registers the custom: card factory
 import { haHub } from "../ha/hub";
 
 export type Orientation = "portrait" | "landscape";
-export const COLS: Record<Orientation, number> = { portrait: 6, landscape: 12 };
+export const COLS: Record<Orientation, number> = { portrait: 12, landscape: 24 };
+/** Grid resolution. 1 = the first release's 6/12 columns; layouts saved at a
+ *  lower resolution are scaled up on load (normalize). */
+export const GRID_RES = 2;
 export const BUILTINS = ["orb", "clock", "transcript", "response"] as const;
 const ORB_PX = 406; // .eye-container native size (rpi/web/style.css)
 const TOP_RESERVE = 52; // gear row
@@ -72,21 +75,54 @@ export function rectOf(it: LayoutItem, g: Geometry): { x: number; y: number; w: 
 export function defaultItems(orient: Orientation, g: Geometry = geometry(orient)): LayoutItem[] {
   const R = g.rows;
   if (orient === "portrait") {
-    const orb = Math.max(2, Math.min(6, R - 5));
+    const orb = Math.max(4, Math.min(12, R - 10));
     return [
-      { id: "clock", x: 0, y: 0, w: 4, h: 1 },
-      { id: "transcript", x: 0, y: 1, w: 6, h: 2 },
-      { id: "orb", x: Math.floor((6 - orb) / 2), y: 3, w: orb, h: orb },
-      { id: "response", x: 0, y: Math.min(3 + orb, R - 2), w: 6, h: 2 },
+      { id: "clock", x: 0, y: 0, w: 8, h: 2 },
+      { id: "transcript", x: 0, y: 2, w: 12, h: 4 },
+      { id: "orb", x: Math.floor((12 - orb) / 2), y: 6, w: orb, h: orb },
+      { id: "response", x: 0, y: Math.min(6 + orb, R - 4), w: 12, h: 4 },
     ];
   }
-  const orb = Math.max(2, Math.min(6, R));
+  const orb = Math.max(4, Math.min(12, R));
+  const half = Math.max(2, Math.floor((R - 2) / 2));
   return [
     { id: "orb", x: 0, y: 0, w: orb, h: orb },
-    { id: "clock", x: orb, y: 0, w: 4, h: 1 },
-    { id: "transcript", x: orb, y: 1, w: 12 - orb, h: Math.max(1, Math.floor((R - 1) / 2)) },
-    { id: "response", x: orb, y: 1 + Math.max(1, Math.floor((R - 1) / 2)), w: 12 - orb, h: Math.max(1, R - 1 - Math.floor((R - 1) / 2)) },
+    { id: "clock", x: orb, y: 0, w: 8, h: 2 },
+    { id: "transcript", x: orb, y: 2, w: 24 - orb, h: half },
+    { id: "response", x: orb, y: 2 + half, w: 24 - orb, h: Math.max(2, R - 2 - half) },
   ];
+}
+
+const overlapsItem = (a: LayoutItem, b: LayoutItem) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** Bring a layout from the server up to the current grid resolution. Layouts
+ *  saved by the first release (6/12 columns) are scaled ×2, and get their clock
+ *  back: that release's server dropped the clock's placement on save, which
+ *  hid the clock + weather on every edited layout. */
+export function normalize(l: SatelliteLayout): SatelliteLayout {
+  const res = l.res ?? 1;
+  if (res >= GRID_RES) return l;
+  const k = GRID_RES / res;
+  const out: SatelliteLayout = { ...l, res: GRID_RES };
+  for (const o of ["portrait", "landscape"] as Orientation[]) {
+    const items = (l[o]?.items ?? []).map((i) => ({ id: i.id, x: i.x * k, y: i.y * k, w: i.w * k, h: i.h * k }));
+    if (items.length && !items.some((i) => i.id === "clock")) {
+      const clock = { id: "clock", x: 0, y: 0, w: 8, h: 2 };
+      if (!items.some((i) => overlapsItem(i, clock))) items.push(clock);
+      else {
+        // Top-left is taken: put it in the first free 8×2 slot, if any.
+        for (let y = 0; y < 120 && !items.some((i) => i.id === "clock"); y++) {
+          for (let x = 0; x + 8 <= COLS[o]; x++) {
+            const c = { id: "clock", x, y, w: 8, h: 2 };
+            if (!items.some((i) => overlapsItem(i, c))) { items.push(c); break; }
+          }
+        }
+      }
+    }
+    out[o] = { items };
+  }
+  return out;
 }
 
 // --- applying ------------------------------------------------------------------
@@ -247,7 +283,7 @@ function hasPlacements(l: SatelliteLayout): boolean {
 // --- state for the editor ---------------------------------------------------------
 
 export function getLayout(): SatelliteLayout {
-  return layout ?? { cards: [], portrait: { items: [] }, landscape: { items: [] }, version: 0 };
+  return layout ?? { cards: [], portrait: { items: [] }, landscape: { items: [] }, version: 0, res: GRID_RES };
 }
 
 /** Preview an unsaved layout (the editor calls this on every drag). */
@@ -258,7 +294,7 @@ export function previewLayout(next: SatelliteLayout): void {
 
 export async function saveLayout(next: SatelliteLayout): Promise<SatelliteLayout> {
   const { version: _v, ...body } = next;
-  layout = await layoutApi.put(body);
+  layout = normalize(await layoutApi.put({ ...body, res: GRID_RES }));
   applyLayout();
   return layout;
 }
@@ -286,7 +322,7 @@ export async function mountLayout(): Promise<void> {
   window.matchMedia("(orientation: portrait)").addEventListener("change", relayout);
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      layout = await layoutApi.get();
+      layout = normalize(await layoutApi.get());
       break;
     } catch (e) {
       // Old server (no route) or offline: keep the stock look, retry briefly.

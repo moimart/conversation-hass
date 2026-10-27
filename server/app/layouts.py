@@ -11,8 +11,9 @@ Shape:
    "portrait":  {"items": [{"id": "orb", "x": 0, "y": 0, "w": 6, "h": 6}, ...]},
    "landscape": {"items": [...]},
    "version": 3}
-Item ids are "orb", "transcript", "response" or a card id. Units are grid cells
-(portrait COLS["portrait"] wide, landscape COLS["landscape"]).
+Item ids are "orb", "clock", "transcript", "response" or a card id. Units are
+grid cells (portrait COLS["portrait"] wide, landscape COLS["landscape"]); `res`
+is the grid resolution the coordinates were saved at (see GRID_RES).
 """
 from __future__ import annotations
 
@@ -24,11 +25,14 @@ import tempfile
 
 log = logging.getLogger("hal.layouts")
 
-COLS = {"portrait": 6, "landscape": 12}
-MAX_ROWS = 60
+# Grid resolution 2 (half-size cells vs the first release's 6/12 columns).
+# Layouts saved at res 1 are scaled ×2 by the app when it loads them.
+GRID_RES = 2
+COLS = {"portrait": 12, "landscape": 24}
+MAX_ROWS = 120
 MAX_CARDS = 40
 MAX_CARD_BYTES = 32 * 1024
-BUILTIN_IDS = ("orb", "transcript", "response")
+BUILTIN_IDS = ("orb", "clock", "transcript", "response")
 _ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 
 
@@ -71,7 +75,11 @@ def validate(raw) -> dict:
         card_ids.add(cid)
         cards.append({"id": cid, "config": cfg})
 
-    out: dict = {"cards": cards}
+    try:
+        res = int(raw.get("res") or 1)
+    except (TypeError, ValueError):
+        res = 1
+    out: dict = {"cards": cards, "res": max(1, min(GRID_RES, res))}
     for orient, cols in COLS.items():
         items_in = ((raw.get(orient) or {}).get("items")) or []
         if not isinstance(items_in, list):

@@ -14,7 +14,7 @@ import {
 } from "./layout";
 
 const LABELS: Record<string, string> = { orb: "Orb", clock: "Clock", transcript: "Transcript", response: "Response" };
-const MAX_ROWS = 60;
+const MAX_ROWS = 120;
 
 let active: { close: () => void } | null = null;
 
@@ -181,8 +181,8 @@ export function startLayoutEditor(): void {
     while (draft.cards.some((c) => c.id === `c${n}`)) n++;
     const id = `c${n}`;
     draft.cards.push({ id, config: cfg });
-    const w = orient === "portrait" ? 3 : 4;
-    if (!placeItem(id, w, 2)) draft.cards.pop();
+    const w = orient === "portrait" ? 6 : 8;
+    if (!placeItem(id, w, 4)) draft.cards.pop();
     refresh();
   }
 
@@ -198,11 +198,13 @@ export function startLayoutEditor(): void {
       pane.replaceChildren(...(hidden.length || other.length ? [
         ...hidden.map((b) => h("button", { type: "button", class: "hle-menu-btn", onclick: () => {
           s.close();
-          if (placeItem(b, b === "orb" ? 3 : orient === "portrait" ? 6 : 6, b === "orb" ? 3 : b === "clock" ? 1 : 2)) refresh();
+          const w = b === "orb" ? 6 : b === "clock" ? 8 : 12;
+          const hh = b === "orb" ? 6 : b === "clock" ? 2 : 4;
+          if (placeItem(b, w, hh)) refresh();
         } }, LABELS[b])),
         ...other.map((c) => h("button", { type: "button", class: "hle-menu-btn", onclick: () => {
           s.close();
-          if (placeItem(c.id, orient === "portrait" ? 3 : 4, 2)) refresh();
+          if (placeItem(c.id, orient === "portrait" ? 6 : 8, 4)) refresh();
         } }, `${cardLabel(c.config)} (from ${orient === "portrait" ? "landscape" : "portrait"})`)),
       ] : [h("div", { class: "hle-empty" }, "Everything is already on this layout.")]));
     };

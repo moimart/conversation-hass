@@ -21,11 +21,11 @@ def _layout(**over):
 def test_validate_clamps_rects_to_the_grid():
     out = validate(_layout(portrait={"items": [
         {"id": "orb", "x": 99, "y": -3, "w": 40, "h": 0},
-        {"id": "c1", "x": 5, "y": 1, "w": 3, "h": 2},
+        {"id": "c1", "x": 11, "y": 1, "w": 7, "h": 2},
     ]}))
     orb, card = out["portrait"]["items"]
-    assert orb == {"id": "orb", "x": 0, "y": 0, "w": 6, "h": 1}   # portrait is 6 wide
-    assert card["x"] == 3                                         # pulled back inside
+    assert orb == {"id": "orb", "x": 0, "y": 0, "w": 12, "h": 1}  # portrait is 12 wide
+    assert card["x"] == 5                                         # 5+3 fits in 12
 
 
 def test_validate_drops_unknown_and_duplicate_placements():
@@ -69,3 +69,19 @@ def test_store_prune_and_delete(tmp_path):
     assert s.prune(["keep"]) == 1
     assert s.get("gone") is None and s.get("keep") is not None
     assert s.delete("keep") is True and s.delete("keep") is False
+
+
+def test_every_builtin_placement_survives():
+    """Regression: "clock" was missing from BUILTIN_IDS, so the server silently
+    dropped its placement and the clock (and the weather inside it) vanished."""
+    items = [{"id": b, "x": 0, "y": i * 2, "w": 2, "h": 2}
+             for i, b in enumerate(("orb", "clock", "transcript", "response"))]
+    out = validate(_layout(portrait={"items": items}))
+    assert [i["id"] for i in out["portrait"]["items"]] == ["orb", "clock", "transcript", "response"]
+
+
+def test_res_is_kept_and_clamped():
+    assert validate(_layout())["res"] == 1                 # legacy default
+    assert validate(_layout(res=2))["res"] == 2
+    assert validate(_layout(res=9))["res"] == 2
+    assert validate(_layout(res="x"))["res"] == 1
