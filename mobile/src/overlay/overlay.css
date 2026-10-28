@@ -308,3 +308,12 @@ body.show-mirror .hal-input-bar { display: none; }   /* mirror owns the screen *
 .photo-frame-stage .pf-taken {
     bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--hal-inset-bottom, 0px)) + 80px);
 }
+
+/* Custom orbs (orbs.ts) — rows inside the shared .hle-sheet. */
+.hal-orb-row { display: flex; align-items: center; gap: 8px; }
+.hal-orb-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15px; }
+.hal-orb-row-text small { color: rgba(255, 255, 255, 0.5); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hal-orb-actions { display: flex; gap: 6px; margin-top: 8px; }
+.hal-orb-actions .hle-btn { height: 36px; padding: 0 14px; font-size: 13px; }
+.hle-btn.danger { color: #ff7a7a; }
+#hal-orb-new, #hal-orb-manage { flex: 1; margin-top: 0; }

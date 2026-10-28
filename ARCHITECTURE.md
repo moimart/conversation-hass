@@ -22,6 +22,7 @@ and [`MQTT.md`](./MQTT.md). For theme authoring see
 - [Voice timers](#voice-timers)
 - [Mobile satellites & pairing](#mobile-satellites--pairing)
 - [Satellite HA cards + layouts](#satellite-ha-cards--layouts)
+- [Custom orbs](#custom-orbs)
 - [Satellite gateway (remote access)](#satellite-gateway-remote-access)
 - [Push notifications](#push-notifications)
 - [Live runtime config](#live-runtime-config)
@@ -478,6 +479,21 @@ layouts stored per device on the server. Ported from the docker-home launcher.
   the drag/resize editor (cards from a dashboard, an entity search, or YAML).
 - **Remote** — the gateway allowlists all of it, *including service calls*: a
   paired token can control HA entities directly, not only through the LLM.
+
+---
+
+## Custom orbs
+
+The orb's in-eye media is the active theme's `state_videos` by default. Users
+can add **custom orbs** from a satellite (Settings → Orb → New orb): a name,
+a required idle video/image and optional listening/thinking/speaking media.
+`orbs.py` normalises uploads with ffmpeg (480² H.264 / 720² JPEG — playable on
+the hub's Chromium and iOS alike) under `runtime/orbs/`. The selection is
+global — the hub, every satellite, and the HA **Orb** select — pushed as
+`set_orb` (cached + replayed by the audio_streamer like weather; media proxied
+through the RPi at `/orbs/...`). A satellite can stop following the hub and
+show its own orb. `rpi/web/state_videos.js mountOrbMedia` renders both theme
+clips and custom orbs; a custom orb survives theme changes.
 
 ---
 

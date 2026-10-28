@@ -25,11 +25,29 @@ function halBase() {
 }
 
 export function mountStateVideos(container, themeName, videoMap) {
-    if (!container) throw new Error("mountStateVideos: container required");
     if (!themeName) throw new Error("mountStateVideos: themeName required");
     if (!videoMap || typeof videoMap !== "object") {
         throw new Error("mountStateVideos: videoMap required");
     }
+    // A theme's clips are just orb media served from /themes/<theme>/.
+    const media = {};
+    for (const [state, filename] of Object.entries(videoMap)) {
+        if (typeof filename !== "string" || !filename.trim()) continue;
+        media[state] = {
+            url: `${halBase()}/themes/${encodeURIComponent(themeName)}/${encodeURIComponent(filename)}`,
+            kind: "video",
+        };
+    }
+    return mountOrbMedia(container, media);
+}
+
+/* Mount per-state orb media: {state: {url, kind: "video"|"image"}}. Used for
+   theme clips (above) and for custom orbs (server/app/orbs.py). One element
+   per unique URL; states without media fall back processing → listening →
+   idle and speaking/listening → idle, so a single "idle" media covers all. */
+export function mountOrbMedia(container, media) {
+    if (!container) throw new Error("mountOrbMedia: container required");
+    if (!media || typeof media !== "object") throw new Error("mountOrbMedia: media required");
 
     const doc = container.ownerDocument || document;
 
@@ -44,32 +62,42 @@ export function mountStateVideos(container, themeName, videoMap) {
     layer.hidden = false;
     layer.innerHTML = "";   // clean slate if remounted
 
-    // Build one <video> per unique source. The stateToEl map binds each
-    // state name to the element that should play for it.
-    const fileToEl = new Map();        // filename -> <video>
-    const stateToEl = new Map();       // state name -> <video>
+    // Build one element per unique source. The stateToEl map binds each
+    // state name to the element that should show for it.
+    const fileToEl = new Map();        // url -> <video>|<img>
+    const stateToEl = new Map();       // state name -> element
 
-    for (const [state, filename] of Object.entries(videoMap)) {
-        if (typeof filename !== "string" || !filename.trim()) continue;
-        let el = fileToEl.get(filename);
+    for (const [state, item] of Object.entries(media)) {
+        const url = item && typeof item.url === "string" ? item.url : "";
+        if (!url) continue;
+        let el = fileToEl.get(url);
         if (!el) {
-            el = doc.createElement("video");
-            el.src = `${halBase()}/themes/${encodeURIComponent(themeName)}/${encodeURIComponent(filename)}`;
-            el.loop = true;
-            el.muted = true;
-            el.playsInline = true;
-            el.autoplay = false;
-            el.preload = "auto";
-            // Browsers occasionally autoplay anyway when these flags are
-            // set in markup order; mute explicitly so the autoplay
-            // policy never trips us up.
-            el.setAttribute("muted", "");
-            el.setAttribute("playsinline", "");
+            if (item.kind === "image") {
+                el = doc.createElement("img");
+                el.alt = "";
+                el.decoding = "async";
+                el.src = url;
+            } else {
+                el = doc.createElement("video");
+                el.src = url;
+                el.loop = true;
+                el.muted = true;
+                el.playsInline = true;
+                el.autoplay = false;
+                el.preload = "auto";
+                // Browsers occasionally autoplay anyway when these flags are
+                // set in markup order; mute explicitly so the autoplay
+                // policy never trips us up.
+                el.setAttribute("muted", "");
+                el.setAttribute("playsinline", "");
+            }
             layer.appendChild(el);
-            fileToEl.set(filename, el);
+            fileToEl.set(url, el);
         }
         stateToEl.set(state, el);
     }
+    const FALLBACK = { processing: ["listening", "idle"], listening: ["idle"], speaking: ["idle"] };
+    const isVideo = (el) => el && el.tagName === "VIDEO";
 
     let activeEl = null;
     let currentState = null;
@@ -86,7 +114,7 @@ export function mountStateVideos(container, themeName, videoMap) {
             setTimeout(() => {
                 // If state flipped back to this element in the meantime,
                 // don't pause it.
-                if (old !== activeEl && !old.classList.contains("active")) {
+                if (old !== activeEl && !old.classList.contains("active") && isVideo(old)) {
                     try { old.pause(); } catch (_) { /* ignore */ }
                 }
             }, 220);
@@ -94,7 +122,7 @@ export function mountStateVideos(container, themeName, videoMap) {
         activeEl = el;
         if (el) {
             el.classList.add("active");
-            if (!pausedByOverlay) {
+            if (!pausedByOverlay && isVideo(el)) {
                 try {
                     const p = el.play();
                     if (p && typeof p.catch === "function") p.catch(() => {});
@@ -110,21 +138,24 @@ export function mountStateVideos(container, themeName, videoMap) {
         // states leave the previous video in place (intentional —
         // avoids a static-orb flash during brief transitions).
         let el = stateToEl.get(name);
-        if (!el && name === "processing") el = stateToEl.get("listening");
+        for (const alt of FALLBACK[name] || []) {
+            if (el) break;
+            el = stateToEl.get(alt);
+        }
         if (!el) return;
         applyActive(el);
     }
 
     function pause() {
         pausedByOverlay = true;
-        if (activeEl) {
+        if (isVideo(activeEl)) {
             try { activeEl.pause(); } catch (_) { /* ignore */ }
         }
     }
 
     function resume() {
         pausedByOverlay = false;
-        if (activeEl) {
+        if (isVideo(activeEl)) {
             try {
                 const p = activeEl.play();
                 if (p && typeof p.catch === "function") p.catch(() => {});
@@ -158,6 +189,7 @@ export function mountStateVideos(container, themeName, videoMap) {
             observer = null;
         }
         for (const el of fileToEl.values()) {
+            if (!isVideo(el)) continue;
             try { el.pause(); } catch (_) { /* ignore */ }
             try { el.removeAttribute("src"); el.load(); } catch (_) { /* ignore */ }
         }

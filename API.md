@@ -49,6 +49,7 @@ the hub UI.
   - [`POST /api/photo_frame/start`](#post-apiphoto_framestart)
   - [`POST /api/photo_frame/end`](#post-apiphoto_frameend)
 - [Satellite HA cards + layouts](#satellite-ha-cards--layouts)
+- [Custom orbs](#custom-orbs)
 - [Themes](#themes)
   - [`GET /api/themes`](#get-apithemes)
   - [`GET /themes/{name}/{filename}`](#get-themesnamefilename)
@@ -772,6 +773,39 @@ rectangles to the grid, drops unknown placements and bumps `version`.
 
 ---
 
+## Custom orbs
+
+The orb's in-eye media normally comes from the active theme's `state_videos`.
+A **custom orb** replaces it with your own video or image, created from a
+satellite (`server/app/orbs.py`, `routes_orbs.py`). `idle` media is required;
+`listening`, `processing` and `speaking` are optional (fallbacks:
+processing → listening → idle, speaking → idle). Uploads are normalised by
+ffmpeg: video → centre-cropped 480×480 H.264, no audio, ≤ 20 s; image →
+720×720 JPEG; raw uploads ≤ 100 MB. `default` is reserved = the theme's orb.
+
+The selection is **global** (hub + every satellite, persisted in runtime
+config, HA select **Orb**); a satellite can stop following it in its settings
+and show its own. A chosen orb survives theme changes.
+
+All routes need a `full` token (`watch` → `403`).
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/orbs` | `{orbs: [{id, name, states}], selected}` |
+| `POST` | `/api/orbs` | `{name}` → orb (names unique, case-insensitive) |
+| `PUT` | `/api/orbs/{id}/media/{state}` | raw video/image body + `Content-Type`; transcoded |
+| `DELETE` | `/api/orbs/{id}/media/{state}` | optional states only |
+| `PATCH` | `/api/orbs/{id}` | `{name}` |
+| `DELETE` | `/api/orbs/{id}` | selected → falls back to `default` |
+| `POST` | `/api/orbs/select` | `{id}` — the global selection |
+| `GET` | `/api/orbs/{id}/message` | the `set_orb` payload (a device's own pick) |
+| `GET` | `/orbs/{id}/{state}.{mp4\|jpg}` | media. LAN-open like `/themes`; via the gateway `?token=` |
+
+Displays receive `{"type":"set_orb","id","name","media":{state:{url,kind}}}`
+on connect and on every change (`id: "default"`, empty `media` = theme orb).
+
+---
+
 ## Themes
 
 ### `GET /api/themes`
@@ -1009,6 +1043,8 @@ in addition to the `Authorization: Bearer` header and is redacted from logs.
 | `GET`  | `/api/ha/proxy` | ✓ (`?token=`) | camera / art images for cards |
 | `GET`  | `/local/*`, `/hacsfiles/*` | — | HA static files for custom cards (public, as on HA) |
 | `GET` `PUT` `DELETE` | `/api/satellite/layout` | ✓ | this device's card/orb layout |
+| `GET` `POST` `PUT` `PATCH` `DELETE` | `/api/orbs*` | ✓ | custom orbs (uploads up to 110 MB at the edge) |
+| `GET` | `/orbs/{id}/{file}` | ✓ (`?token=`) | custom orb media |
 | `WS`   | `/ws/ui` | ✓ (`?token=`) | **valid token required** — no public mirror mode |
 
 Explicitly NOT proxied (LAN-only): `/api/pair/request`, `/api/pair/redeem`

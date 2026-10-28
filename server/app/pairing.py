@@ -47,6 +47,7 @@ _SCOPE_PERMISSIONS: dict[str, set[str] | None] = {
 # Permissions checked elsewhere that only "full" grants (watch lacks them):
 #   "ha"     — satellite HA cards: state, reads, service calls (routes_ha.py)
 #   "layout" — the device's own display layout (routes_ha.py)
+#   "orbs"   — create/select custom orbs (routes_orbs.py)
 DERIVABLE_SCOPES = {"watch"}
 
 

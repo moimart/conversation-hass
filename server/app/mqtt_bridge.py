@@ -328,6 +328,13 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
         extra={"payload_on": "ON", "payload_off": "OFF"},
         parse=lambda p: p.strip(), serialize=_switch_serialize,
     ),
+    # Custom orbs: "default" (the theme's own orb) + every named orb created
+    # on a satellite. Options are refreshed whenever an orb is added/removed.
+    ConfigEntity(
+        key="orb", platform="select", name="Orb",
+        icon="mdi:circle-slice-8", options_attr="orb_options",
+        default="default", republish_if_empty=False,
+    ),
     ConfigEntity(
         key="cloud_llm_model", platform="select", name="Cloud Model",
         icon="mdi:cloud-braces", options_attr="cloud_model_options",
@@ -412,6 +419,7 @@ class MQTTBridge:
         self.voice_options: list[str] = []
         self.model_options: list[str] = []
         self.cloud_model_options: list[str] = []
+        self.orb_options: list[str] = ["default"]
         self.theme_options: list[str] = [
             "dark", "sal", "glados", "matrix", "mother", "joi", "kitt",
             "birch", "odyssey", "japandi", "forest", "sunset",

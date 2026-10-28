@@ -76,6 +76,7 @@ hal/<device_id>/
 └── config/                                   live runtime config (state + set per key)
     ├── theme_day/{state,set}
     ├── theme_night/{state,set}
+    ├── orb/{state,set}
     ├── tts_voice/{state,set}
     ├── ollama_model/{state,set}
     ├── wake_word/{state,set}
@@ -192,6 +193,7 @@ Each key has a `<state>` topic the bridge publishes to (retained) and a
 |---|---|---|---|
 | `theme_day`              | `<base>/config/theme_day/{state,set}`              | theme name | must be a valid theme |
 | `theme_night`            | `<base>/config/theme_night/{state,set}`            | theme name | must be a valid theme |
+| `orb`                    | `<base>/config/orb/{state,set}`                    | orb name | `default` (the theme's orb) or a custom orb's name (case-insensitive); unknown names are rejected |
 | `tts_voice`              | `<base>/config/tts_voice/{state,set}`              | voice name | must be one Wyoming advertised |
 | `ollama_model`           | `<base>/config/ollama_model/{state,set}`           | model name | must be installed in Ollama |
 | `wake_word`              | `<base>/config/wake_word/{state,set}`              | text       | lowercased on the server |
@@ -295,6 +297,7 @@ the theme catalog / voice list / model list changes.
 | **Theme**      | All installed themes |
 | **Day Theme**  | Config; same options as Theme |
 | **Night Theme**| Config; same options as Theme |
+| **Orb**        | Config; `default` + every custom orb created on a satellite (options refresh when orbs are added/removed) |
 | **TTS Voice**  | Config; voices Wyoming announces |
 | **Ollama Model** | Config; models Ollama has installed |
 

@@ -112,6 +112,10 @@ class AppState:
     # its own HA connection) and the per-device layout store (layouts.py).
     ha_bridge: object | None = None
     layouts: object | None = None
+    # Custom orbs (orbs.OrbStore) + the globally selected one ("default" =
+    # the theme's own state videos). Satellites may override locally.
+    orbs: object | None = None
+    current_orb: str = "default"
     # go2rtc REST client (lazy) used by stream_rtsp
     go2rtc: object | None = None
     # Active WebRTC session, if any. Shape:
@@ -615,6 +619,12 @@ async def lifespan(app: FastAPI):
         state.layouts.prune(state.pairing.public_id(t) for t in state.pairing._tokens)
     except Exception as e:
         log.warning(f"layout prune failed: {e}")
+
+    # Custom orbs: restore the global selection (falls back to the theme's
+    # orb if the chosen one was deleted or has no media).
+    from .orbs import OrbStore, orb_message
+    state.orbs = OrbStore()
+    state.current_orb = orb_message(state.orbs, str(cfg.get("orb", "default") or "default"))["id"]
 
     # Persistent conversation log (postgres). connect() is backgrounded with
     # retry/backoff — a slow or absent postgres never blocks startup, and
@@ -1240,11 +1250,13 @@ from .routes_ws import router as _ws_router  # noqa: E402
 from .routes_http import router as _http_router  # noqa: E402
 from .pairing import router as _pairing_router  # noqa: E402
 from .routes_ha import router as _ha_router  # noqa: E402
+from .routes_orbs import router as _orbs_router  # noqa: E402
 
 app.include_router(_ws_router)
 app.include_router(_http_router)
 app.include_router(_pairing_router)
 app.include_router(_ha_router)
+app.include_router(_orbs_router)
 
 # Re-export the moved WS + HTTP handlers and request models so existing
 # callers/tests that do `from .main import <handler>` (or `srv.<handler>`)

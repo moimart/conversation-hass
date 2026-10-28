@@ -1421,7 +1421,8 @@ body.photo-frame-active.pf-hide-clock .clock-display {
     z-index: 2;
     pointer-events: none;
 }
-.eye-state-video-layer video {
+.eye-state-video-layer video,
+.eye-state-video-layer img {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -1430,7 +1431,8 @@ body.photo-frame-active.pf-hide-clock .clock-display {
     opacity: 0;
     transition: opacity 200ms ease;
 }
-.eye-state-video-layer video.active {
+.eye-state-video-layer video.active,
+.eye-state-video-layer img.active {
     opacity: 1;
 }
 .eye-container.camera-active .eye-state-video-layer,

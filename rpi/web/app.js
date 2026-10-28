@@ -69,6 +69,12 @@
     // Cached so we don't re-import every theme switch.
     let stateVideoModule = null;
     let stateVideoController = null;
+    // Orb selection state (see "Orb media" below). Declared up here because
+    // applyTheme → refreshOrb can run before that section is evaluated.
+    const SAT_ORB_KEY = "hal-sat-orb";
+    let hubOrb = { id: "default", media: {} };
+    let localOrb = null;   // set_orb-shaped message for this device's own pick
+    let orbRefreshing = Promise.resolve();
 
     function injectThemeCss(name) {
         if (loadedCss.has(name)) return;
@@ -175,36 +181,106 @@
             const ctrl = await ensureEffect(name);
             try { ctrl && ctrl.start && ctrl.start(); } catch (e) { console.warn(e); }
         }
-        // State-video layer: tear down whatever the previous theme had,
-        // then mount fresh if the new theme declares state_videos.
+        currentTheme = name;
+        // Orb media: the selected custom orb wins over the theme's own clips.
+        await refreshOrb();
+    }
+
+    // --- Orb media (theme clips or a custom orb) ---------------------------
+    // The hub's selection arrives as set_orb ({id, name, media:{state:{url,
+    // kind}}}; id "default" = the theme's own state_videos). A satellite can
+    // stop following it and show its own pick (hal-sat-orb), fetched from
+    // /api/orbs/<id>/message. Theme changes keep a custom orb (it wins).
+
+    function orbPref() {
+        try {
+            const v = JSON.parse(localStorage.getItem(SAT_ORB_KEY) || "{}");
+            return { follow: v.follow !== false, id: v.id || "default" };
+        } catch (e) { return { follow: true, id: "default" }; }
+    }
+
+    function effectiveOrb() {
+        if (isSatellite && !orbPref().follow && localOrb) return localOrb;
+        return hubOrb;
+    }
+
+    // Satellites load media from the server (gateway: ?token=); the kiosk goes
+    // through its RPi proxy with the relative URL.
+    function orbUrl(url) {
+        if (!isSatellite) return url;
+        const tok = HAL.token ? `${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(HAL.token)}` : "";
+        return `${halBase()}${url}${tok}`;
+    }
+
+    function refreshOrb() {
+        orbRefreshing = orbRefreshing.then(mountOrb, mountOrb);
+        return orbRefreshing;
+    }
+
+    async function mountOrb() {
         if (stateVideoController) {
             try { stateVideoController.destroy(); } catch (e) { /* ignore */ }
             stateVideoController = null;
         }
+        const eyeContainer = document.querySelector(".eye-container");
+        if (!eyeContainer) return;
+        const orb = effectiveOrb();
+        const custom = orb && orb.id !== "default" && orb.media && orb.media.idle;
+        const theme = themes.find(t => t.name === currentTheme);
         const sv = theme && theme.state_videos;
-        if (sv && typeof sv === "object" && Object.keys(sv).length > 0) {
-            try {
-                if (!stateVideoModule) {
-                    stateVideoModule = await import("/state_videos.js");
+        const hasThemeClips = sv && typeof sv === "object" && Object.keys(sv).length > 0;
+        if (!custom && !hasThemeClips) return;
+        try {
+            if (!stateVideoModule) stateVideoModule = await import("/state_videos.js");
+            if (custom) {
+                const media = {};
+                for (const [st, m] of Object.entries(orb.media)) {
+                    media[st] = { url: orbUrl(m.url), kind: m.kind };
                 }
-                const eyeContainer = document.querySelector(".eye-container");
-                if (eyeContainer && stateVideoModule.mountStateVideos) {
-                    stateVideoController = stateVideoModule.mountStateVideos(
-                        eyeContainer, name, sv,
-                    );
-                    // Sync immediately so first paint shows the right clip
-                    // (lookup uses the body class set above).
-                    const stateClass = Array.from(document.body.classList)
-                        .find(c => c.startsWith("state-"));
-                    if (stateClass && stateVideoController) {
-                        stateVideoController.setState(stateClass.slice("state-".length));
-                    }
-                }
-            } catch (e) {
-                console.warn(`theme ${name}: state_videos mount failed:`, e);
+                stateVideoController = stateVideoModule.mountOrbMedia(eyeContainer, media);
+            } else {
+                stateVideoController = stateVideoModule.mountStateVideos(eyeContainer, currentTheme, sv);
             }
+            // Sync immediately so first paint shows the right clip.
+            const stateClass = Array.from(document.body.classList).find(c => c.startsWith("state-"));
+            if (stateClass && stateVideoController) {
+                stateVideoController.setState(stateClass.slice("state-".length));
+            }
+        } catch (e) {
+            console.warn("orb media mount failed:", e);
         }
-        currentTheme = name;
+    }
+
+    async function loadLocalOrb(id) {
+        if (!id || id === "default") { localOrb = { id: "default", media: {} }; return; }
+        try {
+            const r = await fetch(`${halBase()}/api/orbs/${encodeURIComponent(id)}/message`, {
+                headers: HAL.token ? { Authorization: `Bearer ${HAL.token}` } : {},
+            });
+            localOrb = r.ok ? await r.json() : { id: "default", media: {} };
+        } catch (e) {
+            localOrb = { id: "default", media: {} };
+        }
+    }
+
+    if (isSatellite) {
+        window.HALOrbLocal = {
+            get: () => ({ ...orbPref(), hub: hubOrb.id }),
+            async set(pref) {
+                const next = { follow: pref.follow !== false, id: pref.id || "default" };
+                localStorage.setItem(SAT_ORB_KEY, JSON.stringify(next));
+                if (!next.follow) await loadLocalOrb(next.id);
+                await refreshOrb();
+            },
+            // The server changed an orb's media: re-fetch this device's own pick.
+            async reload() {
+                const p = orbPref();
+                if (!p.follow) await loadLocalOrb(p.id);
+                await refreshOrb();
+            },
+        };
+        const p = orbPref();
+        if (!p.follow) loadLocalOrb(p.id).then(refreshOrb);
     }
 
     // --- Per-satellite local theme override -------------------------------
@@ -780,6 +856,10 @@
                     localStorage.setItem(THEME_KEY, msg.name);
                     applyTheme(msg.name);
                 }
+                break;
+            case "set_orb":
+                hubOrb = { id: msg.id || "default", name: msg.name, media: msg.media || {} };
+                if (!isSatellite || orbPref().follow) refreshOrb();
                 break;
             case "set_orientation":
                 // Ignored on mobile (pinned landscape); honored on the kiosk.

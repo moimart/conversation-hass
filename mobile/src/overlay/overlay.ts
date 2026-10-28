@@ -6,6 +6,7 @@
 import { clearConfig, type HalConfig } from "../config/hal-config";
 import { getLayout, resetLayout } from "../layout/layout";
 import { startLayoutEditor } from "../layout/editor";
+import { mountOrbSection, ORB_SECTION_HTML } from "./orbs";
 import { sendCommand } from "./command";
 import { startListening, stopListening, isListening } from "./mic";
 import { sttMode, setSttMode, startCapture, stopCaptureAndTranscribe, isCapturing } from "./stt";
@@ -222,6 +223,7 @@ function showSettings(cfg: HalConfig): void {
           <button class="hal-switch" id="hal-theme-os" role="switch" aria-checked="false" aria-label="Follow system dark mode"></button>
         </div>
       </div>
+${ORB_SECTION_HTML}
       <div class="hal-sheet-title" style="margin-top:14px">Photo frame</div>
       <div class="hal-sheet-row">
         <div class="hal-sheet-row-text">
@@ -255,6 +257,7 @@ function showSettings(cfg: HalConfig): void {
   mountDeviceTheme(back);
   mountPhotoFrameToggle(back);
   mountLayoutControls(back, close);
+  mountOrbSection(cfg, back);
 }
 
 // Satellite layout editor entry (mobile/src/layout). Opens edit mode over the

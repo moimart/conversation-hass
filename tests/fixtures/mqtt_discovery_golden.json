@@ -551,6 +551,33 @@
     }
   ],
   [
+    "homeassistant/select/hal-default/config_orb/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/orb/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:circle-slice-8",
+      "name": "Orb",
+      "options": [
+        "default"
+      ],
+      "state_topic": "hal/hal-default/config/orb/state",
+      "unique_id": "hal-default_config_orb"
+    }
+  ],
+  [
     "homeassistant/select/hal-default/config_orb_side/config",
     {
       "availability": [

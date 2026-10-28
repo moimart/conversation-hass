@@ -100,6 +100,9 @@ class AudioManager:
         # Last photo_faces (face-aware Ken Burns boxes) for the open photo frame,
         # cached + replayed like weather so a reloaded page restores the pan.
         self.last_photo_faces: dict | None = None
+        # Last set_orb (the selected custom orb, or "default" = the theme's),
+        # replayed on web-client connect: the kiosk page has no copy of its own.
+        self.last_orb: dict | None = None
         # Last photo-frame SHOW message (image/video) for the open frame, cached +
         # replayed so a reloaded page re-mounts the frame (the server only re-sends
         # `update`s while the session is active, which a fresh page drops). Stored
@@ -627,6 +630,11 @@ class AudioManager:
             # Kiosk call audio is handled NATIVELY here (aiortc), not in Chromium.
             await self._handle_intercom(msg)
 
+        elif msg_type == "set_orb":
+            # Cache so a reloaded kiosk page restores the orb, then forward.
+            self.last_orb = msg
+            await self.broadcast_to_ui(msg)
+
         elif msg_type == "weather_update":
             # Cache so a (re)connecting kiosk page gets it replayed on connect.
             self.last_weather = msg
@@ -812,6 +820,8 @@ class AudioManager:
         await ws.send_json({"type": "volume_sync", "level": self.tts_volume})
         if self.last_weather:
             await ws.send_json(self.last_weather)
+        if self.last_orb:
+            await ws.send_json(self.last_orb)
         # Presentation first, so a re-mounted frame renders already styled.
         if self.last_photo_style:
             await ws.send_json(self.last_photo_style)
@@ -1068,11 +1078,16 @@ class AudioManager:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as up:
                     body = await up.read()
+                    # Orb media URLs are versioned (?v=), so let the browser
+                    # keep them; everything else stays uncached as before.
+                    cache = (up.headers.get("Cache-Control", "public, max-age=86400")
+                             if request.path.startswith("/orbs/")
+                             else "no-cache, no-store, must-revalidate")
                     return web.Response(
                         status=up.status,
                         body=body,
                         content_type=up.content_type or "application/octet-stream",
-                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+                        headers={"Cache-Control": cache},
                     )
         except Exception as e:
             log.debug(f"proxy {path} failed: {e}")
@@ -1158,6 +1173,7 @@ class AudioManager:
         app.router.add_get("/api/conversation/log", self._proxy_to_ai_server)
         app.router.add_get("/api/conversation/log/image", self._proxy_to_ai_server)
         app.router.add_get(r"/themes/{name}/{filename}", self._proxy_to_ai_server)
+        app.router.add_get(r"/orbs/{orb}/{filename}", self._proxy_to_ai_server)
         # Looping photo-frame video lives in a writable dir (the /app/web
         # tree is mounted read-only). Register BEFORE the "/" catch-all
         # static — aiohttp matches routes in registration order.

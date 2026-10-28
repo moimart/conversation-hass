@@ -471,6 +471,10 @@ async def wire(state, bridge) -> None:
     # Cloud LLM override: options prefetched at startup; switch ALWAYS OFF at
     # boot (never read from runtime config).
     bridge.cloud_model_options = list(state.cloud_model_options)
+    if getattr(state, "orbs", None) is not None:
+        bridge.orb_options = state.orbs.names()
+        _sel = state.orbs.get(state.current_orb) if state.current_orb != "default" else None
+        bridge._cached_config["orb"] = _sel["name"] if _sel else "default"
     bridge._cached_config["cloud_llm_model"] = state.cloud_llm_model
     bridge._cached_config["cloud_llm_enabled"] = False
     async def _mqtt_calendar_show(args: dict):
@@ -872,6 +876,18 @@ async def wire(state, bridge) -> None:
         await _persist("cloud_llm_model", name)
         await bridge.publish_config("cloud_llm_model", name)
 
+    async def _cfg_orb(name: str):
+        from .routes_orbs import apply_orb, orb_store
+        orb_id = orb_store(state).id_for_name(name)
+        if orb_id is None:
+            # Unknown name (e.g. deleted meanwhile): snap HA back to the current one.
+            log.warning(f"config orb rejected: {name!r}")
+            current = orb_store(state).get(state.current_orb)
+            await bridge.publish_config("orb", current["name"] if current else "default")
+            return
+        await apply_orb(state, orb_id)
+
+    bridge.set_config_callback("orb", _cfg_orb)
     bridge.set_config_callback("cloud_llm_enabled", _cfg_cloud_llm_enabled)
     bridge.set_config_callback("cloud_llm_model", _cfg_cloud_llm_model)
 

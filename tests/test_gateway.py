@@ -383,3 +383,43 @@ async def test_ha_card_surface_stays_tight(client, method, path):
     resp = await cl.request(method, path, headers=_auth())
     assert resp.status == 404
     assert state["proxied"] == []
+
+
+# custom orbs
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path", [
+    ("GET", "/api/orbs"), ("POST", "/api/orbs"), ("POST", "/api/orbs/select"),
+    ("GET", "/api/orbs/moon-a1b2c3/message"), ("PATCH", "/api/orbs/moon-a1b2c3"),
+    ("DELETE", "/api/orbs/moon-a1b2c3"), ("PUT", "/api/orbs/moon-a1b2c3/media/idle"),
+    ("DELETE", "/api/orbs/moon-a1b2c3/media/speaking"), ("GET", "/orbs/moon-a1b2c3/idle.mp4"),
+])
+async def test_orb_routes_need_token(client, method, path):
+    cl, state = client
+    assert (await cl.request(method, path)).status == 401
+    assert (await cl.request(method, path, headers=_auth())).status == 200
+    assert (method, path) in state["proxied"]
+
+
+@pytest.mark.asyncio
+async def test_orb_media_accepts_query_token(client):
+    cl, _ = client
+    assert (await cl.get(f"/orbs/moon-a1b2c3/idle.jpg?v=1&token={GOOD}")).status == 200
+
+
+@pytest.mark.asyncio
+async def test_large_orb_upload_passes_the_edge(client):
+    """A multi-MB phone video must not hit aiohttp's 1 MiB default limit."""
+    cl, state = client
+    body = b"\x00" * (5 * 1024 * 1024)
+    resp = await cl.put("/api/orbs/moon-a1b2c3/media/idle", data=body,
+                        headers={**_auth(), "Content-Type": "video/mp4"})
+    assert resp.status == 200
+    assert ("PUT", "/api/orbs/moon-a1b2c3/media/idle") in state["proxied"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/orbs/x/../../api/speak", "/orbs/moon/index.json"])
+async def test_orb_media_surface_tight(client, path):
+    cl, state = client
+    assert (await cl.get(path, headers=_auth())).status == 404

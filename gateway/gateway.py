@@ -105,6 +105,16 @@ _ALLOWLIST = [
     ("GET",    r"^/api/satellite/layout$",              True,  False),
     ("PUT",    r"^/api/satellite/layout$",              True,  False),
     ("DELETE", r"^/api/satellite/layout$",              True,  False),
+    # Custom orbs (token-gated; `orbs` scope server-side). Uploads are raw
+    # video/image bodies (see client_max_size below).
+    ("GET",    r"^/api/orbs$",                          True,  False),
+    ("POST",   r"^/api/orbs(/select)?$",                True,  False),
+    ("GET",    r"^/api/orbs/[a-z0-9-]+/message$",       True,  False),
+    ("PATCH",  r"^/api/orbs/[a-z0-9-]+$",               True,  False),
+    ("DELETE", r"^/api/orbs/[a-z0-9-]+$",               True,  False),
+    ("PUT",    r"^/api/orbs/[a-z0-9-]+/media/[a-z]+$",  True,  False),
+    ("DELETE", r"^/api/orbs/[a-z0-9-]+/media/[a-z]+$",  True,  False),
+    ("GET",    r"^/orbs/[a-z0-9-]+/[a-z]+\.(mp4|jpg)$", True,  False),  # <video>: ?token=
 ]
 if ALLOW_PAIR_REDEEM:
     # Pre-auth: the redeem body's (demo) code is the gate, so no token here.
@@ -381,7 +391,9 @@ class Gateway:
 
 def build_app() -> web.Application:
     gw = Gateway()
-    app = web.Application()
+    # Orb uploads carry whole phone videos (the server caps them at 100 MB);
+    # aiohttp's default 1 MiB would reject them at the edge.
+    app = web.Application(client_max_size=110 * 1024 * 1024)
     app.router.add_get(_WS_PATH, gw.handle_ws)
     # Everything else funnels through the allowlist handler.
     app.router.add_route("*", "/{tail:.*}", gw.handle)

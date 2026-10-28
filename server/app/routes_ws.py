@@ -80,6 +80,14 @@ async def audio_endpoint(websocket: WebSocket):
     except Exception as e:
         log.warning(f"Could not push photo-frame style to RPi: {e}")
 
+    # The selected orb (the kiosk has no copy; the audio_streamer caches it for
+    # page reloads, but a fresh RPi connection needs it from us).
+    try:
+        from .orbs import orb_message
+        await websocket.send_json(orb_message(state.orbs, state.current_orb))
+    except Exception as e:
+        log.warning(f"Could not push orb to RPi: {e}")
+
     # Replay the current weather (unlike theme, the kiosk has no localStorage
     # copy — it relies entirely on the server push).
     if state.current_weather:
@@ -504,6 +512,13 @@ async def ui_endpoint(websocket: WebSocket):
     # mobile relies on this.
     try:
         await websocket.send_json({"type": "set_theme", "name": state.current_theme})
+    except Exception:
+        pass
+
+    # The household's selected orb (a satellite may ignore it locally).
+    try:
+        from .orbs import orb_message
+        await websocket.send_json(orb_message(state.orbs, state.current_orb))
     except Exception:
         pass
 
