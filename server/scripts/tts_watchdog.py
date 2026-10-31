@@ -9,23 +9,27 @@ animation, text only lands when the turn times out). Only a container restart
 clears it.
 
 This probes the service with a tiny REAL synth on an interval and
-`docker restart`s the container after N consecutive failures, waiting for it to
+restarts the container after N consecutive failures, waiting for it to
 reload before probing again — so the hang auto-recovers instead of needing a
 manual restart.
 
 Runs as a systemd --user service on the AI-server host (10.20.30.185), like the
-openclaw-gateway. Pure stdlib; no third-party deps. The moimart user is in the
-docker group there, so `docker restart` works without sudo.
+openclaw-gateway. Pure stdlib; no third-party deps. The container runs under
+the same user's rootless Podman (or Docker, via TTS_WATCHDOG_ENGINE), so the
+restart needs no sudo.
 """
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import time
 
 HOST = os.environ.get("TTS_WATCHDOG_HOST", "127.0.0.1")
 PORT = int(os.environ.get("TTS_WATCHDOG_PORT", "10300"))
 CONTAINER = os.environ.get("TTS_WATCHDOG_CONTAINER", "wyoming-omnivoice")
+# Container CLI: podman when installed, else docker.
+ENGINE = os.environ.get("TTS_WATCHDOG_ENGINE") or ("podman" if shutil.which("podman") else "docker")
 INTERVAL = float(os.environ.get("TTS_WATCHDOG_INTERVAL", "90"))        # s between probes
 PROBE_TIMEOUT = float(os.environ.get("TTS_WATCHDOG_PROBE_TIMEOUT", "15"))
 FAILS_BEFORE_RESTART = int(os.environ.get("TTS_WATCHDOG_FAILS", "2"))  # consecutive
@@ -92,7 +96,7 @@ async def probe() -> bool:
 def restart() -> None:
     log(f"restarting {CONTAINER} …")
     try:
-        subprocess.run(["docker", "restart", "-t", "5", CONTAINER],
+        subprocess.run([ENGINE, "restart", "-t", "5", CONTAINER],
                        check=True, timeout=90, capture_output=True)
         log("restart issued")
     except Exception as e:
