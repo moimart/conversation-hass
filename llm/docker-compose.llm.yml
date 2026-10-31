@@ -39,13 +39,8 @@ services:
       - --enable-prefix-caching
       - --host=0.0.0.0
       - --port=8000
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    devices:
+      - nvidia.com/gpu=all     # CDI (Podman; Docker >= 28.2 has CDI on by default)
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8000/health || exit 1"]
       interval: 15s

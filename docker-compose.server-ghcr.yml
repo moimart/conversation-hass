@@ -84,13 +84,8 @@ services:
       - huggingface-cache:/root/.cache/huggingface
       - ./server/models:/app/models
       - /etc/localtime:/etc/localtime:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    devices:
+      - nvidia.com/gpu=all     # CDI (Podman; Docker >= 28.2 has CDI on by default)
 
   go2rtc:
     image: alexxit/go2rtc:latest
