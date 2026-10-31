@@ -79,6 +79,8 @@ hal/<device_id>/
     ├── orb/{state,set}
     ├── tts_voice/{state,set}
     ├── ollama_model/{state,set}
+    ├── llm_backend/{state,set}
+    ├── llm_concurrency/{state,set}
     ├── wake_word/{state,set}
     ├── auto_theme/{state,set}                ON|OFF
     ├── start_muted/{state,set}               ON|OFF
@@ -196,6 +198,8 @@ Each key has a `<state>` topic the bridge publishes to (retained) and a
 | `orb`                    | `<base>/config/orb/{state,set}`                    | orb name | `default` (the theme's orb) or a custom orb's name (case-insensitive); unknown names are rejected |
 | `tts_voice`              | `<base>/config/tts_voice/{state,set}`              | voice name | must be one Wyoming advertised |
 | `ollama_model`           | `<base>/config/ollama_model/{state,set}`           | model name | must be installed in Ollama |
+| `llm_backend`            | `<base>/config/llm_backend/{state,set}`            | `ollama` \| `vllm` | switches PAL's tool loop AND OpenClaw; vLLM starts on demand (first start downloads the model), state reported by `llm_backend_status` |
+| `llm_concurrency`        | `<base>/config/llm_concurrency/{state,set}`        | 1–16 | vLLM `--max-num-seqs` / Ollama `OLLAMA_NUM_PARALLEL`; restarts the active backend |
 | `wake_word`              | `<base>/config/wake_word/{state,set}`              | text       | lowercased on the server |
 | `auto_theme`             | `<base>/config/auto_theme/{state,set}`             | `ON`/`OFF` | enables sun-based theme swap |
 | `start_muted`            | `<base>/config/start_muted/{state,set}`            | `ON`/`OFF` | mic boots muted |
@@ -300,6 +304,9 @@ the theme catalog / voice list / model list changes.
 | **Orb**        | Config; `default` + every custom orb created on a satellite (options refresh when orbs are added/removed) |
 | **TTS Voice**  | Config; voices Wyoming announces |
 | **Ollama Model** | Config; models Ollama has installed |
+| **LLM Backend** | Config; `ollama` or `vllm` (Qwen3.8-27B-FP8) — moves PAL and OpenClaw together |
+| **LLM Concurrency** | Config; max concurrent requests for the active backend |
+| **LLM Backend Status** | Diagnostic sensor: `ready` / `starting` / `stopping` / `error` (+ `detail` attribute) |
 
 ### Text
 

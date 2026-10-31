@@ -234,6 +234,19 @@ of which engine answers:
   `server/runtime/cloud_providers.json` (hot-reloaded, never logged); the
   switch always boots OFF.
 
+**Local backend: Ollama or vLLM** — the HA select *LLM Backend* switches the
+local model server for PAL's tool loop **and** OpenClaw's agent together.
+`vllm` runs `Qwen/Qwen3.8-27B-FP8` in `pal-vllm` (`llm/docker-compose.llm.yml`),
+started on demand by **`pal-llm-control`** (`llm-control/app.py`): it unloads
+Ollama's models, brings vLLM up, waits for `/health`, then repoints OpenClaw by
+editing `openclaw.json` (hot-applied). Switching back stops vLLM and restores
+OpenClaw's previous Ollama model. PAL keeps answering on the current backend
+until the new one is ready (`server/app/vllm_backend.py`); a vLLM error on a
+call falls back to Ollama. *LLM Context Size* and *LLM Concurrency* configure
+the active backend (vLLM fixes both at startup, so changing them restarts it).
+The controller drives the engine through its API socket + compose CLI, so it
+works under Docker or Podman.
+
 **Intent hints + guard** — tool-shaped phrases (show/hide the conversation
 log, start/cancel a timer, pair a device) are matched by `_INTENT_HINTS`
 in `conversation.py`. The match does **not** bypass the LLM: it appends a
