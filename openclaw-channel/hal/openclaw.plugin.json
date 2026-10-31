@@ -5,7 +5,7 @@
     "hal"
   ],
   "name": "PAL Kiosk",
-  "description": "Channel plugin for the PAL voice assistant kiosk \u2014 routes voice commands through an OpenClaw agent and delivers responses back to the kiosk for TTS and display.",
+  "description": "Channel plugin for the PAL voice assistant kiosk — routes voice commands through an OpenClaw agent and delivers responses back to the kiosk for TTS and display.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -58,5 +58,9 @@
         }
       }
     }
+  },
+  "doctorContract": {
+    "stateMigrations": [],
+    "configRepair": false
   }
 }

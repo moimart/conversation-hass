@@ -76,6 +76,23 @@ export const halPlugin = createChatChannelPlugin<HalResolvedAccount>({
       isConfigured: (account: HalResolvedAccount) => Boolean(account.halBaseUrl),
       resolveAllowFrom: () => [],
     },
+    // Account lifecycle. PAL pushes turns to our webhook, so there is no
+    // connection to own: the account is "running" while the gateway keeps it
+    // started, and stopping just resolves when the gateway aborts it. Without
+    // this, 2026.10 reports the channel as configured-but-not-running and the
+    // health monitor keeps restarting it.
+    gateway: {
+      startAccount: async (ctx: any) => {
+        const now = Date.now();
+        ctx.setStatus?.({ accountId: ctx.accountId, running: true, connected: true, lastStartAt: now });
+        ctx.log?.info?.(`[hal] account ${ctx.accountId} ready (webhook /channels/hal/webhook)`);
+        await new Promise<void>((resolve) => {
+          if (ctx.abortSignal?.aborted) return resolve();
+          ctx.abortSignal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+        ctx.setStatus?.({ accountId: ctx.accountId, running: false, connected: false, lastStopAt: Date.now() });
+      },
+    },
     messaging: {
       normalizeTarget: (raw: string) => raw,
       inferTargetChatType: () => "direct" as const,

@@ -1,6 +1,6 @@
 {
   "name": "@openclaw/hal",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "OpenClaw channel plugin for the PAL voice assistant kiosk",
   "license": "MIT",
