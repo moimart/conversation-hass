@@ -1,6 +1,10 @@
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core";
 import { createPluginRuntimeStore } from "openclaw/plugin-sdk/runtime-store";
-import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/inbound-envelope";
+import { resolveAgentRoute } from "openclaw/plugin-sdk/routing";
+import {
+  createChannelInboundEnvelopeBuilderAsync,
+  resolveInboundSessionEnvelopeContextAsync,
+} from "openclaw/plugin-sdk/channel-inbound";
 import { halPlugin } from "./channel.js";
 import { inlineMediaList } from "./media.js";
 import type { HalInboundMessage, HalOutboundMessage } from "./types.js";
@@ -21,21 +25,44 @@ function readBody(req: any): Promise<string> {
   });
 }
 
+async function postToHal(halBaseUrl: string, outbound: HalOutboundMessage): Promise<boolean> {
+  try {
+    const resp = await fetch(`${halBaseUrl}/api/openclaw/response`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(outbound),
+    });
+    if (!resp.ok) console.error(`[hal] Delivery failed: ${resp.status}`);
+    return resp.ok;
+  } catch (err: any) {
+    console.error(`[hal] Delivery error: ${err.message}`);
+    return false;
+  }
+}
+
 async function handleHalInbound(cfg: any, message: HalInboundMessage) {
   const runtime = getRuntime();
   const senderId = message.sender_id ?? "kiosk-user";
   const target = `hal:${senderId}`;
+  const halBaseUrl: string =
+    (cfg?.channels as Record<string, any>)?.hal?.halBaseUrl ?? "";
 
-  const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
+  // OpenClaw 2026.10 inbound API: resolve the route, then prepare the session
+  // facts + envelope builder with the awaited helpers (the callback-based
+  // inbound-envelope helpers are deprecated since 2026.9.8).
+  const route = resolveAgentRoute({
     cfg,
     channel: "hal",
     accountId: "default",
-    peer: { kind: "direct" as const, id: target },
-    runtime: runtime.channel,
-    sessionStore: cfg.session?.store,
+    peer: { kind: "direct", id: target },
   });
-
-  const { storePath, body } = buildEnvelope({
+  const { storePath } = await resolveInboundSessionEnvelopeContextAsync({
+    cfg,
+    agentId: route.agentId,
+    sessionKey: route.sessionKey,
+  });
+  const buildEnvelope = await createChannelInboundEnvelopeBuilderAsync({ cfg, route });
+  const body = buildEnvelope({
     channel: "hal",
     from: senderId,
     timestamp: Date.now(),
@@ -52,7 +79,7 @@ async function handleHalInbound(cfg: any, message: HalInboundMessage) {
     SessionKey: route.sessionKey,
     AccountId: "default",
     ChatType: "direct",
-    ConversationLabel: "HAL Kiosk",
+    ConversationLabel: "PAL Kiosk",
     SenderName: senderId,
     SenderId: senderId,
     Provider: "hal",
@@ -65,18 +92,11 @@ async function handleHalInbound(cfg: any, message: HalInboundMessage) {
     CommandAuthorized: true,
   });
 
-  const halBaseUrl: string =
-    (cfg?.channels as Record<string, any>)?.hal?.halBaseUrl ?? "";
-
-  // OpenClaw 2026.5.x removed the `runtime.channel.turn.runAssembled` alias.
-  // The channel-owned prepared-dispatch path is now
-  // runtime.channel.inbound.runPreparedReply, which takes a `runDispatch`
-  // closure instead of the old `delivery` + `dispatchReplyWithBufferedBlock
-  // Dispatcher` params. runDispatch drives the reply pipeline and delivers each
-  // reply block back to the HAL server (mirrors the gateway's own direct-dm
-  // channel / kernel dispatchAssembledChannelTurn). Agent + model are resolved
-  // from ctxPayload, so agentId is no longer passed here.
-  await runtime.channel.inbound.runPreparedReply({
+  // runtime.channel.inbound.dispatchReply replaces the deprecated
+  // runPreparedReply + hand-rolled runDispatch closure: core records the
+  // session, runs the reply pipeline and calls our delivery adapter once per
+  // logical reply payload (and owns message_sending / message_sent hooks).
+  await runtime.channel.inbound.dispatchReply({
     channel: "hal",
     accountId: "default",
     routeSessionKey: route.sessionKey,
@@ -84,74 +104,54 @@ async function handleHalInbound(cfg: any, message: HalInboundMessage) {
     ctxPayload,
     recordInboundSession: runtime.channel.session.recordInboundSession,
     record: {
-      onRecordError: (error: any) => {
+      onRecordError: (error: unknown) => {
         console.error("[hal] Session record error:", error);
       },
     },
-    runDispatch: async () =>
-      await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
-        ctx: ctxPayload,
-        cfg,
-        dispatcherOptions: {
-          deliver: async (payload: any) => {
-            const text: string = payload?.text ?? "";
+    cfg,
+    agentId: route.agentId,
+    dispatchReplyWithBufferedBlockDispatcher:
+      runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
+    delivery: {
+      observeMessageSent: true,
+      deliver: async (payload: any) => {
+        const text: string = payload?.text ?? "";
+        const rawMedia: string[] = [];
+        if (Array.isArray(payload?.mediaUrls)) rawMedia.push(...payload.mediaUrls);
+        if (typeof payload?.mediaUrl === "string" && payload.mediaUrl) rawMedia.push(payload.mediaUrl);
+        // Inline gateway-local files as data: URLs so the containerized PAL
+        // server can use them (it can't read the gateway's filesystem).
+        const mediaUrls = await inlineMediaList(rawMedia);
 
-            const rawMedia: string[] = [];
-            if (Array.isArray(payload.mediaUrls)) rawMedia.push(...payload.mediaUrls);
-            if (typeof payload.mediaUrl === "string" && payload.mediaUrl)
-              rawMedia.push(payload.mediaUrl);
-            // Inline gateway-local files as data: URLs so the Dockerized HAL
-            // server can use them (it can't read the gateway's filesystem).
-            const mediaUrls = await inlineMediaList(rawMedia);
-
-            if (!halBaseUrl) return;
-            if (!text.trim() && mediaUrls.length === 0) return;
-
-            const outbound: HalOutboundMessage = {
-              request_id: message.request_id,
-              text,
-              media_urls: mediaUrls,
-            };
-
-            try {
-              const resp = await fetch(`${halBaseUrl}/api/openclaw/response`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(outbound),
-              });
-              if (!resp.ok) {
-                console.error(`[hal] Delivery failed: ${resp.status}`);
-              } else {
-                console.log(`[hal] Delivered: ${text.length} chars`);
-              }
-            } catch (err: any) {
-              console.error(`[hal] Delivery error: ${err.message}`);
-            }
-          },
-          onError: (error: any) => {
-            console.error("[hal] Dispatch error:", error);
-            if (halBaseUrl) {
-              fetch(`${halBaseUrl}/api/openclaw/response`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  request_id: message.request_id,
-                  text: "Sorry, I encountered an error processing that request.",
-                  media_urls: [],
-                } satisfies HalOutboundMessage),
-              }).catch(() => {});
-            }
-          },
-        },
-        replyOptions: {},
-      }),
+        if (!halBaseUrl || (!text.trim() && mediaUrls.length === 0)) {
+          return { visibleReplySent: false, suppression: { reason: "no_visible_result" } };
+        }
+        const ok = await postToHal(halBaseUrl, { request_id: message.request_id, text, media_urls: mediaUrls });
+        if (!ok) throw new Error("PAL server did not accept the reply");
+        console.log(`[hal] Delivered: ${text.length} chars`);
+        return { visibleReplySent: true, content: text };
+      },
+      onError: (error: unknown) => {
+        console.error("[hal] Dispatch error:", error);
+        // The turn failed: answer the pending PAL request so it doesn't hang
+        // until its 120 s timeout.
+        if (halBaseUrl) {
+          void postToHal(halBaseUrl, {
+            request_id: message.request_id,
+            text: "Sorry, I encountered an error processing that request.",
+            media_urls: [],
+          });
+        }
+      },
+    },
+    replyOptions: {},
   });
 }
 
 export default defineChannelPluginEntry({
   id: "hal",
-  name: "HAL Kiosk",
-  description: "Channel plugin for HAL voice assistant kiosk",
+  name: "PAL Kiosk",
+  description: "Channel plugin for the PAL voice assistant kiosk",
   plugin: halPlugin,
 
   setRuntime(runtime: any) {
@@ -189,16 +189,23 @@ export default defineChannelPluginEntry({
         const runtime = getRuntime();
         const cfg = runtime.config.current();
 
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json");
-        res.end(
-          JSON.stringify({ status: "accepted", request_id: body.request_id })
-        );
-
+        // OpenClaw 2026.10 admits agent work per request: a turn started after
+        // the handler returns is refused ("Gateway is temporarily unavailable").
+        // So the turn runs INSIDE the request and we answer when it settles.
+        // Replies still reach PAL as they are produced, through its
+        // /api/openclaw/response callback (the delivery adapter), so PAL never
+        // waits on this HTTP response for the answer itself.
         console.log(`[hal] Processing: "${body.text.slice(0, 60)}"`);
-        handleHalInbound(cfg, body).catch((err: any) => {
-          console.error("[hal] handleHalInbound error:", err.message ?? err);
-        });
+        let status = "completed";
+        try {
+          await handleHalInbound(cfg, body);
+        } catch (err: any) {
+          status = "failed";
+          console.error("[hal] handleHalInbound error:", err?.message ?? err);
+        }
+        res.statusCode = status === "completed" ? 200 : 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status, request_id: body.request_id }));
 
         return true;
       },

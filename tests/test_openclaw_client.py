@@ -59,9 +59,15 @@ class TestClientInit:
 
 def _mock_response(status_code: int = 200, text: str = "") -> MagicMock:
     """Build a minimal mock httpx.Response."""
+    import json as _json
     r = MagicMock()
     r.status_code = status_code
     r.text = text
+
+    def _parse():
+        return _json.loads(text) if text else {}
+
+    r.json = _parse
     return r
 
 
@@ -225,3 +231,54 @@ class TestClose:
         # The done future should not be touched (its result is preserved).
         assert fut2.done() and not fut2.cancelled()
         assert client._pending == {}
+
+
+# --- OpenClaw 2026.10: the webhook stays open for the whole turn -----------
+
+class TestTurnInsideWebhook:
+    @pytest.mark.asyncio
+    async def test_reply_arrives_while_webhook_still_open(self):
+        """The plugin now runs the turn inside the webhook request; the reply
+        must be taken from the callback without waiting for the POST."""
+        c = OpenClawClient("http://gw", "http://hal")
+        release = asyncio.Event()
+
+        async def slow_post(url, json=None, headers=None, timeout=None):
+            await release.wait()          # webhook only returns after the turn
+            return _mock_response(200, '{"status":"completed"}')
+
+        with patch.object(c._http, "post", side_effect=slow_post):
+            task = asyncio.create_task(c.send_message("hi"))
+            await asyncio.sleep(0.05)
+            (rid,) = list(c._pending)
+            c.resolve_response(rid, {"text": "pong"})
+            resp = await asyncio.wait_for(task, 1.0)
+            release.set()
+        assert resp.text == "pong" and c._pending == {}
+
+    @pytest.mark.asyncio
+    async def test_early_webhook_failure_aborts_the_wait(self):
+        c = OpenClawClient("http://gw", "http://hal")
+
+        async def failing_post(url, json=None, headers=None, timeout=None):
+            return _mock_response(500, '{"status":"failed"}')
+
+        with patch.object(c._http, "post", side_effect=failing_post):
+            with pytest.raises(RuntimeError, match="returned 500"):
+                await asyncio.wait_for(c.send_message("hi"), 1.0)
+        assert c._pending == {}
+
+    @pytest.mark.asyncio
+    async def test_completed_turn_without_reply_fails_fast(self, monkeypatch):
+        """A settled turn that produced no reply must not hang for 120 s."""
+        c = OpenClawClient("http://gw", "http://hal")
+
+        async def done_post(url, json=None, headers=None, timeout=None):
+            return _mock_response(200, '{"status":"completed"}')
+
+        real_wait_for = asyncio.wait_for
+        monkeypatch.setattr("server.app.openclaw_client.asyncio.wait_for",
+                            lambda aw, timeout: real_wait_for(aw, 0.05))
+        with patch.object(c._http, "post", side_effect=done_post):
+            with pytest.raises(TimeoutError, match="finished without a reply"):
+                await c.send_message("hi")

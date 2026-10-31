@@ -20,7 +20,7 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.5.0"
+    "openclaw": ">=2026.10.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
