@@ -28,18 +28,22 @@ services:
     image: ghcr.io/moimart/conversation-hass/hal-ai-server:latest
     container_name: pal-demo-ai-server
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # No published host port: only the demo gateway reaches it (compose net).
     environment:
-      # --- LLM / TTS / STT: reuse 185's existing services over the LAN --------
-      - OLLAMA_HOST=${DEMO_OLLAMA_HOST:-http://10.20.30.185:11434}
+      # --- LLM / TTS / STT: reuse the host's existing services ----------------
+      # host.docker.internal, not the LAN IP: rootless Podman containers can't
+      # reach the host's own LAN address.
+      - OLLAMA_HOST=${DEMO_OLLAMA_HOST:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${DEMO_OLLAMA_MODEL:-gemma4:e4b}
       - OLLAMA_NUM_CTX=${DEMO_OLLAMA_NUM_CTX:-32768}
       - OLLAMA_NUM_PREDICT=${DEMO_OLLAMA_NUM_PREDICT:-512}
-      - WYOMING_TTS_HOST=${DEMO_WYOMING_TTS_HOST:-10.20.30.185}
+      - WYOMING_TTS_HOST=${DEMO_WYOMING_TTS_HOST:-host.docker.internal}
       - WYOMING_TTS_PORT=${DEMO_WYOMING_TTS_PORT:-10300}
       - WYOMING_TTS_VOICE=${DEMO_WYOMING_TTS_VOICE:-Moises}
       - STT_ENGINE=remote
-      - STT_REMOTE_URL=${DEMO_STT_REMOTE_URL:-http://10.20.30.185:8770}
+      - STT_REMOTE_URL=${DEMO_STT_REMOTE_URL:-http://host.docker.internal:8770}
       - SAMPLE_RATE=48000
       # --- Everything home-side OFF: no HA, no MQTT, no postgres, no memory ---
       - HA_URL=
