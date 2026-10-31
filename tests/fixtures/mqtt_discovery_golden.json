@@ -358,6 +358,34 @@
     }
   ],
   [
+    "homeassistant/number/hal-default/config_llm_concurrency/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/llm_concurrency/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:format-list-numbered",
+      "max": 16,
+      "min": 1,
+      "mode": "box",
+      "name": "LLM Concurrency",
+      "state_topic": "hal/hal-default/config/llm_concurrency/state",
+      "step": 1,
+      "unique_id": "hal-default_config_llm_concurrency"
+    }
+  ],
+  [
     "homeassistant/number/hal-default/config_num_ctx/config",
     {
       "availability": [
@@ -521,6 +549,34 @@
       ],
       "state_topic": "hal/hal-default/config/fallback_ollama_model/state",
       "unique_id": "hal-default_config_fallback_ollama_model"
+    }
+  ],
+  [
+    "homeassistant/select/hal-default/config_llm_backend/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "command_topic": "hal/hal-default/config/llm_backend/set",
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "config",
+      "icon": "mdi:server-network",
+      "name": "LLM Backend",
+      "options": [
+        "ollama",
+        "vllm"
+      ],
+      "state_topic": "hal/hal-default/config/llm_backend/state",
+      "unique_id": "hal-default_config_llm_backend"
     }
   ],
   [
@@ -915,6 +971,30 @@
       "name": "Last Response",
       "state_topic": "hal/hal-default/last_response",
       "unique_id": "hal-default_last_response"
+    }
+  ],
+  [
+    "homeassistant/sensor/hal-default/llm_backend_status/config",
+    {
+      "availability": [
+        {
+          "topic": "hal/hal-default/availability"
+        }
+      ],
+      "device": {
+        "identifiers": [
+          "hal-default"
+        ],
+        "manufacturer": "PAL Voice Assistant",
+        "model": "Voice Server",
+        "name": "HAL"
+      },
+      "entity_category": "diagnostic",
+      "icon": "mdi:server-network",
+      "json_attributes_topic": "hal/hal-default/llm_backend_status/attrs",
+      "name": "LLM Backend Status",
+      "state_topic": "hal/hal-default/llm_backend_status",
+      "unique_id": "hal-default_llm_backend_status"
     }
   ],
   [

@@ -165,6 +165,24 @@ CONFIG_ENTITIES: list[ConfigEntity] = [
         },
         serialize=lambda v: str(v),  # already clamped by publisher
     ),
+    # Local LLM backend for PAL's tool loop AND OpenClaw (pal-llm-control
+    # starts/stops vLLM and repoints OpenClaw). Concurrency maps to vLLM's
+    # --max-num-seqs and Ollama's OLLAMA_NUM_PARALLEL; the context size above
+    # also sets vLLM's --max-model-len. vLLM fixes both at startup, so changing
+    # them while it is active restarts it.
+    ConfigEntity(
+        key="llm_backend", platform="select", name="LLM Backend",
+        icon="mdi:server-network", default="ollama",
+        extra={"options": ["ollama", "vllm"]},
+        parse=_validated_lower_parse({"ollama", "vllm"}),
+    ),
+    ConfigEntity(
+        key="llm_concurrency", platform="number", name="LLM Concurrency",
+        icon="mdi:format-list-numbered", default=4,
+        extra={"min": 1, "max": 16, "step": 1, "mode": "box"},
+        parse=_clamped_int_parse(1, 16, 4),
+        serialize=_clamped_int_serialize(1, 16, 4),
+    ),
     ConfigEntity(
         key="auto_theme", platform="switch", name="Auto Day/Night Theme",
         icon="mdi:theme-light-dark", default=True,
@@ -453,6 +471,7 @@ class MQTTBridge:
         # timeout lives in the config registry (display_auto_off_seconds).
         self._cached_display_state: str = "on"
         self._cached_conversation_engine: str = "ollama"
+        self._cached_llm_backend_status: tuple[str, str] = ("unknown", "")
 
     @property
     def connected(self) -> bool:
@@ -584,6 +603,21 @@ class MQTTBridge:
                 "state_topic": f"{self.base}/conversation_engine",
                 "json_attributes_topic": f"{self.base}/conversation_engine/attrs",
                 "icon": "mdi:brain",
+                "availability": avail,
+                "device": device,
+                "entity_category": "diagnostic",
+            },
+        ))
+
+        # LLM backend switch progress (ready / starting / stopping / error).
+        configs.append((
+            f"{DISCOVERY_PREFIX}/sensor/{self.device_id}/llm_backend_status/config",
+            {
+                "name": "LLM Backend Status",
+                "unique_id": f"{self.device_id}_llm_backend_status",
+                "state_topic": f"{self.base}/llm_backend_status",
+                "json_attributes_topic": f"{self.base}/llm_backend_status/attrs",
+                "icon": "mdi:server-network",
                 "availability": avail,
                 "device": device,
                 "entity_category": "diagnostic",
@@ -1016,6 +1050,7 @@ class MQTTBridge:
                     await self.publish_conversation_engine(
                         self._cached_conversation_engine
                     )
+                    await self.publish_llm_backend_status(*self._cached_llm_backend_status)
 
                     # Subscribe to command topics
                     await client.subscribe(f"{self.base}/volume/set")
@@ -1395,6 +1430,13 @@ class MQTTBridge:
             f"{self.base}/display/state",
             "ON" if v == "on" else "OFF",
         )
+
+    async def publish_llm_backend_status(self, phase: str, detail: str = ""):
+        self._cached_llm_backend_status = (phase, detail)
+        await self._safe_publish(f"{self.base}/llm_backend_status", phase)
+        import json as _json
+        await self._safe_publish(f"{self.base}/llm_backend_status/attrs",
+                                 _json.dumps({"phase": phase, "detail": detail}))
 
     async def publish_conversation_engine(
         self, engine: str, *, duration_s: float = 0.0, model: str = ""

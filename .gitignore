@@ -35,3 +35,7 @@ mobile/ios/App/PALWatch/DevConfig.swift
 # Rust / desktop client build output (never commit build artifacts)
 desktop/target/
 **/target/
+
+# vLLM backend: generated tunables + llm-control state (llm/llm.env.example documents the keys)
+llm/llm.env
+llm/state/

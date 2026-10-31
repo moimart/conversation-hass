@@ -11,6 +11,8 @@ services:
       - MCP_SERVER_URL=${MCP_SERVER_URL}
       - HA_URL=${HA_URL:-}
       - HA_TOKEN=${HA_TOKEN:-}
+      - LLM_CONTROL_URL=${LLM_CONTROL_URL:-http://llm-control:8790}
+      - VLLM_URL=${VLLM_URL:-http://host.docker.internal:8000}
       - WAKE_WORD=${WAKE_WORD-hey hal}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
@@ -170,6 +172,34 @@ services:
       - TRUST_CF_IP=${GATEWAY_TRUST_CF_IP:-1}
     depends_on:
       - ai-server
+
+  # Ollama ⇄ vLLM switch (llm-control/app.py). Internal only (no published
+  # port): ai-server calls it on the compose network. Drives the vLLM compose
+  # project (llm/docker-compose.llm.yml) and Ollama through the engine's API
+  # socket, and repoints OpenClaw by editing its config (hot-applied).
+  # DOCKER_SOCKET points at the engine socket (Podman: its docker-compatible one).
+  llm-control:
+    build:
+      context: ./llm-control
+    image: conversation-hass-llm-control:latest
+    container_name: pal-llm-control
+    restart: unless-stopped
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LLM_COMPOSE_FILE=/srv/llm/docker-compose.llm.yml
+      - LLM_ENV_FILE=/srv/llm/llm.env
+      - LLM_CONTROL_STATE=/srv/llm/state/llm-control.json
+      - OPENCLAW_CONFIG=/srv/openclaw/openclaw.json
+      - OLLAMA_URL=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - VLLM_URL=http://host.docker.internal:8000
+      - OLLAMA_COMPOSE_DIR=${LLM_OLLAMA_COMPOSE_DIR:+/srv/ai_storage}
+    volumes:
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - ./llm:/srv/llm
+      - ${OPENCLAW_HOME:-${HOME}/.openclaw}:/srv/openclaw
+      - ${LLM_OLLAMA_COMPOSE_DIR:-./llm/state}:/srv/ai_storage
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   huggingface-cache:

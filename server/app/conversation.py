@@ -354,6 +354,13 @@ class ConversationManager:
         self.cloud_llm_model: str = ""
         self._force_local_turn = False
 
+        # Local backend for the tool loop: "ollama" (default) or "vllm" (set by
+        # vllm_backend.LLMBackendManager once pal-llm-control reports vLLM ready;
+        # `vllm` is its VLLMClient). A vLLM failure falls back to Ollama for the
+        # call, like the cloud override.
+        self.llm_backend: str = "ollama"
+        self.vllm = None
+
         # Callbacks
         self.on_response: Callable[[str, bytes | None], Awaitable[None]] | None = None
         self.on_wake_word: Callable[[], Awaitable[None]] | None = None
@@ -1023,6 +1030,30 @@ class ConversationManager:
             }
             log.info(f"[cloud] {self.cloud_llm_model} wall={wall:.2f}s msgs={len(messages)}")
             return response
+
+        # vLLM backend (local, OpenAI-compatible). model_override is an Ollama
+        # model (the collapse fallback), so that retry stays on Ollama.
+        if self.llm_backend == "vllm" and self.vllm is not None and not model_override:
+            tools = None if demo_mode() else (self.mcp.tools_for_llm if with_tools else None)
+            t0 = time.monotonic()
+            try:
+                response, usage = await self.vllm.chat(
+                    messages, tools or None, max_tokens=self.num_predict, temperature=0.7)
+            except Exception as e:
+                log.error(f"[vllm] {self.vllm.model} failed after {time.monotonic() - t0:.2f}s "
+                          f"({type(e).__name__}: {e}); falling back to Ollama for this call")
+            else:
+                wall = time.monotonic() - t0
+                gen_n = int(usage.get("completion_tokens") or 0)
+                prompt_n = int(usage.get("prompt_tokens") or 0)
+                self._last_ollama_metrics = {
+                    "model": f"vllm/{self.vllm.model}", "wall_s": wall,
+                    "prompt_n": prompt_n, "gen_n": gen_n,
+                    "gen_tps": (gen_n / wall) if wall else 0.0, "prompt_tps": 0.0,
+                }
+                log.info(f"[vllm] {self.vllm.model} wall={wall:.2f}s prompt={prompt_n}t "
+                         f"gen={gen_n}t msgs={len(messages)}")
+                return response
 
         active_model = (model_override or self.ollama_model)
         payload = {

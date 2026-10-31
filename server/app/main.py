@@ -116,6 +116,8 @@ class AppState:
     # the theme's own state videos). Satellites may override locally.
     orbs: object | None = None
     current_orb: str = "default"
+    # Ollama ⇄ vLLM switch (vllm_backend.LLMBackendManager → pal-llm-control).
+    llm_backend_manager: object | None = None
     # go2rtc REST client (lazy) used by stream_rtsp
     go2rtc: object | None = None
     # Active WebRTC session, if any. Shape:
@@ -956,6 +958,15 @@ async def lifespan(app: FastAPI):
             state.conversation.on_openclaw_media = lambda r: _handle_openclaw_media(state, r)
         log.info(f"OpenClaw client created → {state.openclaw_gateway_url}")
 
+    # LLM backend: re-assert the persisted choice with the controller (it is a
+    # no-op when already in that state). PAL answers on Ollama until the
+    # controller reports vLLM ready.
+    from .vllm_backend import manager_from_env
+    state.llm_backend_manager = manager_from_env(state)
+    if state.llm_backend_manager.enabled and not demo_mode():
+        asyncio.create_task(state.llm_backend_manager.apply(
+            str(cfg.get("llm_backend", "ollama") or "ollama")))
+
     log.info("HAL voice server ready.")
 
     yield
@@ -971,6 +982,8 @@ async def lifespan(app: FastAPI):
         await _stop_active_stream(state, notify_kiosk=False)
     if state.ha_bridge is not None:
         await state.ha_bridge.stop()
+    if state.llm_backend_manager is not None:
+        await state.llm_backend_manager.close()
     if isinstance(state.ha_ws, HAWSClient):
         await state.ha_ws.disconnect()
     if state.mqtt_bridge:

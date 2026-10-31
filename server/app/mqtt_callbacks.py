@@ -304,6 +304,31 @@ async def wire(state, bridge) -> None:
             state.conversation.num_ctx = n
         await _persist("num_ctx", n)
         await bridge.publish_config("num_ctx", n)
+        await _reapply_vllm_if_active()
+
+    async def _reapply_vllm_if_active():
+        """vLLM fixes context + concurrency at startup: when it is the active
+        backend, a change to either restarts it (through pal-llm-control)."""
+        mgr = getattr(state, "llm_backend_manager", None)
+        if mgr is not None and state.runtime_config.get("llm_backend", "ollama") == "vllm":
+            await mgr.apply("vllm")
+
+    async def _cfg_llm_backend(value: str):
+        mgr = getattr(state, "llm_backend_manager", None)
+        await _persist("llm_backend", value)
+        await bridge.publish_config("llm_backend", value)
+        if mgr is not None:
+            await mgr.apply(value)
+
+    async def _cfg_llm_concurrency(value: int):
+        await _persist("llm_concurrency", int(value))
+        await bridge.publish_config("llm_concurrency", int(value))
+        mgr = getattr(state, "llm_backend_manager", None)
+        if mgr is not None:
+            # Ollama: OLLAMA_NUM_PARALLEL (recreates its container); vLLM:
+            # --max-num-seqs (restarts it). The controller applies whichever
+            # backend is active.
+            await mgr.apply(state.runtime_config.get("llm_backend", "ollama"))
 
     async def _cfg_wake_word(value: str):
         value = (value or "").strip()
@@ -471,6 +496,8 @@ async def wire(state, bridge) -> None:
     # Cloud LLM override: options prefetched at startup; switch ALWAYS OFF at
     # boot (never read from runtime config).
     bridge.cloud_model_options = list(state.cloud_model_options)
+    bridge._cached_config["llm_backend"] = state.runtime_config.get("llm_backend", "ollama") or "ollama"
+    bridge._cached_config["llm_concurrency"] = int(state.runtime_config.get("llm_concurrency", 4) or 4)
     if getattr(state, "orbs", None) is not None:
         bridge.orb_options = state.orbs.names()
         _sel = state.orbs.get(state.current_orb) if state.current_orb != "default" else None
@@ -906,6 +933,8 @@ async def wire(state, bridge) -> None:
     bridge.set_config_callback("ollama_model", _cfg_ollama_model)
     bridge.set_config_callback("fallback_ollama_model", _cfg_fallback_ollama_model)
     bridge.set_config_callback("num_ctx", _cfg_num_ctx)
+    bridge.set_config_callback("llm_backend", _cfg_llm_backend)
+    bridge.set_config_callback("llm_concurrency", _cfg_llm_concurrency)
     bridge.set_config_callback("wake_word", _cfg_wake_word)
     bridge.set_config_callback("auto_theme", _cfg_auto_theme)
     bridge.on_calendar_show = _mqtt_calendar_show

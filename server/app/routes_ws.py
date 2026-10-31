@@ -208,7 +208,8 @@ async def audio_endpoint(websocket: WebSocket):
         if state.mqtt_bridge:
             await state.mqtt_bridge.publish_task_metrics(metrics)
             model = metrics.get("model", "")
-            engine = "openclaw" if model == "openclaw" else "ollama"
+            engine = ("openclaw" if model == "openclaw"
+                      else "vllm" if str(model).startswith("vllm/") else "ollama")
             await state.mqtt_bridge.publish_conversation_engine(
                 engine,
                 duration_s=metrics.get("llm_total_s", 0.0),
