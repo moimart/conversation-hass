@@ -8,12 +8,13 @@ requires a token for it (?token=, since <video src> can't send headers).
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 
-from .orbs import DEFAULT_ID, MAX_UPLOAD_BYTES, OrbError, OrbStore, orb_message
+from .orbs import DEFAULT_ID, MAX_UPLOAD_BYTES, STATES, OrbError, OrbStore, orb_message
 
 log = logging.getLogger("hal.orbs")
 router = APIRouter()
@@ -58,6 +59,84 @@ async def refresh_orb_options(state) -> None:
         await bridge.publish_discovery()
     except Exception as e:
         log.debug(f"orb discovery republish failed: {e}")
+
+
+# --- admin import (PAL's LAN-only /mcp: create_orb & co.) -------------------------
+# Media comes from an http(s) URL or a file dropped into the orb inbox
+# (runtime/orbs_inbox/ on the host), so big videos never travel as MCP args.
+
+def _inbox() -> str:
+    return os.environ.get("ORBS_INBOX", "/app/runtime/orbs_inbox")
+
+
+async def _read_source(src: str) -> tuple[bytes, str, str | None]:
+    """(data, content_type, consumed inbox path or None) for a URL or inbox name."""
+    src = (src or "").strip()
+    if src.lower().startswith(("http://", "https://")):
+        import httpx
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as http:
+            async with http.stream("GET", src) as r:
+                if r.status_code != 200:
+                    raise OrbError(f"download failed ({r.status_code}): {src}")
+                buf = bytearray()
+                async for chunk in r.aiter_bytes():
+                    buf += chunk
+                    if len(buf) > MAX_UPLOAD_BYTES:
+                        raise OrbError("file too large (max 100 MB)", 413)
+                ctype = r.headers.get("content-type", "").split(";")[0]
+        return bytes(buf), ctype, None
+    name = os.path.basename(src)
+    path = os.path.join(_inbox(), name)
+    if not name or name.startswith(".") or not os.path.isfile(path):
+        raise OrbError(f"not a URL and not in the orb inbox: {src}", 404)
+    if os.path.getsize(path) > MAX_UPLOAD_BYTES:
+        raise OrbError("file too large (max 100 MB)", 413)
+    with open(path, "rb") as f:
+        data = f.read()
+    return data, mimetypes.guess_type(name)[0] or "", path
+
+
+async def import_orb(state, name: str, sources: dict[str, str], *, select: bool = False) -> dict:
+    """Create the orb `name` (or update its media if it exists) from
+    {state: url-or-inbox-file}. A new orb must bring `idle`; one whose idle
+    import fails is removed again. Consumed inbox files are deleted."""
+    store = orb_store(state)
+    sources = {k: v for k, v in sources.items() if v}
+    if not sources:
+        raise OrbError("give at least the idle media")
+    bad = set(sources) - set(STATES)
+    if bad:
+        raise OrbError(f"unknown state(s): {', '.join(sorted(bad))}")
+    orb_id = store.id_for_name(name)
+    if orb_id == DEFAULT_ID:
+        raise OrbError('"default" is the theme\'s orb and can\'t be replaced')
+    created = orb_id is None
+    if created:
+        if "idle" not in sources:
+            raise OrbError("a new orb needs the idle media")
+        orb_id = store.create(name)["id"]
+    had_idle = bool((store.get(orb_id) or {}).get("media", {}).get("idle"))
+    consumed = []
+    try:
+        for st in [s for s in STATES if s in sources]:
+            data, ctype, path = await _read_source(sources[st])
+            await store.set_media(orb_id, st, data, ctype)
+            if path:
+                consumed.append(path)
+    except OrbError:
+        if created and not (store.get(orb_id) or {}).get("media", {}).get("idle"):
+            store.delete(orb_id)
+        raise
+    for path in consumed:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    if not had_idle:
+        await refresh_orb_options(state)
+    if select or getattr(state, "current_orb", None) == orb_id:
+        await apply_orb(state, orb_id)
+    return _public({"id": orb_id, **store.get(orb_id)})
 
 
 def _err(status: int, message: str) -> Response:

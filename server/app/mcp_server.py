@@ -156,5 +156,58 @@ def build_mcp_server(state: "AppState") -> FastMCP:
         ok = await _dispatch_show_image(state, b64, "image/png", duration_s, entity_id="qr-code")
         return "QR code displayed" if ok else "Kiosk not connected"
 
+    # --- custom orbs (shared library: hub + every satellite) -------------------
+    # Media = an http(s) URL or a file name in the orb inbox
+    # (server/runtime/orbs_inbox/ on the AI-server host).
+    @mcp.tool(name="create_orb", description=(
+        "Add a custom orb (or replace media of an existing one, matched by name) to the "
+        "shared orb library every device can show. Each media argument is an http(s) URL "
+        "or a file name in the orb inbox (server/runtime/orbs_inbox/ on the AI server); "
+        "videos become 480x480 H.264 loops (max 20 s), images 720x720 JPEG. idle is "
+        "required for a new orb; listening/processing/speaking are optional. "
+        "select=true also makes it the orb shown everywhere."))
+    async def create_orb(name: str, idle: str = "", listening: str = "", processing: str = "",
+                         speaking: str = "", select: bool = False) -> str:
+        from .orbs import OrbError
+        from .routes_orbs import import_orb
+        try:
+            orb = await import_orb(state, name, {"idle": idle, "listening": listening,
+                                                 "processing": processing, "speaking": speaking},
+                                   select=select)
+        except OrbError as e:
+            return f"Orb import failed: {e}"
+        return (f"Orb '{orb['name']}' ({orb['id']}) has media for: {', '.join(orb['states'])}"
+                + ("; now selected everywhere" if select else ""))
+
+    @mcp.tool(name="list_orbs", description="List the custom orbs in the shared library and which one is selected.")
+    async def list_orbs() -> str:
+        from .routes_orbs import orb_store
+        orbs = orb_store(state).list()
+        sel = getattr(state, "current_orb", None) or "default"
+        lines = [f"- {o['name']} ({o['id']}): {', '.join(sorted(o.get('media', {})))}" for o in orbs]
+        return f"Selected: {sel}\n" + ("\n".join(lines) if lines else "(no custom orbs)")
+
+    @mcp.tool(name="select_orb", description="Show an orb everywhere (hub + satellites that follow the hub). Pass its name, or 'default' for the theme's orb.")
+    async def select_orb(name: str) -> str:
+        from .routes_orbs import apply_orb, orb_store
+        orb_id = orb_store(state).id_for_name(name)
+        if orb_id is None:
+            return f"No orb called '{name}'"
+        msg = await apply_orb(state, orb_id)
+        return f"Orb set to {msg['name']}"
+
+    @mcp.tool(name="delete_orb", description="Delete a custom orb from the shared library by name.")
+    async def delete_orb(name: str) -> str:
+        from .orbs import DEFAULT_ID
+        from .routes_orbs import apply_orb, orb_store, refresh_orb_options
+        store = orb_store(state)
+        orb_id = store.id_for_name(name)
+        if orb_id in (None, DEFAULT_ID) or not store.delete(orb_id):
+            return f"No custom orb called '{name}'"
+        await refresh_orb_options(state)
+        if getattr(state, "current_orb", None) == orb_id:
+            await apply_orb(state, DEFAULT_ID)
+        return f"Deleted orb {name}"
+
     log.info(f"MCP server built with {len(mcp._tool_manager._tools)} tools")
     return mcp

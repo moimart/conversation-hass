@@ -195,3 +195,62 @@ async def test_upload_size_cap(st):
     r = await routes_orbs.upload_orb_media(
         _req("full", b"x", {"content-length": str(200 * 1024 * 1024)}), orb["id"], "idle")
     assert r.status_code == 413
+
+
+# --- admin import via PAL's /mcp (create_orb & co.) --------------------------------
+
+def _mcp_tool(state, name):
+    from server.app.mcp_server import build_mcp_server
+    return build_mcp_server(state)._tool_manager._tools[name].fn
+
+
+@pytest.fixture
+def inbox(monkeypatch, tmp_path):
+    d = tmp_path / "inbox"
+    d.mkdir()
+    monkeypatch.setenv("ORBS_INBOX", str(d))
+    return d
+
+
+@needs_ffmpeg
+@pytest.mark.asyncio
+async def test_mcp_create_orb_from_inbox_and_url(st, inbox, png, clip, monkeypatch):
+    import httpx
+    st.local_tools = None
+    (inbox / "moon.png").write_bytes(png)
+    real_client = httpx.AsyncClient
+
+    def handler(request):
+        assert str(request.url) == "https://example.com/talk.mov"
+        return httpx.Response(200, content=clip, headers={"content-type": "video/quicktime"})
+
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
+    out = await _mcp_tool(st, "create_orb")(name="Moon", idle="moon.png",
+                                            speaking="https://example.com/talk.mov", select=True)
+    assert "Moon" in out and "idle, speaking" in out and "selected" in out
+    assert not (inbox / "moon.png").exists()                      # inbox file consumed
+    orb_id = st.orbs.id_for_name("Moon")
+    assert st.orbs.get(orb_id)["media"]["speaking"]["kind"] == "video"
+    assert st.mqtt_bridge.orb_options == [DEFAULT_ID, "Moon"]     # visible to every device
+    assert st.current_orb == orb_id and any(p[0] == "rpi" for p in st.pushed)
+    # Same name again = add/replace media on the existing orb, not a duplicate.
+    (inbox / "think.png").write_bytes(png)
+    out = await _mcp_tool(st, "create_orb")(name="moon", processing="think.png")
+    assert "idle, processing, speaking" in out and len(st.orbs.list()) == 1
+    assert "Moon" in await _mcp_tool(st, "list_orbs")()
+    assert await _mcp_tool(st, "select_orb")(name="default") == "Orb set to default"
+    assert await _mcp_tool(st, "delete_orb")(name="Moon") == "Deleted orb Moon"
+    assert st.orbs.list() == []
+
+
+@pytest.mark.asyncio
+async def test_mcp_create_orb_rejects_bad_sources(st, inbox):
+    st.local_tools = None
+    create = _mcp_tool(st, "create_orb")
+    assert "inbox" in await create(name="X", idle="../index.json")    # no path escape
+    assert "idle" in await create(name="X", speaking="a.png")         # new orb needs idle
+    assert "theme" in await create(name="default", idle="a.png")
+    (inbox / "junk.png").write_bytes(b"not an image")
+    assert "failed" in await create(name="X", idle="junk.png")
+    assert st.orbs.list() == []                                       # nothing half-made
