@@ -182,11 +182,17 @@ body.show-mirror .hal-input-bar { display: none; }   /* mirror owns the screen *
     align-items: flex-end;
     justify-content: center;
     background: rgba(0, 0, 0, 0.55);
-    padding: 0 12px calc(20px + env(safe-area-inset-bottom));
+    padding: calc(12px + env(safe-area-inset-top)) 12px calc(20px + env(safe-area-inset-bottom));
 }
 .hal-sheet {
     width: 100%;
     max-width: 460px;
+    /* Scroll when taller than the screen (landscape devices like the Portal). */
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     background: #14171e;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 16px;
@@ -197,6 +203,7 @@ body.show-mirror .hal-input-bar { display: none; }   /* mirror owns the screen *
     font-family: 'Inter', system-ui, sans-serif;
     color: #fff;
 }
+.hal-sheet > * { flex-shrink: 0; }   /* rows keep their height; the sheet scrolls */
 .hal-sheet-title { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.5; }
 .hal-sheet-namerow { display: flex; gap: 8px; align-items: center; }
 .hal-name-input {
