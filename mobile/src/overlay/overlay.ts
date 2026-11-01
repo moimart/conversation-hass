@@ -242,6 +242,21 @@ ${ORB_SECTION_HTML}
         </div>
         <button class="hal-switch on" id="hal-pf-toggle" role="switch" aria-checked="true" aria-label="Show photo frame"></button>
       </div>
+      <div id="hal-pf-quiet-box">
+        <div class="hal-sheet-row">
+          <div class="hal-sheet-row-text">
+            <div class="hal-sheet-row-label">Quiet hours</div>
+            <div class="hal-sheet-row-sub" id="hal-pf-quiet-sub">No photo frame during these hours.</div>
+          </div>
+          <button class="hal-switch" id="hal-pf-quiet" role="switch" aria-checked="false" aria-label="Photo frame quiet hours"></button>
+        </div>
+        <div class="hal-sheet-row" id="hal-pf-quiet-times" hidden>
+          <div class="hal-sheet-row-text"><div class="hal-sheet-row-label">From</div></div>
+          <input class="hal-sheet-select hal-time" id="hal-pf-quiet-start" type="time" />
+          <div class="hal-sheet-row-text" style="flex:0 0 auto"><div class="hal-sheet-row-label">to</div></div>
+          <input class="hal-sheet-select hal-time" id="hal-pf-quiet-end" type="time" />
+        </div>
+      </div>
       <div class="hal-sheet-title" style="margin-top:14px">Layout</div>
       <div class="hal-sheet-row">
         <div class="hal-sheet-row-text">
@@ -290,20 +305,53 @@ function mountLayoutControls(back: HTMLElement, closeSheet: () => void): void {
 // Per-device photo-frame override: the hub keeps driving the photo frame, but
 // this device can locally refuse to display it. Lives in the WebView via
 // window.HALPhotoFrameLocal (exposed by app.js) — device-local, no server.
-type PhotoFrameLocalApi = { get(): boolean; set(enabled: boolean): unknown };
+type QuietHours = { enabled: boolean; start: string; end: string };
+type PhotoFrameLocalApi = {
+  get(): boolean; set(enabled: boolean): unknown;
+  getQuiet?(): QuietHours; setQuiet?(q: Partial<QuietHours>): QuietHours;
+};
 function mountPhotoFrameToggle(back: HTMLElement): void {
   const api = (window as unknown as { HALPhotoFrameLocal?: PhotoFrameLocalApi }).HALPhotoFrameLocal;
   const sw = back.querySelector<HTMLButtonElement>("#hal-pf-toggle");
+  const quietBox = back.querySelector<HTMLElement>("#hal-pf-quiet-box");
+  const quietSw = back.querySelector<HTMLButtonElement>("#hal-pf-quiet");
+  const quietTimes = back.querySelector<HTMLElement>("#hal-pf-quiet-times");
+  const startIn = back.querySelector<HTMLInputElement>("#hal-pf-quiet-start");
+  const endIn = back.querySelector<HTMLInputElement>("#hal-pf-quiet-end");
   if (!api || !sw) return;
-  const setSwitch = (on: boolean) => {
-    sw.classList.toggle("on", on); sw.setAttribute("aria-checked", String(on));
+  const setSw = (el: HTMLButtonElement, on: boolean) => {
+    el.classList.toggle("on", on); el.setAttribute("aria-checked", String(on));
   };
-  setSwitch(api.get());
+  const hasQuiet = !!(api.getQuiet && api.setQuiet && quietBox && quietSw && quietTimes && startIn && endIn);
+  const renderQuiet = () => {
+    if (!hasQuiet) { if (quietBox) quietBox.hidden = true; return; }
+    const q = api.getQuiet!();
+    quietBox!.hidden = !api.get();          // only meaningful when the frame is enabled
+    setSw(quietSw!, q.enabled);
+    quietTimes!.hidden = !q.enabled;
+    startIn!.value = q.start;
+    endIn!.value = q.end;
+  };
+  setSw(sw, api.get());
+  renderQuiet();
   sw.addEventListener("click", () => {
     const next = !sw.classList.contains("on");
     api.set(next);
-    setSwitch(next);
+    setSw(sw, next);
+    renderQuiet();
   });
+  if (hasQuiet) {
+    quietSw!.addEventListener("click", () => {
+      api.setQuiet!({ enabled: !quietSw!.classList.contains("on") });
+      renderQuiet();
+    });
+    const saveTimes = () => {
+      if (startIn!.value && endIn!.value) api.setQuiet!({ start: startIn!.value, end: endIn!.value });
+      renderQuiet();
+    };
+    startIn!.addEventListener("change", saveTimes);
+    endIn!.addEventListener("change", saveTimes);
+  }
 }
 
 // Per-device theme: follow the hub (default) or pick a local day/night theme

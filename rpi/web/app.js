@@ -54,8 +54,35 @@
 
     // Per-device photo-frame override: the hub still drives the photo frame, but
     // a satellite can locally refuse to display it. Default ON (absent key).
-    function photoFrameEnabled() {
+    function photoFrameToggle() {
         try { return localStorage.getItem(SAT_PF_KEY) !== "off"; } catch (e) { return true; }
+    }
+    // Per-device quiet hours: a daily window (e.g. 21:00 -> 10:00, may cross
+    // midnight) when this device never shows the photo frame. Device-local.
+    const SAT_PF_QUIET_KEY = "hal-sat-pf-quiet";
+    const PF_QUIET_DEFAULT = { enabled: false, start: "21:00", end: "10:00" };
+    function photoFrameQuiet() {
+        try {
+            const q = JSON.parse(localStorage.getItem(SAT_PF_QUIET_KEY) || "null");
+            if (q && typeof q === "object") return Object.assign({}, PF_QUIET_DEFAULT, q);
+        } catch (e) { /* fall through */ }
+        return Object.assign({}, PF_QUIET_DEFAULT);
+    }
+    function hhmmToMin(v) {
+        const m = /^(\d{1,2}):(\d{2})$/.exec(String(v || ""));
+        return m ? (Number(m[1]) % 24) * 60 + (Number(m[2]) % 60) : null;
+    }
+    function inQuietHours(q, now) {
+        if (!q || !q.enabled) return false;
+        const a = hhmmToMin(q.start), b = hhmmToMin(q.end);
+        if (a === null || b === null || a === b) return false;
+        const d = now || new Date();
+        const t = d.getHours() * 60 + d.getMinutes();
+        return a < b ? (t >= a && t < b) : (t >= a || t < b);   // a > b crosses midnight
+    }
+    // Effective: the device's switch is on AND we're outside its quiet hours.
+    function photoFrameEnabled() {
+        return photoFrameToggle() && !inQuietHours(photoFrameQuiet());
     }
     const ORB_SIDE_KEY = "hal-orb-side";
     // Satellites (mobile companions) carry window.HAL_CONFIG; the kiosk doesn't.
@@ -731,13 +758,29 @@
     // push show it again. Device-local (localStorage) — no server, no effect on
     // the hub or other devices.
     window.HALPhotoFrameLocal = {
-        get() { return photoFrameEnabled(); },
+        get() { return photoFrameToggle(); },
         set(enabled) {
             try { localStorage.setItem(SAT_PF_KEY, enabled ? "on" : "off"); } catch (e) { /* ignore */ }
             if (!enabled) maybeDismissPhotoFrame("local-off");
             return !!enabled;
         },
+        // Quiet hours {enabled, start "HH:MM", end "HH:MM"}.
+        getQuiet() { return photoFrameQuiet(); },
+        setQuiet(q) {
+            const next = Object.assign(photoFrameQuiet(), q || {});
+            try { localStorage.setItem(SAT_PF_QUIET_KEY, JSON.stringify(next)); } catch (e) { /* ignore */ }
+            if (!photoFrameEnabled()) maybeDismissPhotoFrame("quiet-hours");
+            return next;
+        },
+        // True when the frame may show right now (switch on, outside quiet hours).
+        allowedNow() { return photoFrameEnabled(); },
     };
+    // Quiet hours starting while a frame is up: take it down.
+    if (isSatellite) {
+        setInterval(() => {
+            if (!photoFrameEnabled()) maybeDismissPhotoFrame("quiet-hours");
+        }, 30 * 1000);
+    }
 
     // Protection window for HAL's own confirmation TTS when the LLM
     // just called show_photo_frame this turn. Set when a show message

@@ -20,6 +20,13 @@ import type { HalConfig } from "../config/hal-config";
 const IDLE_MS = 4 * 60 * 1000;  // 4 minutes of no input before the frame
 const CHECK_MS = 20 * 1000;     // re-evaluate idleness this often
 
+// The device's own photo-frame preference (switch + quiet hours), exposed by
+// rpi/web/app.js. Missing API (older bundle) = allowed.
+function frameAllowed(): boolean {
+  const api = (window as unknown as { HALPhotoFrameLocal?: { allowedNow?: () => boolean } }).HALPhotoFrameLocal;
+  try { return api?.allowedNow ? api.allowedNow() : true; } catch { return true; }
+}
+
 function frameShowing(): boolean {
   return document.body.classList.contains("photo-frame-active");
 }
@@ -65,7 +72,20 @@ export function startPhotoFrameIdle(cfg: HalConfig): void {
 
   // Self-healing: (re)start the frame whenever we've been idle long enough and
   // it isn't already showing — recovers after a broadcast dismisses it.
+  // Not allowed (switch off / quiet hours): never start one, and end a running
+  // session so the server stops pushing photos to this device.
+  // (The display may already have hidden it locally, so stop unconditionally
+  // once on entering the not-allowed state; stop is idempotent server-side.)
+  let wasAllowed = true;
   setInterval(() => {
+    if (!frameAllowed()) {
+      if (wasAllowed) {
+        wasAllowed = false;
+        void fetch(`${base}/api/satellite/photo_frame/stop`, { method: "POST", headers: auth }).catch(() => {});
+      }
+      return;
+    }
+    wasAllowed = true;
     if (Date.now() - lastActivity >= IDLE_MS && !frameShowing()) void startFrame();
   }, CHECK_MS);
 }

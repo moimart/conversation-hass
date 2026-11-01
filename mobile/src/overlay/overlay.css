@@ -324,3 +324,6 @@ body.show-mirror .hal-input-bar { display: none; }   /* mirror owns the screen *
 .hal-orb-actions .hle-btn { height: 36px; padding: 0 14px; font-size: 13px; }
 .hle-btn.danger { color: #ff7a7a; }
 #hal-orb-new, #hal-orb-manage { flex: 1; margin-top: 0; }
+
+/* Quiet-hours time pickers (photo frame). */
+.hal-sheet-select.hal-time { width: auto; min-width: 96px; color-scheme: dark; }
