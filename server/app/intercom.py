@@ -383,7 +383,8 @@ async def _announce_incoming_call(state, callee: str, caller_name: str) -> None:
         # Bad template (stray/unknown placeholder) — fall back to the default.
         phrase = f"Incoming call from {caller_name}"
     try:
-        audio = await engine.synthesize(phrase)
+        from .main import device_voice
+        audio = await engine.synthesize(phrase, voice=device_voice(state, callee))
     except Exception:
         audio = None
     if not audio:

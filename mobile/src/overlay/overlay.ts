@@ -223,6 +223,16 @@ function showSettings(cfg: HalConfig): void {
           <button class="hal-switch" id="hal-theme-os" role="switch" aria-checked="false" aria-label="Follow system dark mode"></button>
         </div>
       </div>
+      <div id="hal-voice-row" hidden>
+        <div class="hal-sheet-title" style="margin-top:14px">Voice</div>
+        <div class="hal-sheet-row">
+          <div class="hal-sheet-row-text">
+            <div class="hal-sheet-row-label">PAL's voice here</div>
+            <div class="hal-sheet-row-sub" id="hal-voice-sub">Replies and announcements on this device.</div>
+          </div>
+          <select class="hal-sheet-select" id="hal-voice"></select>
+        </div>
+      </div>
 ${ORB_SECTION_HTML}
       <div class="hal-sheet-title" style="margin-top:14px">Photo frame</div>
       <div class="hal-sheet-row">
@@ -254,6 +264,7 @@ ${ORB_SECTION_HTML}
   });
   void mountDeviceRename(cfg, back);
   void mountCloudToggle(cfg, back);
+  void mountVoicePicker(cfg, back);
   mountDeviceTheme(back);
   mountPhotoFrameToggle(back);
   mountLayoutControls(back, close);
@@ -394,6 +405,44 @@ async function mountDeviceRename(cfg: HalConfig, back: HTMLElement): Promise<voi
       if (hint) hint.textContent = "Couldn't reach the server.";
     } finally {
       save.disabled = false;
+    }
+  });
+}
+
+// Per-device voice (server-side, on this device's pairing entry): PAL's replies
+// to this device, the announcements it hears and its call ring use it. "" =
+// follow the hub voice. Hidden when the server can't list voices.
+async function mountVoicePicker(cfg: HalConfig, back: HTMLElement): Promise<void> {
+  const row = back.querySelector<HTMLElement>("#hal-voice-row");
+  const sel = back.querySelector<HTMLSelectElement>("#hal-voice");
+  const sub = back.querySelector<HTMLElement>("#hal-voice-sub");
+  if (!row || !sel || !sub) return;
+  const url = `${cfg.serverBaseUrl.replace(/\/+$/, "")}/api/satellite/voice`;
+  const headers = {
+    "Content-Type": "application/json",
+    ...(cfg.token ? { Authorization: `Bearer ${cfg.token}` } : {}),
+  };
+  let info: { voice: string; hub_voice: string; voices: string[] };
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) return;
+    info = await res.json();
+  } catch { return; }
+  if (!info.voices || info.voices.length === 0) return;
+  const hubLabel = info.hub_voice ? `Hub voice (${info.hub_voice})` : "Hub voice";
+  sel.replaceChildren(new Option(hubLabel, ""), ...info.voices.map((v) => new Option(v, v)));
+  sel.value = info.voices.includes(info.voice) ? info.voice : "";
+  row.hidden = false;
+  sel.addEventListener("change", async () => {
+    sel.disabled = true;
+    try {
+      const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ voice: sel.value }) });
+      sub.textContent = res.ok ? (sel.value ? `This device speaks as ${sel.value}.` : "This device uses the hub voice.")
+                               : "Couldn't save the voice.";
+    } catch {
+      sub.textContent = "Couldn't reach the server.";
+    } finally {
+      sel.disabled = false;
     }
   });
 }

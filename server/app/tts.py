@@ -84,10 +84,12 @@ class TTSEngine:
             except Exception:
                 pass
 
-    async def synthesize(self, text: str) -> bytes | None:
+    async def synthesize(self, text: str, voice: str | None = None) -> bytes | None:
         """
         Synthesize text to speech via Wyoming protocol.
 
+        `voice` overrides the engine's (hub) voice for this one request — a
+        paired device's own voice choice. None/"" = the hub voice.
         Returns WAV audio bytes or None on failure.
         """
         if not text.strip():
@@ -102,8 +104,9 @@ class TTSEngine:
         try:
             # Send synthesize event
             synth_data = {"text": text}
-            if self.voice:
-                synth_data["voice"] = {"name": self.voice}
+            use_voice = (voice or "").strip() or self.voice
+            if use_voice:
+                synth_data["voice"] = {"name": use_voice}
             await self._send_event(writer, "synthesize", synth_data)
 
             # Collect audio chunks

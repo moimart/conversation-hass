@@ -762,6 +762,8 @@ async def lifespan(app: FastAPI):
     # name against the REAL paired devices each turn).
     from .intercom import directory as _intercom_directory
     state.conversation.intercom_directory = lambda: _intercom_directory(state)
+    # Per-device voice for satellite-origin turns.
+    state.conversation.voice_resolver = lambda tok: device_voice(state, tok)
 
     # Apply tts_voice from runtime config (overrides whatever the engine
     # was initialized with from env).
@@ -1148,25 +1150,75 @@ async def replay_visual_state(state: AppState, ws) -> None:
         log.debug(f"replay_visual_state failed: {e}")
 
 
-async def speak_to_satellites(state: AppState, text: str, audio_bytes: bytes | None) -> int:
+def device_voice(state, token: str | None) -> str | None:
+    """A paired device's own TTS voice, or None to use the hub voice. A stored
+    voice the TTS server no longer offers is ignored (falls back to the hub)."""
+    pairing = getattr(state, "pairing", None)
+    if not token or pairing is None:
+        return None
+    try:
+        voice = pairing.voice(token)
+    except Exception:
+        return None
+    if not voice:
+        return None
+    options = getattr(state, "voice_options", None) or []
+    if options and voice not in options:
+        return None
+    engine = getattr(state, "tts_engine", None)
+    if engine is not None and voice == getattr(engine, "voice", None):
+        return None   # same as the hub — reuse the hub audio
+    return voice
+
+
+async def speak_to_satellites(state: AppState, text: str, audio_bytes: bytes | None,
+                              *, alarm: bool = False) -> int:
     """Make every connected satellite show + speak a force-spoken line: the
     response text (drives the orb to 'speaking') plus, when audio is available,
-    HAL's server voice via the per-device TTS cache + tts_play. Returns the
+    PAL's server voice via the per-device TTS cache + tts_play. A device with
+    its own voice gets the line re-synthesized in that voice (once per distinct
+    voice; `alarm` re-prepends the timer beeps); if that fails it hears the hub
+    audio. Text-only calls (audio_bytes=None) stay text-only. Returns the
     number of satellites that received the audio cue."""
     # Clear any idle photo frame so the spoken text shows on the orb.
     await dismiss_satellite_photo_frames(state)
     spoken = 0
+    by_voice: dict[str, bytes | None] = {}
     for token in list(state.satellite_ws.keys()):
         if not await send_to_device(state, token, {"type": "response", "text": text}):
             continue
-        if audio_bytes:
-            seq = cache_satellite_tts(state, token, audio_bytes, "audio/wav")
+        audio = audio_bytes
+        voice = device_voice(state, token) if audio_bytes else None
+        if voice:
+            if voice not in by_voice:
+                by_voice[voice] = await _synth_in_voice(state, text, voice, alarm)
+            audio = by_voice[voice] or audio_bytes
+        if audio:
+            seq = cache_satellite_tts(state, token, audio, "audio/wav")
             await send_to_device(state, token, {
                 "type": "tts_play", "url": "/api/satellite/tts",
                 "mime": "audio/wav", "seq": seq,
             })
             spoken += 1
     return spoken
+
+
+async def _synth_in_voice(state, text: str, voice: str, alarm: bool) -> bytes | None:
+    engine = getattr(state, "tts_engine", None)
+    if engine is None:
+        return None
+    try:
+        audio = await engine.synthesize(text, voice=voice)
+    except Exception as e:
+        log.warning(f"TTS in device voice {voice!r} failed: {e}")
+        return None
+    if audio and alarm:
+        try:
+            from .alarm import prepend_alarm
+            audio = prepend_alarm(audio)
+        except Exception as e:
+            log.warning(f"alarm prepend (device voice) failed: {e}")
+    return audio
 
 
 async def push_announcement(state: AppState, text: str, kind: str = "speak") -> None:
@@ -1224,7 +1276,7 @@ async def announce_everywhere(state: AppState, text: str,
         except Exception:
             pass
     await broadcast_to_ui(state, msg)
-    await speak_to_satellites(state, text, audio_bytes)
+    await speak_to_satellites(state, text, audio_bytes, alarm=alarm)
     if ws and audio_bytes:
         try:
             await ws.send_json({"type": "tts_start", "size": len(audio_bytes)})

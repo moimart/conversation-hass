@@ -279,6 +279,9 @@ class ConversationManager:
         # ACTUAL paired devices each turn, so it maps the spoken name to a real
         # one (instead of forwarding raw words to the server-side matcher).
         self.intercom_directory: Callable[[], list] | None = None
+        # Per-device voice: origin token -> that device's own TTS voice (None /
+        # "" = the hub voice). Injected by main.py from the pairing store.
+        self.voice_resolver: Callable[[str | None], str | None] | None = None
         self.num_ctx = num_ctx
         self.num_predict = num_predict
         # Conversation log sink (injected by main.py; resolves origin tokens to
@@ -373,6 +376,17 @@ class ConversationManager:
         self._last_ollama_metrics: dict = {}
 
         self._http = httpx.AsyncClient(timeout=120.0)
+
+    def _turn_voice(self) -> str | None:
+        """The TTS voice for this turn: the origin device's own voice, or None
+        (hub voice) for kiosk turns / devices that follow the hub."""
+        if self._turn_origin is None or self.voice_resolver is None:
+            return None
+        try:
+            return self.voice_resolver(self._turn_origin) or None
+        except Exception as e:
+            log.debug(f"voice_resolver failed: {e}")
+            return None
 
     async def _set_state(self, new_state: str):
         """Update state and notify listeners."""
@@ -594,7 +608,8 @@ class ConversationManager:
             else:
                 await self._set_state("speaking")
                 t_tts = time.monotonic()
-                audio_bytes = await self.tts_engine.synthesize(response_text)
+                audio_bytes = await self.tts_engine.synthesize(
+                    response_text, voice=self._turn_voice())
                 tts_s = time.monotonic() - t_tts
                 log.info(
                     f"[task] tts.synthesize took {tts_s:.2f}s "
@@ -652,7 +667,7 @@ class ConversationManager:
             log.error(f"Error processing command: {e}", exc_info=True)
             error_msg = "Sorry, I encountered an error processing that."
             if self.on_response:
-                audio = await self.tts_engine.synthesize(error_msg)
+                audio = await self.tts_engine.synthesize(error_msg, voice=self._turn_voice())
                 await self.on_response(error_msg, audio)
             if self.event_logger:  # the apology is what was actually spoken
                 try:

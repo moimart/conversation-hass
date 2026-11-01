@@ -78,6 +78,9 @@ _ALLOWLIST = [
     # Server-side STT: a phone POSTs captured mic audio, gets back a transcript
     # (for devices whose on-device recognizer PAL can't use).
     ("POST", r"^/api/satellite/stt$",                   True,  False),
+    # The device's own TTS voice (pick from the TTS server's voices).
+    ("GET",  r"^/api/satellite/voice$",                 True,  False),
+    ("POST", r"^/api/satellite/voice$",                 True,  False),
     ("GET",  r"^/api/conversation/log$",                True,  False),
     ("GET",  r"^/api/conversation/log/image$",          True,  False),
     ("GET",  r"^/api/cloud_llm$",                        True,  False),

@@ -48,6 +48,7 @@ _SCOPE_PERMISSIONS: dict[str, set[str] | None] = {
 #   "ha"     — satellite HA cards: state, reads, service calls (routes_ha.py)
 #   "layout" — the device's own display layout (routes_ha.py)
 #   "orbs"   — create/select custom orbs (routes_orbs.py)
+#   "voice"  — the device's own TTS voice (routes_http.py /api/satellite/voice)
 DERIVABLE_SCOPES = {"watch"}
 
 
@@ -317,6 +318,26 @@ class PairingManager:
         entry["device_name"] = name
         self._save()
         log.info(f"device renamed → {name!r}")
+        return True
+
+    def voice(self, token: str | None) -> str:
+        """The device's own TTS voice, "" = follow the hub voice."""
+        entry = self._tokens.get(token) if token else None
+        return str((entry or {}).get("voice") or "")
+
+    def set_voice(self, token: str | None, voice: str) -> bool:
+        """Set (or clear with "") the device's own TTS voice. False if the token
+        is unknown."""
+        entry = self._tokens.get(token) if token else None
+        if entry is None:
+            return False
+        voice = (voice or "").strip()[:128]
+        if voice:
+            entry["voice"] = voice
+        else:
+            entry.pop("voice", None)
+        self._save()
+        log.info(f"device {entry.get('device_name')!r} voice → {voice or '(hub)'}")
         return True
 
     def revoke_by_device_name(self, device_name: str) -> int:

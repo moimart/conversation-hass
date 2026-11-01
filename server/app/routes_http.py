@@ -9,6 +9,7 @@ import os
 import time
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 log = logging.getLogger("hal")
@@ -666,6 +667,57 @@ async def post_satellite_photo_broadcast(request: Request):
     await _dispatch_show_image(state, image_b64, "image/jpeg",
                                duration_s=30, entity_id=name, push=True)
     return {"status": "ok"}
+
+
+def _voice_token(state, request: Request):
+    """(token, None) for a paired token allowed to pick its voice, else
+    (None, error Response)."""
+    from .pairing import extract_bearer
+    token = extract_bearer(request)
+    if not (token and state.pairing and state.pairing.is_valid_token(token)):
+        return None, Response(status_code=401)
+    if not state.pairing.scope_allows(token, "voice"):
+        return None, Response(status_code=403)
+    return token, None
+
+
+@router.get("/api/satellite/voice")
+async def get_satellite_voice(request: Request):
+    """This device's TTS voice: {voice ("" = follow hub), hub_voice, voices}."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    token, err = _voice_token(state, request)
+    if err is not None:
+        return err
+    engine = getattr(state, "tts_engine", None)
+    return {
+        "voice": state.pairing.voice(token),
+        "hub_voice": getattr(engine, "voice", "") or "",
+        "voices": list(getattr(state, "voice_options", None) or []),
+    }
+
+
+@router.post("/api/satellite/voice")
+async def set_satellite_voice(request: Request):
+    """Set this device's own TTS voice ({"voice": name}; "" = follow the hub).
+    PAL's replies to this device — and announcements it hears — use it."""
+    from .main import _get_state
+    state = _get_state(request.app)
+    token, err = _voice_token(state, request)
+    if err is not None:
+        return err
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if not isinstance(body, dict) or not isinstance(body.get("voice", ""), str):
+        return JSONResponse({"error": "invalid body"}, status_code=400)
+    voice = body.get("voice", "").strip()
+    options = list(getattr(state, "voice_options", None) or [])
+    if voice and options and voice not in options:
+        return JSONResponse({"error": "unknown voice"}, status_code=400)
+    state.pairing.set_voice(token, voice)
+    return {"voice": state.pairing.voice(token)}
 
 
 @router.post("/api/satellite/stt")

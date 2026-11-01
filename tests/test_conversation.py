@@ -137,7 +137,7 @@ class TestOnSilence:
             await conversation.on_silence()
 
         # Should have called TTS
-        conversation.tts_engine.synthesize.assert_awaited_once_with("Done, I turned on the lights.")
+        conversation.tts_engine.synthesize.assert_awaited_once_with("Done, I turned on the lights.", voice=None)
         # Should have sent response
         conversation.on_response.assert_awaited_once()
         args = conversation.on_response.call_args

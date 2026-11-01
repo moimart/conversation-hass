@@ -172,6 +172,17 @@ async def test_satellite_stt_allowed_with_token(client):
 
 
 @pytest.mark.asyncio
+async def test_satellite_voice_allowed_with_token(client):
+    """A phone reads/sets its own TTS voice through the gateway (token-gated)."""
+    cl, state = client
+    assert (await cl.get("/api/satellite/voice")).status == 401   # no token
+    assert (await cl.get("/api/satellite/voice", headers=_auth())).status == 200
+    assert (await cl.post("/api/satellite/voice", headers=_auth())).status == 200
+    assert ("GET", "/api/satellite/voice") in state["proxied"]
+    assert ("POST", "/api/satellite/voice") in state["proxied"]
+
+
+@pytest.mark.asyncio
 async def test_token_via_query_param(client):
     """The MJPEG <img> tag and WS upgrade can only carry ?token=."""
     cl, state = client

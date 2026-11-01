@@ -115,7 +115,7 @@ class _FakeTTS:
     def __init__(self, audio=b"WAVDATA", fail=False):
         self._audio, self._fail, self.calls = audio, fail, []
 
-    async def synthesize(self, text):
+    async def synthesize(self, text, voice=None):
         self.calls.append(text)
         if self._fail:
             raise RuntimeError("boom")
