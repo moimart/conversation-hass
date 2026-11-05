@@ -27,6 +27,34 @@
     box-sizing: border-box;
 }
 .hal-card-inner { min-height: 100%; }
+
+/* Custom (HACS) cards: the grid cell is only the slot. The glass is drawn by
+   the widget's OWN ha-card (shim in ha/custom.ts reads these vars), so the
+   visible box always hugs the widget. The slot has a definite height, so
+   cards that ask for height:100% (HA sections-style, e.g. button-card) fill
+   the cell; fixed-height cards keep their size with no empty glass below. */
+.hal-card.custom {
+    background: none;
+    border: 0;
+    border-radius: 0;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    overflow: visible;
+    --ha-card-background: color-mix(in srgb, var(--bg) 72%, transparent);
+    --card-background-color: color-mix(in srgb, var(--bg) 72%, transparent);
+    --ha-card-border-width: 1px;
+    --ha-card-border-color: color-mix(in srgb, var(--text) 12%, transparent);
+    --ha-card-backdrop-filter: blur(12px);
+}
+.hal-card.custom .hal-card-inner { height: 100%; min-height: 0; }
+.hal-card.custom .hal-card-inner > .ll-custom { height: 100%; min-height: 0; }
+.hal-card.custom .ll-custom-host { min-height: 0; }
+.hal-card.custom .ll-custom-host > * { height: 100%; }
+.hal-card.custom .ll-unsupported {
+    border-radius: var(--ll-radius);
+    background: var(--ha-card-background);
+    border: 1px solid var(--ha-card-border-color);
+}
 .hal-card-inner > .ll-card, .hal-card-inner > .ll-stack-wrap, .hal-card-inner > .ll-custom { min-height: 100%; }
 
 /* Whole-screen layers own the screen: hide the cards (and, as before, the orb

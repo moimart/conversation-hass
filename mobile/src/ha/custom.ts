@@ -81,7 +81,8 @@ class HaCard extends HTMLElement {
     this.attachShadow({ mode: "open" }).innerHTML = `<style>
       :host{display:block;position:relative;background:var(--ha-card-background,var(--card-background-color,transparent));
         border-radius:var(--ha-card-border-radius,12px);border:var(--ha-card-border-width,0) solid var(--ha-card-border-color,transparent);
-        box-shadow:var(--ha-card-box-shadow,none);color:var(--primary-text-color);transition:all .3s ease-out}
+        box-shadow:var(--ha-card-box-shadow,none);color:var(--primary-text-color);transition:all .3s ease-out;
+        box-sizing:border-box;backdrop-filter:var(--ha-card-backdrop-filter,none);-webkit-backdrop-filter:var(--ha-card-backdrop-filter,none)}
       .card-header{font-family:var(--ha-card-header-font-family,inherit);font-size:var(--ha-card-header-font-size,1.2em);
         color:var(--ha-card-header-color,var(--primary-text-color));padding:12px 16px 4px;font-weight:600}
       .card-header:empty{display:none}

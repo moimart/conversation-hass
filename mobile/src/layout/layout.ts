@@ -34,7 +34,7 @@ export interface Geometry {
 }
 
 let layout: SatelliteLayout | null = null;
-let mounted = new Map<string, { inst: CardInstance; box: HTMLElement; fit: ResizeObserver }>();
+let mounted = new Map<string, { inst: CardInstance; box: HTMLElement; fit: Fit }>();
 let cardsRoot: HTMLElement | null = null;
 const changeListeners = new Set<() => void>();
 
@@ -185,8 +185,44 @@ function ensureCardsRoot(): HTMLElement | null {
 
 /** Shrink a card to fit its box instead of overflowing (docker-home FitBox):
  *  text cards reflow wider down to 60 %, custom cards scale uniformly to 30 %. */
-function fitBox(box: HTMLElement, inner: HTMLElement, uniform: boolean): ResizeObserver {
-  const MIN = uniform ? 0.3 : 0.6;
+type Fit = { disconnect(): void };
+function fitBox(box: HTMLElement, inner: HTMLElement, uniform: boolean): Fit {
+  return uniform ? fitCustom(box, inner) : fitText(box, inner);
+}
+
+/** Custom cards fill a definite-height slot (layout.css), so overflow can't be
+ *  read from the inner's height: re-measure the content at scale 1 instead.
+ *  Shadow-DOM content changes don't resize the slot, so also re-check
+ *  periodically. */
+function fitCustom(box: HTMLElement, inner: HTMLElement): Fit {
+  let scale = 1;
+  const fit = () => {
+    const H = box.clientHeight;
+    if (!H || !box.isConnected) return;
+    const prev = [inner.style.transform, inner.style.height];
+    inner.style.removeProperty("transform");
+    inner.style.removeProperty("height");
+    const natural = inner.scrollHeight;
+    const next = natural > H + 1 ? Math.max(0.3, Math.floor((H / natural) * 50) / 50) : 1;
+    if (Math.abs(scale - next) < 0.02) {
+      [inner.style.transform, inner.style.height] = prev;
+      return;
+    }
+    scale = next;
+    if (scale < 1) {
+      inner.style.transformOrigin = "top center";
+      inner.style.transform = `scale(${scale})`;
+      inner.style.height = `${H / scale}px`;
+    }
+  };
+  const ro = new ResizeObserver(fit);
+  ro.observe(box);
+  const t = window.setInterval(fit, 3000);
+  return { disconnect() { ro.disconnect(); clearInterval(t); } };
+}
+
+function fitText(box: HTMLElement, inner: HTMLElement): ResizeObserver {
+  const MIN = 0.6;
   let scale = 1;
   const fit = () => {
     const natural = inner.offsetHeight;
@@ -196,8 +232,8 @@ function fitBox(box: HTMLElement, inner: HTMLElement, uniform: boolean): ResizeO
     scale = next;
     if (scale >= 1) { inner.style.removeProperty("transform"); inner.style.removeProperty("width"); return; }
     inner.style.transform = `scale(${scale})`;
-    if (uniform) { inner.style.transformOrigin = "top center"; inner.style.removeProperty("width"); }
-    else { inner.style.transformOrigin = "top left"; inner.style.width = `${100 / scale}%`; }
+    inner.style.transformOrigin = "top left";
+    inner.style.width = `${100 / scale}%`;
   };
   const ro = new ResizeObserver(fit);
   ro.observe(box);
@@ -205,13 +241,14 @@ function fitBox(box: HTMLElement, inner: HTMLElement, uniform: boolean): ResizeO
   return ro;
 }
 
-function mountCard(id: string, config: Record<string, any>): { inst: CardInstance; box: HTMLElement; fit: ResizeObserver } {
+function mountCard(id: string, config: Record<string, any>): { inst: CardInstance; box: HTMLElement; fit: Fit } {
   const inst = createCard(config);
   const inner = document.createElement("div");
   inner.className = "hal-card-inner";
   inner.appendChild(inst.el);
   const box = document.createElement("div");
-  box.className = "hal-card";
+  const custom = String(config?.type || "").startsWith("custom:");
+  box.className = custom ? "hal-card custom" : "hal-card";
   box.dataset.cardId = id;
   box.appendChild(inner);
   return { inst, box, fit: fitBox(box, inner, JSON.stringify(config).includes('"custom:')) };

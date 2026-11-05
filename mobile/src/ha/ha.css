@@ -150,6 +150,7 @@ button.ll-card { width: 100%; border: 0; background: none; cursor: pointer; font
   --secondary-background-color: color-mix(in srgb, var(--text) 6%, transparent);
   --card-background-color: transparent;
   --ha-card-background: transparent;
+  --ha-card-backdrop-filter: none;
   --ha-card-border-width: 0;
   --ha-card-box-shadow: none;
   --ha-card-border-radius: var(--ll-radius);
