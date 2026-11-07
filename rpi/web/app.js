@@ -1139,6 +1139,47 @@
 
         // Auto-scroll
         transcript.scrollTop = transcript.scrollHeight;
+        if (isSatellite) { scheduleSatTranscriptClear(); syncTranscriptEmpty(); }
+    }
+
+    // Satellites: the transcript box is a live "what PAL heard" readout, not a
+    // log — it empties (and the mobile CSS hides it) a while after the last
+    // line. The app feeds on-device dictation partials in through
+    // window.HALLocalTranscript; the server's echo of the sent command then
+    // replaces the partial with the final line.
+    const SAT_TRANSCRIPT_TTL_MS = 30000;
+    let satTranscriptTimer = null;
+    // `.is-empty` lets the mobile CSS hide the box (no :has() — older WebViews).
+    function syncTranscriptEmpty() {
+        const box = transcript.closest(".transcript-container");
+        if (box) box.classList.toggle("is-empty", !transcript.querySelector(".transcript-line"));
+    }
+    function resetTranscript() {
+        currentPartialEl = null;
+        transcript.replaceChildren();
+        const ph = document.createElement("div");
+        ph.className = "transcript-placeholder";
+        ph.textContent = "Listening...";
+        transcript.appendChild(ph);
+        syncTranscriptEmpty();
+    }
+    function scheduleSatTranscriptClear() {
+        clearTimeout(satTranscriptTimer);
+        // Every partial re-arms this, so it only fires 30 s after the last
+        // update — also clearing a partial whose send never echoed back.
+        satTranscriptTimer = setTimeout(resetTranscript, SAT_TRANSCRIPT_TTL_MS);
+    }
+    if (isSatellite) {
+        window.HALLocalTranscript = {
+            partial(text) {
+                if (text && text.trim()) handleTranscription({ text, is_partial: true, speaker: "human" });
+            },
+            cancel() {
+                if (currentPartialEl) { currentPartialEl.remove(); currentPartialEl = null; }
+                if (!transcript.querySelector(".transcript-line")) resetTranscript();
+            },
+        };
+        syncTranscriptEmpty();
     }
 
     function handleWake() {
@@ -1413,6 +1454,7 @@
             transcript.removeChild(transcript.firstChild);
         }
         transcript.scrollTop = transcript.scrollHeight;
+        if (isSatellite) { scheduleSatTranscriptClear(); syncTranscriptEmpty(); }
     }
     function showVideoError(reason) {
         // Surface playback failures as an accent-colored line in the

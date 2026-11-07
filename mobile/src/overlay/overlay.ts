@@ -146,6 +146,10 @@ export function mountOverlay(cfg: HalConfig): void {
   // field; the on-device recognizer auto-sends on silence). Tap again to stop +
   // send. `listenServer` tracks whether the active session is the server-STT
   // capture path (for devices whose on-device recognizer PAL can't use).
+  // Live readout in the display's transcript box (app.js, satellites only).
+  const live = () => (window as unknown as {
+    HALLocalTranscript?: { partial(t: string): void; cancel(): void };
+  }).HALLocalTranscript;
   let listenServer = false;
   let serverTimer: ReturnType<typeof setTimeout> | null = null;
   function micActive(on: boolean) {
@@ -156,10 +160,11 @@ export function mountOverlay(cfg: HalConfig): void {
     listenServer = true;
     try {
       await startCapture();
+      live()?.partial("…");   // server STT has no partials: show it's hearing
       // Safety: never record forever if the user forgets to tap again.
       serverTimer = setTimeout(() => { void endListen(); }, 15000);
     } catch (e) {
-      listenServer = false; micActive(false);
+      listenServer = false; micActive(false); live()?.cancel();
       console.warn("[hal] mic capture failed", e);
     }
   }
@@ -174,8 +179,11 @@ export function mountOverlay(cfg: HalConfig): void {
     if (sttMode() === "server") { await beginServer(); return; }
     try {
       await startListening(
-        (partial) => { input.value = partial; },
-        (final) => { micActive(false); if (final) { input.value = final; void submit(); } },
+        (partial) => { input.value = partial; live()?.partial(partial); },
+        (final) => {
+          micActive(false);
+          if (final) { input.value = final; void submit(); } else live()?.cancel();
+        },
       );
     } catch (e) {
       // On-device recognizer can't start (e.g. a Meta Portal whose only
@@ -191,12 +199,12 @@ export function mountOverlay(cfg: HalConfig): void {
     if (listenServer) {
       listenServer = false;
       const text = await stopCaptureAndTranscribe(cfg);
-      if (text) { input.value = text; void submit(); }
+      if (text) { input.value = text; void submit(); } else live()?.cancel();
       return;
     }
     if (!isListening()) return;   // already auto-stopped/sent on silence
     const final = await stopListening();
-    if (final) { input.value = final; void submit(); }
+    if (final) { input.value = final; void submit(); } else live()?.cancel();
   }
   mic.addEventListener("click", () => {
     if (isListening() || isCapturing()) void endListen();

@@ -169,3 +169,12 @@ body.hal-weather-shown #display-root .transcript-container {
     font-size: 16px !important;
     line-height: 1.5 !important;
 }
+
+/* Satellites: the command box is a live readout of what PAL heard (dictation
+   partials, then the sent command). With nothing in it, it's hidden instead of
+   showing a fake "Listening..." (app.js sets .is-empty and clears it ~30 s
+   after the last line). visibility, not display, so a layout's inline
+   display:none (box removed in the editor) still wins. */
+#display-root .transcript-container.is-empty {
+    visibility: hidden !important;
+}
