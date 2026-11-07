@@ -41,8 +41,35 @@ export function mountOverlay(cfg: HalConfig): void {
   send.setAttribute("aria-label", "Send");
   send.innerHTML = sendIcon();
 
-  bar.append(mic, input, send);
+  // The text field + send only show after tapping the keyboard button; the
+  // resting bar is just mic + keyboard (voice-first satellites).
+  const kbd = document.createElement("button");
+  kbd.className = "hal-btn hal-kbd";
+  kbd.setAttribute("aria-label", "Type a message");
+  kbd.innerHTML = keyboardIcon();
+
+  bar.classList.add("collapsed");
+  bar.append(mic, kbd, input, send);
   root.appendChild(bar);
+
+  function setTyping(on: boolean) {
+    bar.classList.toggle("collapsed", !on);
+    kbd.innerHTML = on ? closeIcon() : keyboardIcon();
+    kbd.setAttribute("aria-label", on ? "Close keyboard" : "Type a message");
+    if (on) input.focus();
+    else input.blur();
+  }
+  kbd.addEventListener("click", () => {
+    void haptic();
+    setTyping(bar.classList.contains("collapsed"));
+  });
+  // Tapping away from an empty field closes it again (the delay lets a tap on
+  // send / keyboard land first).
+  input.addEventListener("blur", () => {
+    setTimeout(() => {
+      if (document.activeElement !== input && !input.value.trim() && !isListening() && !isCapturing()) setTyping(false);
+    }, 200);
+  });
 
   // Settings / re-pair affordance (top-right). Lets you point at a different
   // server or re-pair — clears the stored config and returns to onboarding.
@@ -103,6 +130,7 @@ export function mountOverlay(cfg: HalConfig): void {
     const text = input.value;
     if (!text.trim()) return;
     input.value = "";
+    if (!bar.classList.contains("collapsed")) setTyping(false);
     void haptic();
     unlockAudio();   // this tap is the gesture that lets HAL's TTS autoplay
     await sendCommand(cfg, text);
@@ -110,6 +138,7 @@ export function mountOverlay(cfg: HalConfig): void {
 
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); void submit(); }
+    else if (e.key === "Escape") { input.value = ""; setTyping(false); }
   });
   send.addEventListener("click", () => void submit());
 
@@ -564,6 +593,14 @@ function haIcon(): string {
 
 function micIcon(): string {
   return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
+}
+
+function keyboardIcon(): string {
+  return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12.5h.01M10 12.5h.01M14 12.5h.01M18 12.5h.01M7 16h10"/></svg>`;
+}
+
+function closeIcon(): string {
+  return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>`;
 }
 
 function sendIcon(): string {
