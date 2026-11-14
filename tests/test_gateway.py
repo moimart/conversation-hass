@@ -183,6 +183,21 @@ async def test_satellite_voice_allowed_with_token(client):
 
 
 @pytest.mark.asyncio
+async def test_native_device_routes_token_gated(client):
+    """PAL Round (ESP32 firmware) reaches its device routes through the gateway."""
+    cl, state = client
+    paths = ["/api/device/info", "/api/device/orb", "/api/device/pages",
+             "/api/device/orb/0123456789abcdef0123.palm", "/api/device/firmware/pal-round.bin"]
+    for p in paths:
+        assert (await cl.get(p)).status == 401
+        assert (await cl.get(p, headers=_auth())).status == 200
+        assert ("GET", p) in state["proxied"]
+    # anything else under /api/device stays closed
+    assert (await cl.get("/api/device/orb/../../etc.palm", headers=_auth())).status == 404
+    assert (await cl.post("/api/device/info", headers=_auth())).status == 404
+
+
+@pytest.mark.asyncio
 async def test_token_via_query_param(client):
     """The MJPEG <img> tag and WS upgrade can only carry ?token=."""
     cl, state = client

@@ -118,6 +118,10 @@ _ALLOWLIST = [
     ("PUT",    r"^/api/orbs/[a-z0-9-]+/media/[a-z]+$",  True,  False),
     ("DELETE", r"^/api/orbs/[a-z0-9-]+/media/[a-z]+$",  True,  False),
     ("GET",    r"^/orbs/[a-z0-9-]+/[a-z]+\.(mp4|jpg)$", True,  False),  # <video>: ?token=
+    # Native satellites (PAL Round firmware; `device` scope server-side).
+    ("GET",    r"^/api/device/(info|orb|pages)$",       True,  False),
+    ("GET",    r"^/api/device/orb/[0-9a-f]{20}\.palm$", True,  False),
+    ("GET",    r"^/api/device/firmware/[a-z0-9-]+\.bin$", True, False),
 ]
 if ALLOW_PAIR_REDEEM:
     # Pre-auth: the redeem body's (demo) code is the gate, so no token here.

@@ -330,8 +330,15 @@ async def get_satellite_tts(request: Request):
     entry = state.satellite_tts.get(token)
     if not entry or (time.monotonic() - entry.get("ts", 0.0)) > 60.0:
         return Response(status_code=404)
+    audio = entry["audio"]
+    # ?rate=N: 16-bit mono WAV at N Hz (native satellites run their codec at
+    # a fixed rate — PAL Round uses 16 kHz).
+    rate = request.query_params.get("rate")
+    if rate and rate.isdigit() and 8000 <= int(rate) <= 48000 and entry.get("mime", "audio/wav") == "audio/wav":
+        from .device_api import resample_wav
+        audio = await asyncio.to_thread(resample_wav, audio, int(rate))
     return Response(
-        content=entry["audio"],
+        content=audio,
         media_type=entry.get("mime", "audio/wav"),
         headers={"Cache-Control": "no-store"},
     )
