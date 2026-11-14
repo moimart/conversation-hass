@@ -127,7 +127,8 @@ static void load_pages(void)
     cJSON *pages = NULL;
     if (strcmp(g_settings.dashboard, "-") != 0) {
         char path[160];
-        snprintf(path, sizeof(path), "/api/device/pages?dashboard=%s", g_settings.dashboard);
+        snprintf(path, sizeof(path), "/api/device/pages?dashboard=%s",
+                 strcmp(g_settings.dashboard, "_default") ? g_settings.dashboard : "");
         cJSON *r = pal_get_json(path, 20000);
         if (r) {
             pages = cJSON_DetachItemFromObject(r, "pages");
@@ -149,13 +150,14 @@ static void load_choices(void)
     g_choices.dash_n = 0;
     g_choices.dash_opts[0] = 0;
     cJSON *it;
-    cJSON_ArrayForEach(it, d) {
+    cJSON_ArrayForEach(it, cJSON_GetObjectItem(d, "dashboards")) {
         if (g_choices.dash_n >= 16) break;
         const char *t = cJSON_GetStringValue(cJSON_GetObjectItem(it, "title"));
         const char *u = cJSON_GetStringValue(cJSON_GetObjectItem(it, "url_path"));
         size_t l = strlen(g_choices.dash_opts);
         snprintf(g_choices.dash_opts + l, sizeof(g_choices.dash_opts) - l, "%s%s", l ? "\n" : "", t ? t : "?");
-        strlcpy(g_choices.dash_ids[g_choices.dash_n++], u ? u : "", 64);
+        // HA's default dashboard has no url_path; "" already means "not chosen yet" here
+        strlcpy(g_choices.dash_ids[g_choices.dash_n++], u && u[0] ? u : "_default", 64);
     }
     cJSON_Delete(d);
     // default: a dashboard called "pal…" if the user hasn't picked one
