@@ -21,7 +21,9 @@ static const char *TAG = "ui";
 pal_theme_t g_theme;
 ui_choices_t g_choices;
 
-static lv_obj_t *s_tv, *s_home;
+static lv_obj_t *s_tv, *s_home, *s_box;
+static void box_sync(void);
+static void box_style(void);
 static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
 static lv_obj_t *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_shield;
 static lv_obj_t *s_vol, *s_bright, *s_info, *s_update_btn;
@@ -181,18 +183,38 @@ static void build_home(void)
     lv_obj_set_style_pad_hor(s_timer_lbl, 16, 0);
     lv_obj_add_flag(s_timer_lbl, LV_OBJ_FLAG_HIDDEN);
 
-    s_said = mk_label(s_home, g_fonts.text16, g_theme.text_dim, "");
-    lv_obj_set_width(s_said, 300);
-    lv_label_set_long_mode(s_said, LV_LABEL_LONG_DOT);
-    lv_obj_align(s_said, LV_ALIGN_BOTTOM_MID, 0, -72);
-    s_reply = mk_label(s_home, g_fonts.text16, g_theme.text, "");
-    lv_obj_set_width(s_reply, 270);
-    lv_obj_set_height(s_reply, 44);
-    lv_label_set_long_mode(s_reply, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_align(s_reply, LV_ALIGN_BOTTOM_MID, 0, -24);
+    // the conversation text lives in one rounded "glass" box over the bottom
+    // of the orb (kept above y≈410 so the round edge never clips its corners)
+    s_box = lv_obj_create(s_home);
+    lv_obj_remove_style_all(s_box);
+    lv_obj_set_width(s_box, 300);
+    lv_obj_set_height(s_box, LV_SIZE_CONTENT);
+    lv_obj_align(s_box, LV_ALIGN_BOTTOM_MID, 0, -54);
+    lv_obj_set_style_radius(s_box, 22, 0);
+    lv_obj_set_style_bg_opa(s_box, LV_OPA_80, 0);
+    lv_obj_set_style_border_width(s_box, 1, 0);
+    lv_obj_set_style_border_opa(s_box, LV_OPA_40, 0);
+    lv_obj_set_style_shadow_width(s_box, 18, 0);
+    lv_obj_set_style_shadow_opa(s_box, LV_OPA_30, 0);
+    lv_obj_set_style_pad_hor(s_box, 16, 0);
+    lv_obj_set_style_pad_ver(s_box, 10, 0);
+    lv_obj_set_style_pad_row(s_box, 4, 0);
+    lv_obj_set_flex_flow(s_box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_remove_flag(s_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(s_box, LV_OBJ_FLAG_CLICKABLE);
 
-    s_hint = mk_label(s_home, g_fonts.text16, g_theme.text_dim, "Press a button to talk\nHold the orb for settings");
-    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -40);
+    s_said = mk_label(s_box, g_fonts.text16, g_theme.text_dim, "");
+    lv_obj_set_width(s_said, LV_PCT(100));
+    lv_label_set_long_mode(s_said, LV_LABEL_LONG_DOT);
+    s_reply = mk_label(s_box, g_fonts.text16, g_theme.text, "");
+    lv_obj_set_width(s_reply, LV_PCT(100));
+    lv_obj_set_style_max_height(s_reply, 44, 0);
+    lv_label_set_long_mode(s_reply, LV_LABEL_LONG_DOT);
+    s_hint = mk_label(s_box, g_fonts.text16, g_theme.text_dim, "Press a button to talk\nHold the orb for settings");
+    lv_obj_set_width(s_hint, LV_PCT(100));
+    box_sync();
+    box_style();
 
     s_status = mk_label(s_home, g_fonts.icon22, g_theme.text_dim, "");
     lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 100);
@@ -637,6 +659,22 @@ void ui_ota_progress(int pct)
 
 // --- conversation --------------------------------------------------------------------
 
+// empty lines collapse; the hint only shows when there's no conversation
+static void box_sync(void)
+{
+    bool said = lv_label_get_text(s_said)[0] != 0, reply = lv_label_get_text(s_reply)[0] != 0;
+    if (said) lv_obj_remove_flag(s_said, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(s_said, LV_OBJ_FLAG_HIDDEN);
+    if (reply) lv_obj_remove_flag(s_reply, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(s_reply, LV_OBJ_FLAG_HIDDEN);
+    if (said || reply) lv_obj_add_flag(s_hint, LV_OBJ_FLAG_HIDDEN); else lv_obj_remove_flag(s_hint, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void box_style(void)
+{
+    lv_obj_set_style_bg_color(s_box, lv_color_mix(g_theme.accent, lv_color_hex(0x0c0c10), 24), 0);
+    lv_obj_set_style_border_color(s_box, g_theme.accent, 0);
+    lv_obj_set_style_shadow_color(s_box, g_theme.accent, 0);
+}
+
 void ui_set_state(pal_state_t st)
 {
     s_state = st;
@@ -644,25 +682,25 @@ void ui_set_state(pal_state_t st)
     if (st == PAL_LISTENING) {
         lv_label_set_text(s_reply, "");
         lv_label_set_text(s_said, "Listening…");
-        lv_obj_add_flag(s_hint, LV_OBJ_FLAG_HIDDEN);
         s_text_set_at = esp_timer_get_time();
     } else if (st == PAL_PROCESSING && !strcmp(lv_label_get_text(s_said), "Listening…")) {
         lv_label_set_text(s_said, "…");
     }
+    box_sync();
 }
 
 void ui_set_transcript(const char *text)
 {
     lv_label_set_text(s_said, text ? text : "");
-    lv_obj_add_flag(s_hint, LV_OBJ_FLAG_HIDDEN);
     s_text_set_at = esp_timer_get_time();
+    box_sync();
 }
 
 void ui_set_response(const char *text)
 {
     lv_label_set_text(s_reply, text ? text : "");
-    lv_obj_add_flag(s_hint, LV_OBJ_FLAG_HIDDEN);
     s_text_set_at = esp_timer_get_time();
+    box_sync();
 }
 
 void ui_set_weather(const char *cond, double temp, const char *unit, bool show)
@@ -742,7 +780,7 @@ void ui_tick(void)
     if (s_state == PAL_IDLE && s_text_set_at && esp_timer_get_time() - s_text_set_at > 30000000LL) {
         lv_label_set_text(s_said, "");
         lv_label_set_text(s_reply, "");
-        lv_obj_remove_flag(s_hint, LV_OBJ_FLAG_HIDDEN);
+        box_sync();
         s_text_set_at = 0;
     }
     ui_set_status();
@@ -811,6 +849,7 @@ void ui_apply_theme(void)
     lv_obj_set_style_text_color(s_said, g_theme.text_dim, 0);
     lv_obj_set_style_text_color(s_reply, g_theme.text, 0);
     lv_obj_set_style_text_color(s_hint, g_theme.text_dim, 0);
+    box_style();
     orb_apply_theme();
 }
 
