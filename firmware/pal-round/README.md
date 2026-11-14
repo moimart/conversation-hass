@@ -1,0 +1,77 @@
+# PAL Round
+
+A native PAL satellite for the **Waveshare ESP32-S3-Touch-AMOLED-1.75C**
+(466×466 round AMOLED, capacitive touch, ES8311 speaker codec, ES7210 dual mic,
+AXP2101 PMU with battery, BOOT + PWR buttons).
+
+## What it does
+
+| Screen | |
+|---|---|
+| **Home** | Clock, date, weather, the orb, what you said and PAL's reply |
+| **Swipe left** | Home Assistant pages: the dashboard you pick in Settings, as native round tiles (tap = toggle / run; long-press a light or cover = brightness / position dial) and full-page climate, media and weather controls |
+| **Swipe up** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, re-pair |
+
+**Talking to PAL:** tap the orb (or press **BOOT**) and speak. Recording stops by
+itself when you pause; holding BOOT records until you let go. The audio goes to
+PAL's speech-to-text (`/api/satellite/stt`), the text to `/api/command`, and the
+reply comes back over the device's `/ws/ui` socket: state, text, and the spoken
+reply (`tts_play` → `/api/satellite/tts?rate=16000`). Announcements, finished
+timers and the per-device voice all work as on the phones.
+
+**PWR button:** short press = screen on/off, long press = power off.
+
+**The orb** shows the hub's orb, or this device's own pick from Settings. The server
+re-renders the theme's clips or a custom orb as `.palm` files: 288 px circular
+JPEG frames at 12 fps. The device caches them in flash and decodes them with
+`esp_new_jpeg`. Themes without orb media get a native LVGL orb in the theme's
+accent colour.
+
+## Server side
+
+`server/app/device_api.py` + `routes_device.py` (`/api/device/{info,orb,pages,firmware}`),
+all gateway-allowlisted, so the device also works away from home via the
+gateway URL it received at pairing.
+
+## Build & flash
+
+Needs only podman or docker. It uses Espressif's `espressif/idf:v5.5.2` image:
+
+```bash
+./build.sh                    # build
+./build.sh flash /dev/ttyACM0 # flash over the USB-C port
+```
+
+## First setup
+
+**Without a computer:** on first boot the device opens a Wi-Fi network called
+`PAL-Round-XXXX` and shows a QR code to join it. Your phone pops a setup page
+(or open `192.168.4.1`). Pick your Wi-Fi network and enter its password; the PAL
+server is found automatically (mDNS `_pal._tcp`). Then type the 6-digit code the
+hub shows into the round keypad.
+
+**Over USB (serial console, 115200):**
+
+```
+wifi "My Network" password
+server http://10.20.30.185:8765     # optional (otherwise discovered)
+status
+```
+
+## OTA updates
+
+Put a build on the server and the device offers it under Settings → Update:
+
+```bash
+mkdir -p server/runtime/firmware/pal-round
+cp build/pal-round.bin server/runtime/firmware/pal-round/firmware.bin
+echo 0.1.1 > server/runtime/firmware/pal-round/version   # = CONFIG_APP_PROJECT_VER
+```
+
+## Notes
+
+- **Fonts:** Inter for text and Material Design Icons (the set Home Assistant uses)
+  are embedded as TTFs and rendered with FreeType at runtime. The icon names the
+  server may send are in `tools/icon_names.txt`. Run `tools/gen_icons.py` to
+  regenerate `main/icons.h` + `server/app/device_icons.py`.
+- **Audio:** everything runs at 16 kHz mono 16-bit on one full-duplex I2S port.
