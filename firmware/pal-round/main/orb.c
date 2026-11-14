@@ -159,6 +159,16 @@ static void player_task(void *arg)
         if (ok) {
             show_buf(back);
             back ^= 1;
+            static int frames;
+            static int64_t since;
+            frames++;
+            if (!since) since = t0;
+            if (t0 - since >= 10000000) {
+                ESP_LOGD(TAG, "orb %d frames/10s (clip fps %d, decode+show %lld ms)", frames, fps,
+                         (long long)((esp_timer_get_time() - t0) / 1000));
+                frames = 0;
+                since = t0;
+            }
         }
         int64_t spent = (esp_timer_get_time() - t0) / 1000;
         int wait = 1000 / fps - (int)spent;
