@@ -112,19 +112,24 @@ static bool on_no_swipe(lv_obj_t *o)
     return false;
 }
 
-// Swipe detection from raw touch: once the finger has moved far enough
-// sideways, jump one page and ignore the rest of this touch (no click).
-static void swipe_cb(lv_event_t *e)
+// Swipe detection: this touch driver only raises PRESSED on the input device
+// (no PRESSING), so a 30 ms timer follows the finger. Once it has moved far
+// enough sideways, jump one page and ignore the rest of the touch (no click).
+static lv_indev_t *s_indev;
+static bool s_was_pressed;
+
+static void swipe_poll(lv_timer_t *t)
 {
-    lv_indev_t *in = lv_event_get_current_target(e);
+    if (!s_indev) return;
+    bool pressed = lv_indev_get_state(s_indev) == LV_INDEV_STATE_PRESSED;
     lv_point_t p;
-    lv_indev_get_point(in, &p);
-    if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
+    lv_indev_get_point(s_indev, &p);
+    if (pressed && !s_was_pressed) {
         s_touch0 = p;
         s_swipe_armed = !on_no_swipe(lv_indev_get_active_obj());
-        return;
     }
-    if (!s_swipe_armed) return;
+    s_was_pressed = pressed;
+    if (!pressed || !s_swipe_armed) return;
     int dx = p.x - s_touch0.x, dy = p.y - s_touch0.y;
     if (LV_ABS(dx) < 60 || LV_ABS(dx) < 2 * LV_ABS(dy)) return;
     s_swipe_armed = false;
@@ -133,9 +138,10 @@ static void swipe_cb(lv_event_t *e)
     if (s_set && !lv_obj_has_flag(s_set, LV_OBJ_FLAG_HIDDEN)) { tv = s_set_tv; n = 5; }
     else if (s_setup || s_pair || s_ota || ha_dial_obj()) return;
     else { tv = s_tv; n = s_page_cols + 1; }
+    ui_activity();
     jump(tv, n, dx < 0 ? LV_DIR_LEFT : LV_DIR_RIGHT);
     if (tv == s_set_tv) dots_cb(NULL);
-    lv_indev_wait_release(in);
+    lv_indev_wait_release(s_indev);
 }
 
 // --- home -------------------------------------------------------------------------
@@ -827,8 +833,8 @@ void ui_init(void)
     lv_indev_t *indev = bsp_display_get_input_dev();
     if (indev) {
         lv_indev_add_event_cb(indev, indev_cb, LV_EVENT_PRESSED, NULL);
-        lv_indev_add_event_cb(indev, swipe_cb, LV_EVENT_PRESSED, NULL);
-        lv_indev_add_event_cb(indev, swipe_cb, LV_EVENT_PRESSING, NULL);
+        s_indev = indev;
+        lv_timer_create(swipe_poll, 30, NULL);
     }
     ui_activity();
 }
