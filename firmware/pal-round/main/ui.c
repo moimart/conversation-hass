@@ -21,10 +21,13 @@ static const char *TAG = "ui";
 pal_theme_t g_theme;
 ui_choices_t g_choices;
 
-static lv_obj_t *s_tv, *s_home, *s_settings;
+static lv_obj_t *s_tv, *s_home;
 static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
 static lv_obj_t *s_setup, *s_pair, *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_ota, *s_shield;
-static lv_obj_t *s_vol, *s_bright, *s_tmo, *s_dash, *s_orb_dd, *s_info, *s_update_btn;
+static lv_obj_t *s_vol, *s_bright, *s_info, *s_update_btn;
+void ui_settings_open(void);
+void ui_settings_close(void);
+static void orb_long(lv_event_t *e);
 static int s_page_cols;
 static bool s_screen_on = true;
 static int64_t s_last_activity;
@@ -78,7 +81,7 @@ static void orb_tap(lv_event_t *e)
 
 static void build_home(void)
 {
-    s_home = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_RIGHT | LV_DIR_BOTTOM);
+    s_home = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_RIGHT);
     lv_obj_remove_flag(s_home, LV_OBJ_FLAG_SCROLLABLE);
 
     s_clock = mk_label(s_home, g_fonts.text40, g_theme.text, "--:--");
@@ -95,6 +98,7 @@ static void build_home(void)
     lv_obj_align(orb_obj(), LV_ALIGN_CENTER, 0, 12);
     lv_obj_add_flag(orb_obj(), LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(orb_obj(), orb_tap, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(orb_obj(), orb_long, LV_EVENT_LONG_PRESSED, NULL);
 
     s_timer_lbl = mk_label(s_home, g_fonts.clock, lv_color_white(), "");
     lv_obj_align(s_timer_lbl, LV_ALIGN_CENTER, 0, 12);
@@ -114,7 +118,7 @@ static void build_home(void)
     lv_label_set_long_mode(s_reply, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(s_reply, LV_ALIGN_BOTTOM_MID, 0, -24);
 
-    s_hint = mk_label(s_home, g_fonts.text16, g_theme.text_dim, "Press a button to talk");
+    s_hint = mk_label(s_home, g_fonts.text16, g_theme.text_dim, "Press a button to talk\nHold the orb for settings");
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -40);
 
     s_status = mk_label(s_home, g_fonts.icon22, g_theme.text_dim, "");
@@ -124,162 +128,281 @@ static void build_home(void)
 }
 
 // --- settings ----------------------------------------------------------------------
+//
+// A full-screen overlay of swipeable pages (no scrolling lists, no dropdowns):
+// opened by long-pressing the orb, closed with the ✕ on every page.
 
-static void set_changed(lv_event_t *e)
+typedef struct { lv_obj_t *val; int idx; int kind; } picker_t;
+enum { PK_TMO, PK_DASH, PK_ORB };
+static lv_obj_t *s_set, *s_set_tv, *s_dots[5];
+static picker_t s_pk[3];
+static const char *TMO_NAMES[] = {"15 seconds", "30 seconds", "1 minute", "5 minutes", "Never"};
+static const uint16_t TMO_VALS[] = {15, 30, 60, 300, 0};
+
+static const char *nth_line(const char *src, int n, char *buf, size_t len)
+{
+    const char *p = src;
+    for (int i = 0; i < n && p; i++) {
+        p = strchr(p, '\n');
+        if (p) p++;
+    }
+    if (!p) { buf[0] = 0; return buf; }
+    const char *e = strchr(p, '\n');
+    size_t l = e ? (size_t)(e - p) : strlen(p);
+    if (l >= len) l = len - 1;
+    memcpy(buf, p, l);
+    buf[l] = 0;
+    return buf;
+}
+
+static int picker_count(int kind)
+{
+    if (kind == PK_TMO) return 5;
+    if (kind == PK_DASH) return g_choices.dash_n + 1;
+    return g_choices.orb_n ? g_choices.orb_n : 1;
+}
+
+static void picker_show(picker_t *p)
+{
+    char b[64];
+    if (p->kind == PK_TMO) strlcpy(b, TMO_NAMES[p->idx], sizeof(b));
+    else if (p->kind == PK_DASH) {
+        if (p->idx == 0) strcpy(b, "None");
+        else nth_line(g_choices.dash_opts, p->idx - 1, b, sizeof(b));
+    } else {
+        if (g_choices.orb_n) nth_line(g_choices.orb_opts, p->idx, b, sizeof(b));
+        else strcpy(b, "Follow PAL");
+    }
+    lv_label_set_text(p->val, b);
+}
+
+static void picker_apply(picker_t *p)
+{
+    if (p->kind == PK_TMO) {
+        g_settings.screen_timeout_s = TMO_VALS[p->idx];
+    } else if (p->kind == PK_DASH) {
+        if (p->idx == 0) strcpy(g_settings.dashboard, "-");
+        else strlcpy(g_settings.dashboard, g_choices.dash_ids[p->idx - 1], sizeof(g_settings.dashboard));
+        app_post(EV_RELOAD);
+    } else if (g_choices.orb_n) {
+        strlcpy(g_settings.orb, g_choices.orb_ids[p->idx], sizeof(g_settings.orb));
+        app_post(EV_RELOAD);
+    }
+    app_post(EV_SETTINGS_CHANGED);
+}
+
+static void picker_step(lv_event_t *e)
+{
+    picker_t *p = lv_event_get_user_data(e);
+    int dir = (int)(intptr_t)lv_obj_get_user_data(lv_event_get_target(e));
+    int n = picker_count(p->kind);
+    ui_activity();
+    p->idx = (p->idx + dir + n) % n;
+    picker_show(p);
+    picker_apply(p);
+}
+
+static lv_obj_t *round_btn(lv_obj_t *parent, uint32_t icon, int size)
+{
+    char ic[6];
+    lv_obj_t *b = lv_button_create(parent);
+    lv_obj_set_size(b, size, size);
+    lv_obj_set_style_radius(b, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(0x26262c), 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_t *l = mk_label(b, g_fonts.icon34, g_theme.text, mdi(icon, ic));
+    lv_obj_center(l);
+    return b;
+}
+
+static void picker_build(lv_obj_t *page, picker_t *p, int kind, int y)
+{
+    p->kind = kind;
+    for (int dir = -1; dir <= 1; dir += 2) {
+        lv_obj_t *b = round_btn(page, dir < 0 ? ICON_CHEVRON_LEFT : ICON_CHEVRON_RIGHT, 64);
+        lv_obj_align(b, LV_ALIGN_CENTER, dir * 150, y);
+        lv_obj_set_user_data(b, (void *)(intptr_t)dir);
+        lv_obj_add_event_cb(b, picker_step, LV_EVENT_CLICKED, p);
+    }
+    p->val = mk_label(page, g_fonts.text20, g_theme.text, "");
+    lv_obj_set_width(p->val, 220);
+    lv_label_set_long_mode(p->val, LV_LABEL_LONG_DOT);
+    lv_obj_align(p->val, LV_ALIGN_CENTER, 0, y);
+}
+
+static void slider_cb(lv_event_t *e)
 {
     lv_obj_t *t = lv_event_get_target(e);
     ui_activity();
     if (t == s_vol) {
         g_settings.volume = lv_slider_get_value(s_vol);
         audio_set_volume(g_settings.volume);
-    } else if (t == s_bright) {
+        audio_beep(1);
+    } else {
         g_settings.brightness = lv_slider_get_value(s_bright);
         bsp_display_brightness_set(g_settings.brightness);
-    } else if (t == s_tmo) {
-        static const uint16_t v[] = {15, 30, 60, 300, 0};
-        g_settings.screen_timeout_s = v[lv_dropdown_get_selected(s_tmo) % 5];
-    } else if (t == s_dash) {
-        int i = lv_dropdown_get_selected(s_dash);
-        if (i == 0) strcpy(g_settings.dashboard, "-");
-        else if (i - 1 < g_choices.dash_n) strlcpy(g_settings.dashboard, g_choices.dash_ids[i - 1], sizeof(g_settings.dashboard));
-        app_post(EV_RELOAD);
-    } else if (t == s_orb_dd) {
-        int i = lv_dropdown_get_selected(s_orb_dd);
-        if (i < g_choices.orb_n) strlcpy(g_settings.orb, g_choices.orb_ids[i], sizeof(g_settings.orb));
-        app_post(EV_RELOAD);
     }
     app_post(EV_SETTINGS_CHANGED);
+}
+
+static lv_obj_t *slider_row(lv_obj_t *page, uint32_t icon, int lo, int hi, int v, int y)
+{
+    char ic[6];
+    lv_obj_t *l = mk_label(page, g_fonts.icon34, g_theme.accent, mdi(icon, ic));
+    lv_obj_align(l, LV_ALIGN_CENTER, -150, y);
+    lv_obj_t *s = lv_slider_create(page);
+    lv_obj_set_size(s, 250, 16);
+    lv_obj_align(s, LV_ALIGN_CENTER, 30, y);
+    lv_slider_set_range(s, lo, hi);
+    lv_slider_set_value(s, v, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(s, g_theme.accent, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s, lv_color_white(), LV_PART_KNOB);
+    lv_obj_set_style_bg_color(s, lv_color_hex(0x2a2a30), LV_PART_MAIN);
+    lv_obj_set_ext_click_area(s, 20);
+    lv_obj_add_event_cb(s, slider_cb, LV_EVENT_RELEASED, NULL);
+    return s;
 }
 
 static void action_cb(lv_event_t *e)
 {
     ui_activity();
-    app_post_str(EV_ACTION, lv_event_get_user_data(e));
+    const char *a = lv_event_get_user_data(e);
+    if (strcmp(a, "ota")) ui_settings_close();
+    app_post_str(EV_ACTION, a);
 }
 
-static lv_obj_t *row_label(lv_obj_t *p, const char *txt)
+static lv_obj_t *action_btn(lv_obj_t *page, uint32_t icon, const char *txt, const char *action, int x, int y)
 {
-    lv_obj_t *l = mk_label(p, g_fonts.text16, g_theme.text_dim, txt);
-    lv_obj_set_width(l, LV_PCT(100));
-    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_LEFT, 0);
-    return l;
-}
-
-static lv_obj_t *slider(lv_obj_t *p, int lo, int hi, int v)
-{
-    lv_obj_t *s = lv_slider_create(p);
-    lv_obj_set_width(s, LV_PCT(92));
-    lv_obj_set_height(s, 14);
-    lv_slider_set_range(s, lo, hi);
-    lv_slider_set_value(s, v, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(s, g_theme.accent, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s, g_theme.accent, LV_PART_KNOB);
-    lv_obj_set_style_bg_color(s, lv_color_hex(0x2a2a30), LV_PART_MAIN);
-    lv_obj_add_event_cb(s, set_changed, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_flag(s, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-    return s;
-}
-
-static lv_obj_t *dropdown(lv_obj_t *p)
-{
-    lv_obj_t *d = lv_dropdown_create(p);
-    lv_obj_set_width(d, LV_PCT(100));
-    lv_obj_set_style_text_font(d, g_fonts.text16, 0);
-    lv_obj_set_style_bg_color(d, lv_color_hex(0x1c1c22), 0);
-    lv_obj_set_style_text_color(d, g_theme.text, 0);
-    lv_obj_set_style_border_width(d, 0, 0);
-    lv_obj_t *list = lv_dropdown_get_list(d);
-    lv_obj_set_style_text_font(list, g_fonts.text16, 0);
-    lv_obj_set_style_bg_color(list, lv_color_hex(0x1c1c22), 0);
-    lv_obj_set_style_text_color(list, g_theme.text, 0);
-    lv_obj_set_style_max_height(list, 220, 0);
-    lv_obj_add_event_cb(d, set_changed, LV_EVENT_VALUE_CHANGED, NULL);
-    return d;
-}
-
-static lv_obj_t *button(lv_obj_t *p, const char *txt, const char *action, lv_color_t bg)
-{
-    lv_obj_t *b = lv_button_create(p);
-    lv_obj_set_width(b, LV_PCT(100));
-    lv_obj_set_height(b, 50);
-    lv_obj_set_style_radius(b, 25, 0);
-    lv_obj_set_style_bg_color(b, bg, 0);
-    lv_obj_set_style_shadow_width(b, 0, 0);
-    lv_obj_t *l = mk_label(b, g_fonts.text16, g_theme.text, txt);
-    lv_obj_center(l);
+    lv_obj_t *b = round_btn(page, icon, 104);
+    lv_obj_align(b, LV_ALIGN_CENTER, x, y);
+    lv_obj_t *l = lv_obj_get_child(b, 0);
+    lv_obj_align(l, LV_ALIGN_CENTER, 0, -12);
+    lv_obj_t *t = mk_label(b, g_fonts.text16, g_theme.text_dim, txt);
+    lv_obj_align(t, LV_ALIGN_CENTER, 0, 26);
     lv_obj_add_event_cb(b, action_cb, LV_EVENT_CLICKED, (void *)action);
     return b;
 }
 
+static void close_cb(lv_event_t *e) { ui_settings_close(); }
+
+static void dots_cb(lv_event_t *e)
+{
+    lv_obj_t *act = lv_tileview_get_tile_active(s_set_tv);
+    int idx = (int)lv_obj_get_index(act);
+    for (int i = 0; i < 5; i++)
+        lv_obj_set_style_bg_color(s_dots[i], i == idx ? g_theme.accent : lv_color_hex(0x3a3a42), 0);
+}
+
+static lv_obj_t *set_page(int col, const char *title)
+{
+    lv_obj_t *t = lv_tileview_add_tile(s_set_tv, col, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
+    lv_obj_remove_flag(t, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *h = mk_label(t, g_fonts.text20, g_theme.text, title);
+    lv_obj_align(h, LV_ALIGN_TOP_MID, 0, 46);
+    lv_obj_t *x = round_btn(t, ICON_CLOSE, 60);
+    lv_obj_align(x, LV_ALIGN_BOTTOM_MID, 0, -26);
+    lv_obj_add_event_cb(x, close_cb, LV_EVENT_CLICKED, NULL);
+    return t;
+}
+
 static void build_settings(void)
 {
-    s_settings = lv_tileview_add_tile(s_tv, 0, 1, LV_DIR_TOP);
-    lv_obj_t *col = lv_obj_create(s_settings);
-    lv_obj_remove_style_all(col);
-    lv_obj_set_size(col, 320, LV_PCT(100));
-    lv_obj_align(col, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_top(col, 70, 0);
-    lv_obj_set_style_pad_bottom(col, 110, 0);
-    lv_obj_set_style_pad_row(col, 10, 0);
-    lv_obj_set_scroll_dir(col, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(col, LV_SCROLLBAR_MODE_OFF);
+    s_set = overlay();
+    lv_obj_add_flag(s_set, LV_OBJ_FLAG_HIDDEN);
+    s_set_tv = lv_tileview_create(s_set);
+    lv_obj_set_style_bg_opa(s_set_tv, LV_OPA_TRANSP, 0);
+    lv_obj_set_scrollbar_mode(s_set_tv, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_event_cb(s_set_tv, dots_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    lv_obj_t *title = mk_label(col, g_fonts.text26, g_theme.text, "Settings");
-    lv_obj_set_width(title, LV_PCT(100));
-    row_label(col, "Volume");
-    s_vol = slider(col, 0, 100, g_settings.volume);
-    row_label(col, "Brightness");
-    s_bright = slider(col, 5, 100, g_settings.brightness);
-    row_label(col, "Screen off after");
-    s_tmo = dropdown(col);
-    lv_dropdown_set_options(s_tmo, "15 seconds\n30 seconds\n1 minute\n5 minutes\nNever");
-    row_label(col, "Home Assistant pages");
-    s_dash = dropdown(col);
-    row_label(col, "Orb");
-    s_orb_dd = dropdown(col);
-    s_update_btn = button(col, "Check for update", "ota", lv_color_hex(0x26262c));
-    button(col, "Wi-Fi setup", "portal", lv_color_hex(0x26262c));
-    button(col, "Pair again", "repair", lv_color_hex(0x26262c));
-    button(col, "Restart", "restart", lv_color_hex(0x26262c));
-    s_info = mk_label(col, g_fonts.text16, g_theme.text_dim, "");
-    lv_obj_set_width(s_info, LV_PCT(100));
+    lv_obj_t *p = set_page(0, "Sound & screen");
+    s_vol = slider_row(p, ICON_VOLUME_HIGH, 0, 100, g_settings.volume, -70);
+    s_bright = slider_row(p, ICON_BRIGHTNESS_6, 5, 100, g_settings.brightness, 0);
+    lv_obj_t *l = mk_label(p, g_fonts.text16, g_theme.text_dim, "Screen off after");
+    lv_obj_align(l, LV_ALIGN_CENTER, 0, 52);
+    picker_build(p, &s_pk[PK_TMO], PK_TMO, 92);
+
+    p = set_page(1, "Home Assistant");
+    picker_build(p, &s_pk[PK_DASH], PK_DASH, 0);
+    l = mk_label(p, g_fonts.text16, g_theme.text_dim, "Dashboard shown as pages\nright of the home screen");
+    lv_obj_align(l, LV_ALIGN_CENTER, 0, 70);
+
+    p = set_page(2, "Orb");
+    picker_build(p, &s_pk[PK_ORB], PK_ORB, 0);
+    l = mk_label(p, g_fonts.text16, g_theme.text_dim, "\"Follow PAL\" shows the hub's orb");
+    lv_obj_align(l, LV_ALIGN_CENTER, 0, 70);
+
+    p = set_page(3, "Device");
+    s_update_btn = action_btn(p, ICON_DOWNLOAD, "Update", "ota", -60, -50);
+    action_btn(p, ICON_WIFI, "Wi-Fi", "portal", 60, -50);
+    action_btn(p, ICON_LINK_VARIANT, "Pair", "repair", -60, 66);
+    action_btn(p, ICON_REFRESH, "Restart", "restart", 60, 66);
+
+    p = set_page(4, "About");
+    s_info = mk_label(p, g_fonts.text16, g_theme.text_dim, "");
+    lv_obj_set_width(s_info, 320);
     lv_label_set_long_mode(s_info, LV_LABEL_LONG_WRAP);
-    button(col, "Reset to factory", "reset", lv_color_hex(0x3a1616));
+    lv_obj_align(s_info, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_t *rst = lv_button_create(p);
+    lv_obj_set_size(rst, 220, 44);
+    lv_obj_align(rst, LV_ALIGN_CENTER, 0, 78);
+    lv_obj_set_style_radius(rst, 22, 0);
+    lv_obj_set_style_bg_color(rst, lv_color_hex(0x3a1616), 0);
+    lv_obj_t *rl = mk_label(rst, g_fonts.text16, g_theme.text, "Hold to factory reset");
+    lv_obj_center(rl);
+    lv_obj_add_event_cb(rst, action_cb, LV_EVENT_LONG_PRESSED, (void *)"reset");
+
+    for (int i = 0; i < 5; i++) {
+        s_dots[i] = lv_obj_create(s_set);
+        lv_obj_remove_style_all(s_dots[i]);
+        lv_obj_set_size(s_dots[i], 8, 8);
+        lv_obj_set_style_radius(s_dots[i], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_opa(s_dots[i], LV_OPA_COVER, 0);
+        lv_obj_align(s_dots[i], LV_ALIGN_TOP_MID, (i - 2) * 16, 82);
+    }
 }
 
 void ui_settings_refresh(void)
 {
-    if (!s_settings) return;
+    if (!s_set) return;
     lv_slider_set_value(s_vol, g_settings.volume, LV_ANIM_OFF);
     lv_slider_set_value(s_bright, g_settings.brightness, LV_ANIM_OFF);
     int t = g_settings.screen_timeout_s;
-    lv_dropdown_set_selected(s_tmo, t == 15 ? 0 : t == 30 ? 1 : t == 60 ? 2 : t == 300 ? 3 : 4);
-    char opts[600];
-    snprintf(opts, sizeof(opts), "None%s%s", g_choices.dash_n ? "\n" : "", g_choices.dash_opts);
-    lv_dropdown_set_options(s_dash, opts);
-    int sel = 0;
+    s_pk[PK_TMO].idx = t == 15 ? 0 : t == 30 ? 1 : t == 60 ? 2 : t == 300 ? 3 : 4;
+    s_pk[PK_DASH].idx = 0;
     for (int i = 0; i < g_choices.dash_n; i++)
-        if (!strcmp(g_choices.dash_ids[i], g_settings.dashboard)) sel = i + 1;
-    lv_dropdown_set_selected(s_dash, sel);
-    lv_dropdown_set_options(s_orb_dd, g_choices.orb_n ? g_choices.orb_opts : "Follow PAL");
-    sel = 0;
+        if (!strcmp(g_choices.dash_ids[i], g_settings.dashboard)) s_pk[PK_DASH].idx = i + 1;
+    s_pk[PK_ORB].idx = 0;
     for (int i = 0; i < g_choices.orb_n; i++)
-        if (!strcmp(g_choices.orb_ids[i], g_settings.orb)) sel = i;
-    lv_dropdown_set_selected(s_orb_dd, sel);
-    lv_obj_t *ul = lv_obj_get_child(s_update_btn, 0);
-    if (g_choices.update[0]) {
-        lv_label_set_text_fmt(ul, "Update to %s", g_choices.update);
-        lv_obj_set_style_bg_color(s_update_btn, g_theme.accent_deep, 0);
-    } else {
-        lv_label_set_text(ul, "Check for update");
-        lv_obj_set_style_bg_color(s_update_btn, lv_color_hex(0x26262c), 0);
-    }
+        if (!strcmp(g_choices.orb_ids[i], g_settings.orb)) s_pk[PK_ORB].idx = i;
+    for (int i = 0; i < 3; i++) picker_show(&s_pk[i]);
+    lv_obj_t *ul = lv_obj_get_child(s_update_btn, 1);
+    lv_label_set_text(ul, g_choices.update[0] ? g_choices.update : "Update");
+    lv_obj_set_style_bg_color(s_update_btn, g_choices.update[0] ? g_theme.accent_deep : lv_color_hex(0x26262c), 0);
     int bat = pmu_battery_pct();
     char batt[32] = "USB power";
-    if (bat >= 0) snprintf(batt, sizeof(batt), "Battery %d%%%s", bat, pmu_charging() ? " (charging)" : "");
-    lv_label_set_text_fmt(s_info, "%s\nFirmware %s\n%s\nWi-Fi %s (%d dBm)\n%s", pal_device_name(), pal_fw_version(),
+    if (bat >= 0) snprintf(batt, sizeof(batt), "Battery %d%%%s", bat, pmu_charging() ? ", charging" : "");
+    lv_label_set_text_fmt(s_info, "%s\nFirmware %s\n%s\n%s · %d dBm\n%s", pal_device_name(), pal_fw_version(),
                           pal_base(), g_settings.wifi_ssid, net_rssi(), batt);
+}
+
+void ui_settings_open(void)
+{
+    ui_settings_refresh();
+    lv_tileview_set_tile_by_index(s_set_tv, 0, 0, LV_ANIM_OFF);
+    dots_cb(NULL);
+    lv_obj_remove_flag(s_set, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_settings_close(void)
+{
+    if (s_set) lv_obj_add_flag(s_set, LV_OBJ_FLAG_HIDDEN);
+}
+
+
+static void orb_long(lv_event_t *e)
+{
+    ui_activity();
+    ui_settings_open();
 }
 
 // --- pages --------------------------------------------------------------------------
@@ -297,7 +420,7 @@ void ui_clear_pages(void)
     lv_tileview_set_tile(s_tv, s_home, LV_ANIM_OFF);
     for (int i = (int)lv_obj_get_child_count(s_tv) - 1; i >= 0; i--) {
         lv_obj_t *c = lv_obj_get_child(s_tv, i);
-        if (c != s_home && c != s_settings) lv_obj_delete(c);
+        if (c != s_home) lv_obj_delete(c);
     }
     s_page_cols = 0;
 }
@@ -572,6 +695,7 @@ void ui_screen_sleep(void)
 {
     if (!s_screen_on) return;
     s_screen_on = false;
+    ui_settings_close();
     orb_set_active(false);
     bsp_display_brightness_set(0);
     if (!s_shield) {
