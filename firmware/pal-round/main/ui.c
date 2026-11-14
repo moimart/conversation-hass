@@ -28,7 +28,6 @@ static lv_obj_t *s_vol, *s_bright, *s_info, *s_update_btn;
 void ui_settings_open(void);
 void ui_settings_close(void);
 static void orb_long(lv_event_t *e);
-static int s_page_cols;
 static bool s_screen_on = true;
 static int64_t s_last_activity;
 static char s_pair_code[8];
@@ -70,6 +69,43 @@ static lv_obj_t *overlay(void)
 void ui_activity(void) { s_last_activity = esp_timer_get_time(); }
 
 static void indev_cb(lv_event_t *e) { ui_activity(); }
+
+// --- page switching: swipes jump straight to the next page (no sliding) -------------
+
+static int col_of(lv_obj_t *tv)
+{
+    lv_obj_t *act = lv_tileview_get_tile_active(tv);
+    int w = lv_obj_get_width(tv);
+    return act && w ? lv_obj_get_x(act) / w : 0;
+}
+
+static void jump(lv_obj_t *tv, int ncols, lv_dir_t dir)
+{
+    int c = col_of(tv);
+    if (dir == LV_DIR_LEFT && c + 1 < ncols) c++;
+    else if (dir == LV_DIR_RIGHT && c > 0) c--;
+    else return;
+    lv_tileview_set_tile_by_index(tv, c, 0, LV_ANIM_OFF);
+    lv_obj_send_event(tv, LV_EVENT_VALUE_CHANGED, NULL);
+}
+
+static void make_jumpy(lv_obj_t *tv, lv_event_cb_t gesture_cb)
+{
+    lv_obj_remove_flag(tv, LV_OBJ_FLAG_SCROLLABLE);   // pages don't follow the finger
+    lv_obj_add_event_cb(tv, gesture_cb, LV_EVENT_GESTURE, NULL);
+}
+
+static int s_page_cols;
+static void main_gesture(lv_event_t *e)
+{
+    lv_indev_t *in = lv_indev_active();
+    if (!in) return;
+    ui_activity();
+    jump(s_tv, s_page_cols + 1, lv_indev_get_gesture_dir(in));
+}
+
+/** Keep drags on a control (dial, slider) from turning the page. */
+void ui_no_swipe(lv_obj_t *obj) { lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE); }
 
 // --- home -------------------------------------------------------------------------
 
@@ -260,6 +296,7 @@ static lv_obj_t *slider_row(lv_obj_t *page, uint32_t icon, int lo, int hi, int v
     lv_obj_set_style_bg_color(s, lv_color_hex(0x2a2a30), LV_PART_MAIN);
     lv_obj_set_ext_click_area(s, 20);
     lv_obj_add_event_cb(s, slider_cb, LV_EVENT_RELEASED, NULL);
+    ui_no_swipe(s);
     return s;
 }
 
@@ -287,10 +324,17 @@ static void close_cb(lv_event_t *e) { ui_settings_close(); }
 
 static void dots_cb(lv_event_t *e)
 {
-    lv_obj_t *act = lv_tileview_get_tile_active(s_set_tv);
-    int idx = (int)lv_obj_get_index(act);
+    int idx = col_of(s_set_tv);
     for (int i = 0; i < 5; i++)
         lv_obj_set_style_bg_color(s_dots[i], i == idx ? g_theme.accent : lv_color_hex(0x3a3a42), 0);
+}
+
+static void set_gesture(lv_event_t *e)
+{
+    lv_indev_t *in = lv_indev_active();
+    if (!in) return;
+    ui_activity();
+    jump(s_set_tv, 5, lv_indev_get_gesture_dir(in));
 }
 
 static lv_obj_t *set_page(int col, const char *title)
@@ -313,6 +357,7 @@ static void build_settings(void)
     lv_obj_set_style_bg_opa(s_set_tv, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(s_set_tv, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_event_cb(s_set_tv, dots_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    make_jumpy(s_set_tv, set_gesture);
 
     lv_obj_t *p = set_page(0, "Sound & screen");
     s_vol = slider_row(p, ICON_VOLUME_HIGH, 0, 100, g_settings.volume, -70);
@@ -723,7 +768,7 @@ bool ui_screen_on(void) { return s_screen_on; }
 
 void ui_show_home(void)
 {
-    lv_tileview_set_tile(s_tv, s_home, LV_ANIM_ON);
+    lv_tileview_set_tile(s_tv, s_home, LV_ANIM_OFF);
 }
 
 // --- theme / init ----------------------------------------------------------------------------
@@ -752,6 +797,7 @@ void ui_init(void)
     s_tv = lv_tileview_create(scr);
     lv_obj_set_style_bg_opa(s_tv, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(s_tv, LV_SCROLLBAR_MODE_OFF);
+    make_jumpy(s_tv, main_gesture);
     build_home();
     build_settings();
     lv_timer_create(timer_anim, 250, NULL);

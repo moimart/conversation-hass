@@ -282,6 +282,7 @@ static void open_dial(widget_t *w)
     lv_obj_set_style_arc_color(arc, g_theme.accent, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(arc, lv_color_hex(0x26262c), LV_PART_MAIN);
     lv_obj_set_style_bg_color(arc, lv_color_white(), LV_PART_KNOB);
+    ui_no_swipe(arc);
     lv_obj_t *pct = lv_label_create(s_dial);
     lv_obj_set_style_text_font(pct, g_fonts.text40, 0);
     lv_obj_set_style_text_color(pct, g_theme.text, 0);
@@ -402,6 +403,7 @@ static lv_obj_t *page_arc(lv_obj_t *page, int lo, int hi)
     lv_obj_set_style_arc_color(arc, g_theme.accent, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(arc, lv_color_white(), LV_PART_KNOB);
     lv_obj_set_style_pad_all(arc, 4, LV_PART_KNOB);
+    ui_no_swipe(arc);
     return arc;
 }
 

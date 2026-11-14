@@ -199,6 +199,7 @@ bool ui_screen_on(void);
 void ui_activity(void);                            // reset the screen timeout
 void ui_settings_refresh(void);
 void ui_settings_open(void);
+void ui_no_swipe(lv_obj_t *obj);
 void ui_settings_close(void);
 void ui_toast(const char *text);
 void ui_ota_progress(int pct);                     // -1 = hide
