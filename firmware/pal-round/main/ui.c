@@ -114,7 +114,7 @@ static void build_home(void)
     lv_label_set_long_mode(s_reply, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(s_reply, LV_ALIGN_BOTTOM_MID, 0, -24);
 
-    s_hint = mk_label(s_home, g_fonts.text16, g_theme.text_dim, "Tap the orb to talk");
+    s_hint = mk_label(s_home, g_fonts.text16, g_theme.text_dim, "Press a button to talk");
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -40);
 
     s_status = mk_label(s_home, g_fonts.icon22, g_theme.text_dim, "");

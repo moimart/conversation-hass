@@ -473,6 +473,10 @@ static void do_action(const char *a)
 {
     if (!strcmp(a, "restart")) {
         esp_restart();
+    } else if (!strcmp(a, "save_reboot")) {
+        settings_save();
+        vTaskDelay(pdMS_TO_TICKS(200));
+        esp_restart();
     } else if (!strcmp(a, "reset")) {
         settings_factory_reset();
         esp_restart();
@@ -580,13 +584,19 @@ static void app_task(void *arg)
         case EV_PLAY_DONE:
             if (!audio_playing() && s_state == PAL_SPEAKING) set_state(PAL_IDLE);
             break;
-        case EV_PWR_SHORT:
+        case EV_PWR_SHORT: {
+            // either button talks; a press while the screen is off just wakes it
+            bool was_on = true;
             if (pal_lock()) {
-                if (ui_screen_on()) ui_screen_sleep();
-                else ui_screen_wake();
+                was_on = ui_screen_on();
+                ui_screen_wake();
                 pal_unlock();
             }
+            if (!was_on) break;
+            if (audio_recording()) audio_record_stop();
+            else begin_listening();
             break;
+        }
         case EV_PWR_LONG:
             setup_screen("Goodbye", "Press the power button to turn PAL Round back on.", NULL);
             vTaskDelay(pdMS_TO_TICKS(1200));
@@ -624,7 +634,7 @@ static void app_task(void *arg)
 
 static void storage_init(void)
 {
-    esp_vfs_fat_mount_config_t mc = {.max_files = 6, .format_if_mount_failed = true, .allocation_unit_size = 16384};
+    esp_vfs_fat_mount_config_t mc = {.max_files = 16, .format_if_mount_failed = true, .allocation_unit_size = 16384};
     wl_handle_t wl;
     if (esp_vfs_fat_spiflash_mount_rw_wl("/orb", "storage", &mc, &wl) != ESP_OK) {
         ESP_LOGE(TAG, "storage mount failed (orb clips won't be cached)");
@@ -654,7 +664,7 @@ void app_main(void)
     audio_init();
     buttons_init();
     console_start();
-    xTaskCreatePinnedToCoreWithCaps(app_task, "app", 12288, NULL, 5, NULL, 1, MALLOC_CAP_SPIRAM);
+    xTaskCreatePinnedToCore(app_task, "app", 9216, NULL, 5, NULL, 1);  // internal: it writes flash
 
     net_start();
     if (!g_settings.wifi_ssid[0]) {

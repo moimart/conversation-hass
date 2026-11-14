@@ -47,16 +47,14 @@ static void handle(char *line)
     if (!strcmp(argv[0], "wifi") && argc >= 2) {
         strlcpy(g_settings.wifi_ssid, argv[1], sizeof(g_settings.wifi_ssid));
         strlcpy(g_settings.wifi_pass, argc > 2 ? argv[2] : "", sizeof(g_settings.wifi_pass));
-        settings_save();
         printf("OK wifi=%s — rebooting\n", g_settings.wifi_ssid);
         fflush(stdout);
-        vTaskDelay(pdMS_TO_TICKS(300));
-        esp_restart();
+        app_post_str(EV_ACTION, "save_reboot");   // NVS writes need an internal stack
     } else if (!strcmp(argv[0], "server") && argc == 2) {
         size_t l = strlen(argv[1]);
         while (l && argv[1][l - 1] == '/') argv[1][--l] = 0;
         strlcpy(g_settings.server, argv[1], sizeof(g_settings.server));
-        settings_save();
+        app_post(EV_SETTINGS_CHANGED);
         printf("OK server=%s\n", g_settings.server);
         app_post(EV_WIFI_UP);   // re-run the connect flow
     } else if (!strcmp(argv[0], "status")) {

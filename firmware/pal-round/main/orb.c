@@ -293,7 +293,7 @@ void orb_create(lv_obj_t *parent, int size)
 
     s_native_timer = lv_timer_create(native_tick, 33, NULL);
     orb_apply_theme();
-    xTaskCreatePinnedToCoreWithCaps(player_task, "orb", 6144, NULL, 4, &s_task, 1, MALLOC_CAP_SPIRAM);
+    xTaskCreatePinnedToCore(player_task, "orb", 4096, NULL, 4, &s_task, 1);  // internal: reads flash
 }
 
 lv_obj_t *orb_obj(void) { return s_wrap; }
@@ -371,6 +371,14 @@ void orb_load_manifest(cJSON *m)
         cJSON_Delete(none);
         return;
     }
+    // same clips as now? nothing to do (set_orb is replayed on every reconnect)
+    static const char *names[4] = {"idle", "listening", "processing", "speaking"};
+    bool same = s_have_clips;
+    for (int i = 0; i < 4 && same; i++) {
+        const char *key = cJSON_GetStringValue(cJSON_GetObjectItem(cJSON_GetObjectItem(states, names[i]), "key"));
+        same = key && !strcmp(key, s_clips[i].key);
+    }
+    if (same) return;
     // download what's missing
     cJSON *s;
     cJSON_ArrayForEach(s, states) {
@@ -384,7 +392,6 @@ void orb_load_manifest(cJSON *m)
         ESP_LOGI(TAG, "downloading %s", url);
         if (pal_get_to_file(url, path, 60000) != ESP_OK) ESP_LOGW(TAG, "download failed: %s", url);
     }
-    static const char *names[4] = {"idle", "listening", "processing", "speaking"};
     clip_t next[4];
     bool any = false;
     for (int i = 0; i < 4; i++) {

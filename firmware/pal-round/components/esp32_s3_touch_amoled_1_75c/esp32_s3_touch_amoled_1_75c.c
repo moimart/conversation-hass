@@ -473,7 +473,7 @@ static lv_display_t *bsp_display_lcd_init(const bsp_display_cfg_t *cfg)
             .rotation = cfg->rotation,
             .hor_res = BSP_LCD_H_RES,
             .ver_res = BSP_LCD_V_RES,
-            .buffer_height = 20,   // PAL: 466x20x2 = 18 KB DMA bounce chunks (internal RAM is scarce)
+            .buffer_height = 12,   // PAL: 466x12x2 = 11 KB DMA bounce chunks (internal RAM is scarce)
             .use_psram = true,
             .enable_ppa_accel = false,
             .require_double_buffer = true,
