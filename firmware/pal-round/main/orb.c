@@ -15,6 +15,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "app.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
+#include "esp_heap_caps.h"
 #include "esp_heap_caps.h"
 #include "esp_jpeg_dec.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
@@ -290,7 +293,7 @@ void orb_create(lv_obj_t *parent, int size)
 
     s_native_timer = lv_timer_create(native_tick, 33, NULL);
     orb_apply_theme();
-    xTaskCreatePinnedToCore(player_task, "orb", 6144, NULL, 4, &s_task, 1);
+    xTaskCreatePinnedToCoreWithCaps(player_task, "orb", 6144, NULL, 4, &s_task, 1, MALLOC_CAP_SPIRAM);
 }
 
 lv_obj_t *orb_obj(void) { return s_wrap; }

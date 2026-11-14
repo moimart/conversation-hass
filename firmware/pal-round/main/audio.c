@@ -9,6 +9,9 @@
 #include <math.h>
 #include <string.h>
 #include "app.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
+#include "esp_heap_caps.h"
 #include "bsp/esp-bsp.h"
 #include "esp_codec_dev.h"
 #include "esp_heap_caps.h"
@@ -252,7 +255,7 @@ void audio_init(void)
         }
     }
     audio_set_volume(g_settings.volume);
-    xTaskCreatePinnedToCore(rec_task, "rec", 4096, NULL, 6, &s_rec_task, 1);
-    xTaskCreatePinnedToCore(play_task, "play", 4096, NULL, 6, NULL, 1);
+    xTaskCreatePinnedToCoreWithCaps(rec_task, "rec", 4096, NULL, 6, &s_rec_task, 1, MALLOC_CAP_SPIRAM);
+    xTaskCreatePinnedToCoreWithCaps(play_task, "play", 4096, NULL, 6, NULL, 1, MALLOC_CAP_SPIRAM);
     ESP_LOGI(TAG, "audio ready (spk=%d mic=%d)", s_spk != NULL, s_mic != NULL);
 }

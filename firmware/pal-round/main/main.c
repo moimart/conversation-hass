@@ -7,6 +7,9 @@
 #include <math.h>
 #include <string.h>
 #include "app.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
+#include "esp_heap_caps.h"
 #include "bsp/display.h"
 #include "bsp/esp-bsp.h"
 #include "driver/gpio.h"
@@ -611,6 +614,9 @@ static void app_task(void *arg)
                 pal_unlock();
             }
             if (s_ticks % 25 == 0) ws_send_text("{\"type\":\"ping\"}");
+            if (s_ticks % 10 == 0)
+                ESP_LOGI(TAG, "heap: internal %u (largest dma %u)", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
             break;
         }
     }
@@ -648,7 +654,7 @@ void app_main(void)
     audio_init();
     buttons_init();
     console_start();
-    xTaskCreatePinnedToCore(app_task, "app", 12288, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCoreWithCaps(app_task, "app", 12288, NULL, 5, NULL, 1, MALLOC_CAP_SPIRAM);
 
     net_start();
     if (!g_settings.wifi_ssid[0]) {
@@ -660,4 +666,8 @@ void app_main(void)
     esp_timer_handle_t t;
     esp_timer_create(&ta, &t);
     esp_timer_start_periodic(t, 1000000);
+    ESP_LOGI(TAG, "heap: internal free %u (largest %u), psram free %u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }

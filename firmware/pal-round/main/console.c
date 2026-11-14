@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "app.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
+#include "esp_heap_caps.h"
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_log.h"
@@ -105,5 +108,5 @@ void console_start(void)
     }
     usb_serial_jtag_vfs_use_driver();
     setvbuf(stdin, NULL, _IONBF, 0);
-    xTaskCreate(console_task, "console", 4096, NULL, 3, NULL);
+    xTaskCreateWithCaps(console_task, "console", 4096, NULL, 3, NULL, MALLOC_CAP_SPIRAM);
 }

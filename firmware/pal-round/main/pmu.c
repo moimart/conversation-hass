@@ -2,6 +2,9 @@
 // The PMU's IRQ line isn't wired to the ESP32, so a small task polls the
 // latched IRQ status for short/long key presses.
 #include "app.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
+#include "esp_heap_caps.h"
 #include "bsp/esp-bsp.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
@@ -70,7 +73,7 @@ void pmu_init(void)
     wr(REG_INTEN1 + 2, 0x00);
     for (int i = 0; i < 3; i++) wr(REG_INTSTS1 + i, 0xFF);
     ESP_LOGI(TAG, "battery %d%% charging=%d vbus=%d", pmu_battery_pct(), pmu_charging(), pmu_vbus());
-    xTaskCreate(pmu_task, "pmu", 3072, NULL, 3, NULL);
+    xTaskCreateWithCaps(pmu_task, "pmu", 3072, NULL, 3, NULL, MALLOC_CAP_SPIRAM);
 }
 
 int pmu_battery_pct(void)

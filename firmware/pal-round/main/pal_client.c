@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "app.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
+#include "esp_heap_caps.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
@@ -198,7 +201,7 @@ esp_err_t pal_call_service(const char *domain, const char *service, const char *
 {
     if (!s_svc_q) {
         s_svc_q = xQueueCreate(8, sizeof(char *));
-        xTaskCreate(svc_task, "svc", 6144, NULL, 4, NULL);
+        xTaskCreateWithCaps(svc_task, "svc", 6144, NULL, 4, NULL, MALLOC_CAP_SPIRAM);
     }
     cJSON *b = cJSON_CreateObject();
     cJSON_AddStringToObject(b, "domain", domain);

@@ -3,7 +3,6 @@
 // Assistant uses, so entity icons map 1:1).
 #include "app.h"
 #include "esp_log.h"
-#include "esp_lv_adapter.h"
 
 static const char *TAG = "fonts";
 pal_fonts_t g_fonts;
@@ -14,30 +13,32 @@ extern const uint8_t mdi_ttf_start[] asm("_binary_mdi_ttf_start");
 extern const uint8_t mdi_ttf_end[] asm("_binary_mdi_ttf_end");
 
 static const lv_font_t *load(const char *name, const uint8_t *start, const uint8_t *end, int size,
-                             esp_lv_adapter_ft_font_style_t style, const lv_font_t *fallback)
+                             int bold, const lv_font_t *fallback)
 {
-    esp_lv_adapter_ft_font_config_t cfg = {
-        .name = name, .size = size, .style = style, .mem = start, .mem_size = (size_t)(end - start),
-    };
-    esp_lv_adapter_ft_font_handle_t h = NULL;
-    if (esp_lv_adapter_ft_font_init(&cfg, &h) != ESP_OK || !h) {
+    // tiny_ttf renders from the TTF in flash on demand and caches the glyphs
+    // (FreeType would need a 32 KB render stack in scarce internal RAM).
+    (void)bold;
+    lv_font_t *f = lv_tiny_ttf_create_data_ex(start, (size_t)(end - start), size, LV_FONT_KERNING_NONE, 96);
+    if (!f) {
         ESP_LOGE(TAG, "font %s/%d failed", name, size);
         return fallback;
     }
-    return esp_lv_adapter_ft_font_get(h);
+    return f;
 }
 
 void fonts_init(void)
 {
     const lv_font_t *fb = &lv_font_montserrat_14;
-    g_fonts.text16 = load("inter", inter_ttf_start, inter_ttf_end, 17, ESP_LV_ADAPTER_FT_FONT_STYLE_NORMAL, fb);
-    g_fonts.text20 = load("inter", inter_ttf_start, inter_ttf_end, 21, ESP_LV_ADAPTER_FT_FONT_STYLE_NORMAL, fb);
-    g_fonts.text26 = load("inter", inter_ttf_start, inter_ttf_end, 27, ESP_LV_ADAPTER_FT_FONT_STYLE_BOLD, fb);
-    g_fonts.text40 = load("inter", inter_ttf_start, inter_ttf_end, 42, ESP_LV_ADAPTER_FT_FONT_STYLE_BOLD, fb);
-    g_fonts.clock = load("inter", inter_ttf_start, inter_ttf_end, 64, ESP_LV_ADAPTER_FT_FONT_STYLE_BOLD, fb);
-    g_fonts.icon22 = load("mdi", mdi_ttf_start, mdi_ttf_end, 24, ESP_LV_ADAPTER_FT_FONT_STYLE_NORMAL, fb);
-    g_fonts.icon34 = load("mdi", mdi_ttf_start, mdi_ttf_end, 36, ESP_LV_ADAPTER_FT_FONT_STYLE_NORMAL, fb);
-    g_fonts.icon56 = load("mdi", mdi_ttf_start, mdi_ttf_end, 60, ESP_LV_ADAPTER_FT_FONT_STYLE_NORMAL, fb);
+    if (!pal_lock()) return;
+    g_fonts.text16 = load("inter", inter_ttf_start, inter_ttf_end, 17, 0, fb);
+    g_fonts.text20 = load("inter", inter_ttf_start, inter_ttf_end, 21, 0, fb);
+    g_fonts.text26 = load("inter", inter_ttf_start, inter_ttf_end, 27, 1, fb);
+    g_fonts.text40 = load("inter", inter_ttf_start, inter_ttf_end, 42, 1, fb);
+    g_fonts.clock = load("inter", inter_ttf_start, inter_ttf_end, 64, 1, fb);
+    g_fonts.icon22 = load("mdi", mdi_ttf_start, mdi_ttf_end, 24, 0, fb);
+    g_fonts.icon34 = load("mdi", mdi_ttf_start, mdi_ttf_end, 36, 0, fb);
+    g_fonts.icon56 = load("mdi", mdi_ttf_start, mdi_ttf_end, 60, 0, fb);
+    pal_unlock();
 }
 
 const char *mdi(uint32_t cp, char *b)
