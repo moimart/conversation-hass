@@ -521,6 +521,7 @@ void ha_build_pages(cJSON *pages)
 }
 
 int ha_page_count(void) { return s_pages; }
+lv_obj_t *ha_dial_obj(void) { return s_dial; }
 
 void ha_resend_retain(void)
 {

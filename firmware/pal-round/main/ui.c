@@ -23,7 +23,7 @@ ui_choices_t g_choices;
 
 static lv_obj_t *s_tv, *s_home;
 static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
-static lv_obj_t *s_setup, *s_pair, *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_ota, *s_shield;
+static lv_obj_t *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_shield;
 static lv_obj_t *s_vol, *s_bright, *s_info, *s_update_btn;
 void ui_settings_open(void);
 void ui_settings_close(void);
@@ -89,23 +89,54 @@ static void jump(lv_obj_t *tv, int ncols, lv_dir_t dir)
     lv_obj_send_event(tv, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
-static void make_jumpy(lv_obj_t *tv, lv_event_cb_t gesture_cb)
+static void make_jumpy(lv_obj_t *tv)
 {
     lv_obj_remove_flag(tv, LV_OBJ_FLAG_SCROLLABLE);   // pages don't follow the finger
-    lv_obj_add_event_cb(tv, gesture_cb, LV_EVENT_GESTURE, NULL);
 }
 
 static int s_page_cols;
-static void main_gesture(lv_event_t *e)
+static lv_obj_t *s_set, *s_set_tv;
+static lv_obj_t *s_setup, *s_pair, *s_ota;
+extern lv_obj_t *ha_dial_obj(void);
+static lv_point_t s_touch0;
+static bool s_swipe_armed;
+static void dots_cb(lv_event_t *e);
+
+/** Mark a control (dial, slider) whose drags must not turn the page. */
+void ui_no_swipe(lv_obj_t *obj) { lv_obj_add_flag(obj, LV_OBJ_FLAG_USER_1); }
+
+static bool on_no_swipe(lv_obj_t *o)
 {
-    lv_indev_t *in = lv_indev_active();
-    if (!in) return;
-    ui_activity();
-    jump(s_tv, s_page_cols + 1, lv_indev_get_gesture_dir(in));
+    for (; o; o = lv_obj_get_parent(o))
+        if (lv_obj_has_flag(o, LV_OBJ_FLAG_USER_1)) return true;
+    return false;
 }
 
-/** Keep drags on a control (dial, slider) from turning the page. */
-void ui_no_swipe(lv_obj_t *obj) { lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE); }
+// Swipe detection from raw touch: once the finger has moved far enough
+// sideways, jump one page and ignore the rest of this touch (no click).
+static void swipe_cb(lv_event_t *e)
+{
+    lv_indev_t *in = lv_event_get_current_target(e);
+    lv_point_t p;
+    lv_indev_get_point(in, &p);
+    if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
+        s_touch0 = p;
+        s_swipe_armed = !on_no_swipe(lv_indev_get_active_obj());
+        return;
+    }
+    if (!s_swipe_armed) return;
+    int dx = p.x - s_touch0.x, dy = p.y - s_touch0.y;
+    if (LV_ABS(dx) < 60 || LV_ABS(dx) < 2 * LV_ABS(dy)) return;
+    s_swipe_armed = false;
+    lv_obj_t *tv;
+    int n;
+    if (s_set && !lv_obj_has_flag(s_set, LV_OBJ_FLAG_HIDDEN)) { tv = s_set_tv; n = 5; }
+    else if (s_setup || s_pair || s_ota || ha_dial_obj()) return;
+    else { tv = s_tv; n = s_page_cols + 1; }
+    jump(tv, n, dx < 0 ? LV_DIR_LEFT : LV_DIR_RIGHT);
+    if (tv == s_set_tv) dots_cb(NULL);
+    lv_indev_wait_release(in);
+}
 
 // --- home -------------------------------------------------------------------------
 
@@ -170,7 +201,7 @@ static void build_home(void)
 
 typedef struct { lv_obj_t *val; int idx; int kind; } picker_t;
 enum { PK_TMO, PK_DASH, PK_ORB };
-static lv_obj_t *s_set, *s_set_tv, *s_dots[5];
+static lv_obj_t *s_dots[5];
 static picker_t s_pk[3];
 static const char *TMO_NAMES[] = {"15 seconds", "30 seconds", "1 minute", "5 minutes", "Never"};
 static const uint16_t TMO_VALS[] = {15, 30, 60, 300, 0};
@@ -329,14 +360,6 @@ static void dots_cb(lv_event_t *e)
         lv_obj_set_style_bg_color(s_dots[i], i == idx ? g_theme.accent : lv_color_hex(0x3a3a42), 0);
 }
 
-static void set_gesture(lv_event_t *e)
-{
-    lv_indev_t *in = lv_indev_active();
-    if (!in) return;
-    ui_activity();
-    jump(s_set_tv, 5, lv_indev_get_gesture_dir(in));
-}
-
 static lv_obj_t *set_page(int col, const char *title)
 {
     lv_obj_t *t = lv_tileview_add_tile(s_set_tv, col, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
@@ -357,7 +380,7 @@ static void build_settings(void)
     lv_obj_set_style_bg_opa(s_set_tv, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(s_set_tv, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_event_cb(s_set_tv, dots_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    make_jumpy(s_set_tv, set_gesture);
+    make_jumpy(s_set_tv);
 
     lv_obj_t *p = set_page(0, "Sound & screen");
     s_vol = slider_row(p, ICON_VOLUME_HIGH, 0, 100, g_settings.volume, -70);
@@ -797,11 +820,15 @@ void ui_init(void)
     s_tv = lv_tileview_create(scr);
     lv_obj_set_style_bg_opa(s_tv, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(s_tv, LV_SCROLLBAR_MODE_OFF);
-    make_jumpy(s_tv, main_gesture);
+    make_jumpy(s_tv);
     build_home();
     build_settings();
     lv_timer_create(timer_anim, 250, NULL);
     lv_indev_t *indev = bsp_display_get_input_dev();
-    if (indev) lv_indev_add_event_cb(indev, indev_cb, LV_EVENT_PRESSED, NULL);
+    if (indev) {
+        lv_indev_add_event_cb(indev, indev_cb, LV_EVENT_PRESSED, NULL);
+        lv_indev_add_event_cb(indev, swipe_cb, LV_EVENT_PRESSED, NULL);
+        lv_indev_add_event_cb(indev, swipe_cb, LV_EVENT_PRESSING, NULL);
+    }
     ui_activity();
 }
