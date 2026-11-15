@@ -78,6 +78,12 @@ _ALLOWLIST = [
     # Server-side STT: a phone POSTs captured mic audio, gets back a transcript
     # (for devices whose on-device recognizer PAL can't use).
     ("POST", r"^/api/satellite/stt$",                   True,  False),
+    # Voice notes: a device streams (often chunked) raw PCM while recording;
+    # the server transcribes + stores it. The body is STREAMED upstream, not
+    # buffered (see _STREAM_UPLOADS). List + delete for the Notes view.
+    ("POST",   r"^/api/satellite/note$",                True,  False),
+    ("GET",    r"^/api/notes$",                         True,  False),
+    ("DELETE", r"^/api/notes/\d+$",                     True,  False),
     # The device's own TTS voice (pick from the TTS server's voices).
     ("GET",  r"^/api/satellite/voice$",                 True,  False),
     ("POST", r"^/api/satellite/voice$",                 True,  False),
@@ -128,6 +134,32 @@ if ALLOW_PAIR_REDEEM:
     _ALLOWLIST.append(("POST", r"^/api/pair/redeem$", False, False))
     log.info("gateway: /api/pair/redeem allowlisted (GATEWAY_ALLOW_PAIR_REDEEM)")
 _ALLOWLIST = [(m, re.compile(p), a, s) for (m, p, a, s) in _ALLOWLIST]
+
+# Allowlisted upload routes whose request body is STREAMED to the upstream
+# (chunk by chunk, never held whole in memory) with their own byte cap, and a
+# longer upstream timeout (the server transcribes before answering). aiohttp's
+# client_max_size only governs request.read(), so the cap is enforced here.
+# (method, regex) -> (max_body_bytes, upstream_timeout_s)
+NOTE_MAX_BODY = 64 * 1024 * 1024
+_STREAM_UPLOADS = [
+    ("POST", re.compile(r"^/api/satellite/note$"), NOTE_MAX_BODY, 300),
+]
+
+
+class _BodyTooLarge(Exception):
+    pass
+
+
+async def _capped_body(content, cap: int):
+    """Async generator forwarding the client's body in chunks; raises
+    _BodyTooLarge once more than `cap` bytes have arrived."""
+    seen = 0
+    async for chunk in content.iter_chunked(65536):
+        seen += len(chunk)
+        if seen > cap:
+            raise _BodyTooLarge()
+        yield chunk
+
 
 # /ws/ui is handled by a dedicated WebSocket route (always token-required).
 _WS_PATH = "/ws/ui"
@@ -278,6 +310,10 @@ class Gateway:
         target = f"{AI_SERVER_URL}{request.rel_url}"
         headers = _forward_headers(request)
         session = await self._ensure_session()
+        upload = next(((cap, tmo) for (m, rx, cap, tmo) in _STREAM_UPLOADS
+                       if m == request.method and rx.match(request.path)), None)
+        if upload is not None:
+            return await self._proxy_upload(request, session, target, headers, *upload)
         body = await request.read() if request.body_exists else None
 
         try:
@@ -297,6 +333,34 @@ class Gateway:
                 return web.Response(status=up.status, body=data, headers=out_headers)
         except Exception as e:
             log.warning(f"proxy {request.method} {request.path} failed: {type(e).__name__}: {e}")
+            return web.Response(status=502, text="bad gateway")
+
+    async def _proxy_upload(self, request, session, target, headers,
+                            cap: int, timeout_s: float) -> web.StreamResponse:
+        """Forward a large (possibly chunked) upload by streaming the body
+        upstream without buffering it; 413 past `cap`."""
+        declared = request.content_length
+        if declared is not None and declared > cap:
+            return web.Response(status=413, text="payload too large")
+        data = _capped_body(request.content, cap) if request.body_exists else None
+        try:
+            async with session.request(
+                request.method, target, headers=headers, data=data,
+                allow_redirects=False,
+                timeout=aiohttp.ClientTimeout(total=timeout_s),
+            ) as up:
+                out_headers = {k: v for k, v in up.headers.items()
+                               if k.lower() not in _HOP_HEADERS}
+                return web.Response(status=up.status, body=await up.read(),
+                                    headers=out_headers)
+        except _BodyTooLarge:
+            return web.Response(status=413, text="payload too large")
+        except Exception as e:
+            # aiohttp may wrap the generator's exception.
+            if isinstance(getattr(e, "__cause__", None), _BodyTooLarge) or \
+                    isinstance(getattr(e, "__context__", None), _BodyTooLarge):
+                return web.Response(status=413, text="payload too large")
+            log.warning(f"upload {request.method} {request.path} failed: {type(e).__name__}: {e}")
             return web.Response(status=502, text="bad gateway")
 
     async def _handle_preflight(self, request: web.Request, ip: str) -> web.StreamResponse:

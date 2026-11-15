@@ -16,12 +16,12 @@
 
 static const char *TAG = "ui";
 
-#define ORB_SIZE 288
+#define ORB_SIZE 448   // ~96% of the 466 px screen (a multiple of 16 for the JPEG decoder)
 
 pal_theme_t g_theme;
 ui_choices_t g_choices;
 
-static lv_obj_t *s_tv, *s_home, *s_box;
+static lv_obj_t *s_tv, *s_home, *s_box, *s_clockpage, *s_weather_lbl;
 static void box_sync(void);
 static void box_style(void);
 static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
@@ -160,24 +160,14 @@ static void build_home(void)
     s_home = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_RIGHT);
     lv_obj_remove_flag(s_home, LV_OBJ_FLAG_SCROLLABLE);
 
-    s_clock = mk_label(s_home, g_fonts.text40, g_theme.text, "--:--");
-    lv_obj_align(s_clock, LV_ALIGN_TOP_MID, 0, 22);
-    s_date = mk_label(s_home, g_fonts.text16, g_theme.accent, "");
-    lv_obj_align(s_date, LV_ALIGN_TOP_MID, 0, 70);
-
-    s_weather_ic = mk_label(s_home, g_fonts.icon22, g_theme.accent, "");
-    s_weather_t = mk_label(s_home, g_fonts.text16, g_theme.text, "");
-    lv_obj_add_flag(s_weather_ic, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_weather_t, LV_OBJ_FLAG_HIDDEN);
-
     orb_create(s_home, ORB_SIZE);
-    lv_obj_align(orb_obj(), LV_ALIGN_CENTER, 0, 12);
+    lv_obj_align(orb_obj(), LV_ALIGN_CENTER, -1, -1);   // image at (8,8): even window for direct blits
     lv_obj_add_flag(orb_obj(), LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(orb_obj(), orb_tap, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_event_cb(orb_obj(), orb_long, LV_EVENT_LONG_PRESSED, NULL);
 
     s_timer_lbl = mk_label(s_home, g_fonts.clock, lv_color_white(), "");
-    lv_obj_align(s_timer_lbl, LV_ALIGN_CENTER, 0, 12);
+    lv_obj_align(s_timer_lbl, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(s_timer_lbl, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s_timer_lbl, LV_OPA_60, 0);
     lv_obj_set_style_radius(s_timer_lbl, 20, 0);
@@ -192,11 +182,9 @@ static void build_home(void)
     lv_obj_set_height(s_box, LV_SIZE_CONTENT);
     lv_obj_align(s_box, LV_ALIGN_BOTTOM_MID, 0, -54);
     lv_obj_set_style_radius(s_box, 22, 0);
-    lv_obj_set_style_bg_opa(s_box, LV_OPA_80, 0);
+    lv_obj_set_style_bg_opa(s_box, LV_OPA_COVER, 0);   // opaque: a translucent box re-blends over every orb frame
     lv_obj_set_style_border_width(s_box, 1, 0);
     lv_obj_set_style_border_opa(s_box, LV_OPA_40, 0);
-    lv_obj_set_style_shadow_width(s_box, 18, 0);
-    lv_obj_set_style_shadow_opa(s_box, LV_OPA_30, 0);
     lv_obj_set_style_pad_hor(s_box, 16, 0);
     lv_obj_set_style_pad_ver(s_box, 10, 0);
     lv_obj_set_style_pad_row(s_box, 4, 0);
@@ -212,15 +200,34 @@ static void build_home(void)
     lv_obj_set_width(s_reply, LV_PCT(100));
     lv_obj_set_style_max_height(s_reply, 44, 0);
     lv_label_set_long_mode(s_reply, LV_LABEL_LONG_DOT);
-    s_hint = mk_label(s_box, g_fonts.text16, g_theme.text_dim, "Press a button to talk\nHold the orb for settings");
+    s_hint = mk_label(s_box, g_fonts.text16, g_theme.text_dim, "Press a button to talk\nDouble-press for a voice note\nHold the orb for settings");
     lv_obj_set_width(s_hint, LV_PCT(100));
     box_sync();
     box_style();
 
     s_status = mk_label(s_home, g_fonts.icon22, g_theme.text_dim, "");
-    lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 100);
+    lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 26);
     lv_obj_set_style_text_font(s_status, g_fonts.icon22, 0);
     lv_obj_add_flag(s_status, LV_OBJ_FLAG_HIDDEN);
+}
+
+// The page right of home: clock, date and the weather (the orb has the home
+// screen to itself). It survives dashboard reloads (ui_clear_pages).
+static void build_clock_page(void)
+{
+    s_clockpage = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
+    lv_obj_remove_flag(s_clockpage, LV_OBJ_FLAG_SCROLLABLE);
+    s_page_cols = 1;
+    s_clock = mk_label(s_clockpage, g_fonts.clock, g_theme.text, "--:--");
+    lv_obj_align(s_clock, LV_ALIGN_CENTER, 0, -70);
+    s_date = mk_label(s_clockpage, g_fonts.text26, g_theme.accent, "");
+    lv_obj_align(s_date, LV_ALIGN_CENTER, 0, -18);
+    s_weather_ic = mk_label(s_clockpage, g_fonts.icon56, g_theme.accent, "");
+    s_weather_t = mk_label(s_clockpage, g_fonts.text40, g_theme.text, "");
+    s_weather_lbl = mk_label(s_clockpage, g_fonts.text16, g_theme.text_dim, "");
+    lv_obj_add_flag(s_weather_ic, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_weather_t, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_weather_lbl, LV_OBJ_FLAG_HIDDEN);
 }
 
 // --- settings ----------------------------------------------------------------------
@@ -521,9 +528,9 @@ void ui_clear_pages(void)
     lv_tileview_set_tile(s_tv, s_home, LV_ANIM_OFF);
     for (int i = (int)lv_obj_get_child_count(s_tv) - 1; i >= 0; i--) {
         lv_obj_t *c = lv_obj_get_child(s_tv, i);
-        if (c != s_home) lv_obj_delete(c);
+        if (c != s_home && c != s_clockpage) lv_obj_delete(c);
     }
-    s_page_cols = 0;
+    s_page_cols = 1;
 }
 
 // --- overlays -------------------------------------------------------------------------
@@ -701,6 +708,14 @@ void ui_set_transcript(const char *text)
     box_sync();
 }
 
+void ui_note_status(const char *line1, const char *line2)
+{
+    lv_label_set_text(s_said, line1 ? line1 : "");
+    lv_label_set_text(s_reply, line2 ? line2 : "");
+    s_text_set_at = esp_timer_get_time();
+    box_sync();
+}
+
 void ui_set_response(const char *text)
 {
     lv_label_set_text(s_reply, text ? text : "");
@@ -713,15 +728,28 @@ void ui_set_weather(const char *cond, double temp, const char *unit, bool show)
     if (!show) {
         lv_obj_add_flag(s_weather_ic, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_weather_t, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_weather_lbl, LV_OBJ_FLAG_HIDDEN);
         return;
     }
-    char ic[6];
+    char ic[8];
     lv_label_set_text(s_weather_ic, mdi(ha_weather_icon(cond), ic));
     lv_label_set_text_fmt(s_weather_t, "%.0f%s", temp, unit && unit[0] ? unit : "°");
+    // "partlycloudy" / "clear-night" → "Partly cloudy" / "Clear night"
+    char name[40] = "";
+    if (cond) {
+        strlcpy(name, !strcmp(cond, "partlycloudy") ? "partly cloudy" : cond, sizeof(name));
+        for (char *p = name; *p; p++) if (*p == '-' || *p == '_') *p = ' ';
+        if (name[0] >= 'a' && name[0] <= 'z') name[0] -= 32;
+    }
+    lv_label_set_text(s_weather_lbl, name);
     lv_obj_remove_flag(s_weather_ic, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_weather_t, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_align(s_weather_ic, LV_ALIGN_TOP_MID, -22, 92);
-    lv_obj_align_to(s_weather_t, s_weather_ic, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    lv_obj_remove_flag(s_weather_lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_update_layout(s_clockpage);
+    int w = lv_obj_get_width(s_weather_ic) + 12 + lv_obj_get_width(s_weather_t);
+    lv_obj_align(s_weather_ic, LV_ALIGN_CENTER, -w / 2 + lv_obj_get_width(s_weather_ic) / 2, 62);
+    lv_obj_align_to(s_weather_t, s_weather_ic, LV_ALIGN_OUT_RIGHT_MID, 12, 0);
+    lv_obj_align(s_weather_lbl, LV_ALIGN_CENTER, 0, 112);
 }
 
 void ui_set_status(void)
@@ -819,6 +847,24 @@ static void orb_sync_active(void)
 
 static void tile_changed(lv_event_t *e) { orb_sync_active(); }
 
+// For the orb's direct blits (orb.c): -1 when the orb isn't plainly on screen
+// (another page, an overlay, screen off); otherwise the screen rects of the
+// things drawn over it, which must still go through LVGL.
+int ui_orb_overlays(lv_area_t *out, int max)
+{
+    bool covered = (s_set && !lv_obj_has_flag(s_set, LV_OBJ_FLAG_HIDDEN)) || s_setup || s_pair || s_ota;
+    if (!s_screen_on || covered || lv_tileview_get_tile_active(s_tv) != s_home) return -1;
+    lv_obj_t *over[] = {s_box, s_status, s_timer_lbl, s_toast};
+    int n = 0;
+    for (size_t i = 0; i < sizeof(over) / sizeof(over[0]) && n < max; i++) {
+        if (!over[i] || lv_obj_has_flag(over[i], LV_OBJ_FLAG_HIDDEN)) continue;
+        lv_obj_get_coords(over[i], &out[n]);
+        lv_area_increase(&out[n], 2, 2);   // anti-aliased edges
+        n++;
+    }
+    return n;
+}
+
 static void brightness_restore(lv_timer_t *t)
 {
     if (s_screen_on) bsp_display_brightness_set(g_settings.brightness);
@@ -906,8 +952,44 @@ void ui_apply_theme(void)
     orb_apply_theme();
 }
 
+void ui_exp_toggle_box(void)   // TEMP perf experiment
+{
+    if (pal_lock()) {
+        if (lv_obj_has_flag(s_box, LV_OBJ_FLAG_HIDDEN)) lv_obj_remove_flag(s_box, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_box, LV_OBJ_FLAG_HIDDEN);
+        pal_unlock();
+    }
+}
+
+// perf probe: where a refresh spends its time (logged every 10 s)
+static void refr_probe(lv_event_t *e)
+{
+    static int64_t t_refr, t_wait, sum_refr, sum_wait, last_log;
+    static int n, strips;
+    int64_t now = esp_timer_get_time();
+    switch (lv_event_get_code(e)) {
+    case LV_EVENT_REFR_START: t_refr = now; break;
+    case LV_EVENT_FLUSH_WAIT_START: t_wait = now; break;
+    case LV_EVENT_FLUSH_WAIT_FINISH: sum_wait += now - t_wait; break;
+    case LV_EVENT_FLUSH_START: strips++; break;
+    case LV_EVENT_REFR_READY:
+        sum_refr += now - t_refr;
+        n++;
+        if (now - last_log > 10000000 && n) {
+            ESP_LOGI(TAG, "refresh: %d/10s, avg %lld ms (flush wait %lld ms), %d strips/refresh", n,
+                     sum_refr / n / 1000, sum_wait / n / 1000, strips / n);
+            n = strips = 0;
+            sum_refr = sum_wait = 0;
+            last_log = now;
+        }
+        break;
+    default: break;
+    }
+}
+
 void ui_init(void)
 {
+    lv_display_add_event_cb(lv_display_get_default(), refr_probe, LV_EVENT_ALL, NULL);
     g_theme = (pal_theme_t){
         .bg = lv_color_black(), .text = lv_color_hex(0xf2f2f5), .text_dim = lv_color_hex(0x8a8a96),
         .accent = lv_color_hex(0xff8050), .accent_deep = lv_color_hex(0x8a3418),
@@ -920,6 +1002,7 @@ void ui_init(void)
     lv_obj_set_scrollbar_mode(s_tv, LV_SCROLLBAR_MODE_OFF);
     make_jumpy(s_tv);
     build_home();
+    build_clock_page();
     build_settings();
     s_anim_timer = lv_timer_create(timer_anim, 250, NULL);
     lv_obj_add_event_cb(s_tv, tile_changed, LV_EVENT_VALUE_CHANGED, NULL);

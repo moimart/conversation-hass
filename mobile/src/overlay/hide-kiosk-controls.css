@@ -46,11 +46,16 @@ body.show-calendar #display-root .response-container {
     display: none !important;
 }
 
-/* Same for the conversation log overlay (clog-stage, z-index 5). */
+/* Same for the conversation log overlay (clog-stage, z-index 5) and its
+   sibling, the voice notes view (notes-stage, z-index 5). */
 body.show-conversation-log #display-root .eye-container,
 body.show-conversation-log #display-root .clock-display,
 body.show-conversation-log #display-root .transcript-container,
-body.show-conversation-log #display-root .response-container {
+body.show-conversation-log #display-root .response-container,
+body.show-notes #display-root .eye-container,
+body.show-notes #display-root .clock-display,
+body.show-notes #display-root .transcript-container,
+body.show-notes #display-root .response-container {
     display: none !important;
 }
 
@@ -64,14 +69,17 @@ body.show-timer-countdown #display-root .response-container {
 
 /* Phone-sized conversation log card: clear the device safe areas and leave
    room for the input bar at the bottom (you can keep chatting while reading). */
-body.show-conversation-log .clog-overlay {
+body.show-conversation-log .clog-overlay,
+body.show-notes .notes-overlay {
     left: 8px !important;
     right: 8px !important;
     top: calc(max(env(safe-area-inset-top, 0px), var(--hal-inset-top, 0px)) + 8px) !important;
     bottom: calc(78px + env(safe-area-inset-bottom)) !important;
 }
-body.show-conversation-log .clog-body { font-size: 14px !important; }
-body.show-conversation-log .clog-title { font-size: 16px !important; }
+body.show-conversation-log .clog-body,
+body.show-notes .notes-overlay .clog-scroll { font-size: 14px !important; }
+body.show-conversation-log .clog-title,
+body.show-notes .notes-overlay .clog-title { font-size: 16px !important; }
 
 /* The kiosk lays the transcript + response panels out to the side of the orb
    (landscape). In portrait they fall off the right edge (x≈viewport width), so

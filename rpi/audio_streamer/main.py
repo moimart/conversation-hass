@@ -588,6 +588,7 @@ class AudioManager:
             "play_video", "video_stop", "themes_changed",
             "show_calendar", "hide_calendar",
             "show_conversation_log", "hide_conversation_log",
+            "show_notes", "hide_notes", "note_added",
             "timer_countdown", "timer_countdown_cancel", "timer_countdown_dismiss",
             "ptt_active",
             "show_photo_frame", "photo_frame_update", "hide_photo_frame",
@@ -1065,7 +1066,7 @@ class AudioManager:
                 pass
 
     async def _proxy_to_ai_server(self, request: web.Request) -> web.Response:
-        """Forward a GET request to the AI server transparently.
+        """Forward a GET (or bodiless DELETE) request to the AI server transparently.
 
         Used for theme catalog and per-theme static files so the kiosk
         can keep talking only to localhost:8080.
@@ -1076,7 +1077,8 @@ class AudioManager:
         url = f"http://{self.ai_server_host}:8765{path}"
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as up:
+                async with session.request(request.method, url,
+                                           timeout=aiohttp.ClientTimeout(total=10)) as up:
                     body = await up.read()
                     # Orb media URLs are versioned (?v=), so let the browser
                     # keep them; everything else stays uncached as before.
@@ -1172,6 +1174,9 @@ class AudioManager:
         app.router.add_get("/api/themes", self._proxy_to_ai_server)
         app.router.add_get("/api/conversation/log", self._proxy_to_ai_server)
         app.router.add_get("/api/conversation/log/image", self._proxy_to_ai_server)
+        # Voice notes view: list (+ ?q= search) and per-note delete.
+        app.router.add_get("/api/notes", self._proxy_to_ai_server)
+        app.router.add_delete(r"/api/notes/{note_id:\d+}", self._proxy_to_ai_server)
         app.router.add_get(r"/themes/{name}/{filename}", self._proxy_to_ai_server)
         app.router.add_get(r"/orbs/{orb}/{filename}", self._proxy_to_ai_server)
         # Looping photo-frame video lives in a writable dir (the /app/web

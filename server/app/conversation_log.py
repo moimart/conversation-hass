@@ -53,6 +53,17 @@ ALTER TABLE conversation_log ADD COLUMN IF NOT EXISTS image_mime TEXT;
 ALTER TABLE conversation_log DROP CONSTRAINT IF EXISTS conversation_log_kind_check;
 ALTER TABLE conversation_log ADD CONSTRAINT conversation_log_kind_check
     CHECK (kind IN ('user','assistant','announcement','image'));
+
+-- Voice notes (Nov 2026): transcribed satellite recordings, browsed in the
+-- Notes view (GET /api/notes) and exposed to agents over MCP.
+CREATE TABLE IF NOT EXISTS voice_notes (
+    id         BIGSERIAL    PRIMARY KEY,
+    ts         TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    text       TEXT         NOT NULL,
+    origin     TEXT,
+    duration_s REAL
+);
+CREATE INDEX IF NOT EXISTS voice_notes_id_desc ON voice_notes (id DESC);
 """
 
 VALID_KINDS = ("user", "assistant", "announcement", "image")
@@ -199,6 +210,96 @@ class ConversationLog:
         if r is None or r["image"] is None:
             return None
         return bytes(r["image"]), r["image_mime"] or "image/jpeg"
+
+    # --- voice notes ---------------------------------------------------------
+
+    @staticmethod
+    def _note_row(r) -> dict:
+        dur = r["duration_s"]
+        return {
+            "id": r["id"],
+            "ts": r["ts"].isoformat() if r["ts"] is not None else None,
+            "text": r["text"],
+            "origin": r["origin"],
+            "duration_s": round(float(dur), 2) if dur is not None else None,
+        }
+
+    async def add_note(self, text: str, origin: str | None = None,
+                       duration_s: float | None = None) -> dict | None:
+        """Store one transcribed voice note. NEVER raises (same rule as
+        log()): returns the stored row dict, or None when disabled / empty /
+        postgres unavailable — the caller still hands the text back to the
+        recording device so a transcription is never silently lost."""
+        try:
+            text = (text or "").strip()
+            if not text:
+                return None
+            if self._pool is None and not await self._try_connect():
+                log.warning("conversation_log: voice note not stored (postgres unavailable)")
+                return None
+            async with self._pool.acquire() as conn:
+                r = await conn.fetchrow(
+                    "INSERT INTO voice_notes (text, origin, duration_s) "
+                    "VALUES ($1, $2, $3) RETURNING id, ts, text, origin, duration_s",
+                    text, origin,
+                    float(duration_s) if duration_s is not None else None,
+                )
+            return self._note_row(r) if r is not None else None
+        except Exception as e:
+            log.warning(f"conversation_log: voice note write failed ({type(e).__name__}: {e})")
+            self._pool = None
+            return None
+
+    async def fetch_notes(self, limit: int = 100, before_id: int | None = None,
+                          q: str | None = None) -> dict:
+        """One page of voice notes, ASC (oldest→newest) like fetch(). `q` is a
+        case-insensitive substring filter. Raises on DB failure (→ 503)."""
+        limit = max(1, min(500, int(limit)))
+        if not self.enabled:
+            return {"rows": [], "has_more": False, "disabled": True}
+        if self._pool is None and not await self._try_connect():
+            raise RuntimeError("conversation log database unavailable")
+        q = (q or "").strip()
+        pattern = None
+        if q:
+            # Escape LIKE metacharacters so the query is a literal substring.
+            esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{esc}%"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, ts, text, origin, duration_s FROM voice_notes "
+                "WHERE ($1::bigint IS NULL OR id < $1) "
+                "AND ($2::text IS NULL OR text ILIKE $2) "
+                "ORDER BY id DESC LIMIT $3",
+                before_id, pattern, limit,
+            )
+        return {"rows": [self._note_row(r) for r in reversed(rows)],
+                "has_more": len(rows) == limit}
+
+    async def get_note(self, note_id: int) -> dict | None:
+        """One note by id, or None. Raises on DB failure."""
+        if not self.enabled:
+            return None
+        if self._pool is None and not await self._try_connect():
+            raise RuntimeError("conversation log database unavailable")
+        async with self._pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT id, ts, text, origin, duration_s FROM voice_notes WHERE id = $1",
+                int(note_id),
+            )
+        return self._note_row(r) if r is not None else None
+
+    async def delete_note(self, note_id: int) -> bool:
+        """Delete one note; True iff a row was removed. Raises on DB failure."""
+        if not self.enabled:
+            return False
+        if self._pool is None and not await self._try_connect():
+            raise RuntimeError("conversation log database unavailable")
+        async with self._pool.acquire() as conn:
+            r = await conn.fetchval(
+                "DELETE FROM voice_notes WHERE id = $1 RETURNING id", int(note_id),
+            )
+        return r is not None
 
     async def close(self) -> None:
         pool, self._pool = self._pool, None

@@ -1317,6 +1317,7 @@ from .pairing import router as _pairing_router  # noqa: E402
 from .routes_ha import router as _ha_router  # noqa: E402
 from .routes_orbs import router as _orbs_router  # noqa: E402
 from .routes_device import router as _device_router  # noqa: E402
+from .routes_notes import router as _notes_router  # noqa: E402
 
 app.include_router(_ws_router)
 app.include_router(_http_router)
@@ -1324,6 +1325,7 @@ app.include_router(_pairing_router)
 app.include_router(_ha_router)
 app.include_router(_orbs_router)
 app.include_router(_device_router)
+app.include_router(_notes_router)
 
 # Re-export the moved WS + HTTP handlers and request models so existing
 # callers/tests that do `from .main import <handler>` (or `srv.<handler>`)

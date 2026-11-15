@@ -109,6 +109,30 @@ def build_mcp_server(state: "AppState") -> FastMCP:
     async def hide_conversation_log() -> str:
         return await _call("hide_conversation_log", {})
 
+    @mcp.tool(name="show_notes", description="Open the full-screen voice notes view (the timestamped list of transcribed voice notes recorded on the user's devices) on the kiosk display.")
+    async def show_notes() -> str:
+        return await _call("show_notes", {})
+
+    @mcp.tool(name="hide_notes", description="Dismiss the voice notes view.")
+    async def hide_notes() -> str:
+        return await _call("hide_notes", {})
+
+    @mcp.tool(name="list_notes", description=(
+        "List the user's voice notes (transcribed recordings from PAL's phones and devices), "
+        "newest first. Returns one line per note: '#<id> [<YYYY-MM-DD HH:MM>, <device>] <text>'. "
+        "`query` = optional case-insensitive substring filter on the text; `limit` = max notes "
+        "(default 20, max 100). Use get_note for one note and delete_note to remove one."))
+    async def list_notes(limit: int = 20, query: str = "") -> str:
+        return await _call("list_notes", {"limit": limit, "query": query})
+
+    @mcp.tool(name="get_note", description="Get one voice note by its numeric id (from list_notes): timestamp, recording device, duration and full text.")
+    async def get_note(id: int) -> str:
+        return await _call("get_note", {"id": id})
+
+    @mcp.tool(name="delete_note", description="Permanently delete one voice note by its numeric id (from list_notes). Only when explicitly asked.")
+    async def delete_note(id: int) -> str:
+        return await _call("delete_note", {"id": id})
+
     @mcp.tool(name="start_timer", description="Start a countdown timer (kitchen-timer style). Pass duration_s as total seconds (e.g. '5 minutes' -> 300). Auto-named Timer 1, Timer 2, ...; every device announces when it finishes.")
     async def start_timer(duration_s: int) -> str:
         return await _call("start_timer", {"duration_s": duration_s})

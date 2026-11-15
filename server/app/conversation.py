@@ -123,6 +123,25 @@ def _hide_log_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
     )
 
 
+def _show_notes_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
+    return IntentHint(
+        tool="show_notes",
+        sentence=("This is a device command: call the `show_notes` tool NOW to "
+                  "open the voice notes view. Reply only with a one-line "
+                  "confirmation — do NOT read the notes aloud."),
+        guard_args={},
+    )
+
+
+def _hide_notes_intent(match: "re.Match[str]", text: str) -> IntentHint | None:
+    return IntentHint(
+        tool="hide_notes",
+        sentence=("This is a device command: call the `hide_notes` tool NOW. "
+                  "Reply only with a one-line confirmation."),
+        guard_args={},
+    )
+
+
 _CALL_STOPWORDS = {
     "back", "you", "you back", "me back", "off", "it off", "again", "later",
     "out", "in sick", "it a day", "it quits",
@@ -174,6 +193,11 @@ _INTENT_HINTS: list = [
      _show_log_intent),
     (re.compile(r"\b(hide|close|dismiss)\b.{0,40}\b(conversation|chat) (log|history)\b", re.I),
      _hide_log_intent),
+    # "show my notes", "open the voice notes", "bring up my notes".
+    (re.compile(r"\b(show|open|display|bring up|pull up|see)\b.{0,20}\b(my|the|voice)\s+notes\b", re.I),
+     _show_notes_intent),
+    (re.compile(r"\b(hide|close|dismiss)\b.{0,20}\b(my|the|voice)\s+notes\b", re.I),
+     _hide_notes_intent),
     (re.compile(
         r"\bpair\b.{0,25}\b(phone|app|companion|mobile|device)\b"          # "pair a phone"
         r"|\b(connect|set\s*up|register)\b.{0,25}\b(phone|companion|mobile app|companion app)\b",  # "set up the companion app"

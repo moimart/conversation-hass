@@ -35,6 +35,10 @@ the hub UI.
   - [`POST /api/command`](#post-apicommand)
   - [`POST /api/speak`](#post-apispeak)
   - [`GET /api/conversation/log`](#get-apiconversationlog)
+- [Voice notes](#voice-notes)
+  - [`POST /api/satellite/note`](#post-apisatellitenote)
+  - [`GET /api/notes`](#get-apinotes)
+  - [`DELETE /api/notes/{id}`](#delete-apinotesid)
 - [Cloud LLM override](#cloud-llm-override)
   - [`GET /api/cloud_llm`](#get-apicloud_llm)
   - [`POST /api/cloud_llm`](#post-apicloud_llm)
@@ -96,6 +100,8 @@ internet-reachable **only** if its "Gateway" cell is ✓.
 | `GET /api/themes`, `GET /themes/{name}/{file}` | ✓ | ✓ | none (public) |
 | `POST /api/command` | ✓ | ✓ | token at gateway edge |
 | `GET /api/conversation/log` (+ `/image`) | ✓ | ✓ | token |
+| `POST /api/satellite/note` | ✓ | ✓ | token (`notes` scope) |
+| `GET /api/notes`, `DELETE /api/notes/{id}` | ✓ | ✓ | token at gateway edge (`notes` scope if a token is sent) |
 | `GET`/`POST /api/cloud_llm` | ✓ | ✓ | token |
 | `GET /api/pair/status` | ✓ | ✓ | token (also the edge validator) |
 | `POST /api/pair/push-register` | ✓ | ✓ | token |
@@ -391,6 +397,83 @@ postgres is unreachable (the server reconnects lazily).
 ```bash
 curl 'http://hal:8765/api/conversation/log?limit=50&before_id=1200'
 ```
+
+---
+
+## Voice notes
+
+Satellites (phones, PAL Round) record a voice note and upload the raw audio;
+the server transcribes it and stores the text in PostgreSQL (`voice_notes`
+table, same database as the conversation log). The Notes view lists them;
+agents read them through PAL's MCP server (`list_notes`, `get_note`,
+`delete_note`). The `notes` permission is granted to `full` tokens only
+(watch tokens get `403`).
+
+### `POST /api/satellite/note`
+
+Body = raw **mono PCM**, sent whole or streamed with chunked transfer encoding
+(no `Content-Length` required — the PAL Round streams while recording).
+
+| Header | Default | Notes |
+|---|---|---|
+| `Authorization` | — | `Bearer <paired token>` — required (`401` without, `403` without the `notes` scope) |
+| `X-Sample-Rate` | `16000` | integer 8000–48000 (`400` otherwise) |
+| `X-Sample-Format` | `f32le` | `f32le` (same as `/api/satellite/stt`) or `s16le` (`400` otherwise) |
+
+Limits: body ≤ 64 MB (`413 {"error":"too_large"}`), audio ≤ 630 s
+(10 min + slack; `413 {"error":"too_long"}`). The audio is resampled to
+16 kHz and transcribed by the same STT service as the hub. Long recordings
+are split into ≤ 28 s windows, each cut at the quietest 20 ms frame within its
+last 4 s, transcribed in order and joined; digitally silent windows are
+skipped.
+
+**Response** `200`
+
+```json
+{"id": 12, "ts": "2026-11-15T09:12:03.120000+00:00", "text": "Buy oat milk",
+ "origin": "Moi's Pixel", "duration_s": 3.4, "stored": true}
+```
+
+`origin` is the paired device's name (never the token). After storing, the
+server broadcasts `{"type":"note_added","note":{id, ts, text, origin,
+duration_s}}` to UI clients, satellites and the hub.
+
+| Status | Body | When |
+|---|---|---|
+| `200` | `{..., "id": null, "stored": false}` | Transcribed but the database is disabled/unreachable — the text is still returned, never lost silently |
+| `422` | `{"error":"no_speech"}` | Empty transcription (nothing stored) |
+| `503` | `{"error":"stt_unavailable"}` | No transcriber |
+| `502` | `{"error":"stt_failed"}` | Decoding/transcription crashed |
+| `403` | `{"error":"notes_disabled_in_demo"}` | Public demo instance |
+
+```bash
+# 16 kHz s16le from a WAV (header stripped)
+tail -c +45 note.wav | curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H 'X-Sample-Rate: 16000' -H 'X-Sample-Format: s16le' \
+  --data-binary @- http://hal:8765/api/satellite/note
+```
+
+### `GET /api/notes`
+
+One page of voice notes, **oldest → newest** within the page — keyset
+pagination exactly like [`GET /api/conversation/log`](#get-apiconversationlog).
+LAN-open like the log (satellites send their Bearer anyway).
+
+| Param | Default | Notes |
+|---|---|---|
+| `limit` | `100` | 1–500 |
+| `before_id` | (none) | rows with `id` below this |
+| `q` | (none) | case-insensitive substring search on the text |
+
+→ `{"rows": [{"id", "ts", "text", "origin", "duration_s"}], "has_more": bool}`.
+Degraded: `{"rows": [], "has_more": false, "disabled": true}` without a DSN;
+`503 {"error":"notes_unavailable","rows":[]}` while postgres is down.
+
+### `DELETE /api/notes/{id}`
+
+`204` deleted, `404` no such note. Same posture as the list (LAN-open; with
+`HAL_REQUIRE_TOKEN` set a valid token is required; a token without the
+`notes` scope → `403`).
 
 ---
 
@@ -921,6 +1004,9 @@ and LLM response. Volume / mute / theme-picker UI clients can use this.
 | `hide_calendar`   | `{}` |
 | `show_conversation_log` | `{"duration_s": N?}` — open the full-screen conversation log view (the client fetches rows itself via [`GET /api/conversation/log`](#get-apiconversationlog)) |
 | `hide_conversation_log` | `{}` |
+| `show_notes` | `{"duration_s": N?}` — open the full-screen voice notes view (the client fetches rows via [`GET /api/notes`](#get-apinotes)) |
+| `hide_notes` | `{}` |
+| `note_added` | `{"note": {"id", "ts", "text", "origin", "duration_s"}}` — a new voice note was stored (append it if the view is open) |
 | `timer_countdown` | `{"timer_id": "...", "name": "Timer 1", "ends_at_epoch_ms": N, "remaining_s": N}` — show the last-10s countdown inside the orb (sent ONLY to the device that created the timer; the client ticks locally from `ends_at_epoch_ms`) |
 | `timer_countdown_cancel` | `{"timer_id": "..."}` — tear the countdown down early (timer cancelled) |
 | `timer_countdown_dismiss` | `{"timer_id": "..."}` — safety dismiss at fire (the client also self-dismisses at 0) |
@@ -988,6 +1074,8 @@ endpoints so the browser only has to talk to one origin.
 | `GET`  | `/api/themes` | Proxy to AI server `/api/themes` |
 | `GET`  | `/api/conversation/log` | Proxy to AI server [`/api/conversation/log`](#get-apiconversationlog) (query string forwarded) |
 | `GET`  | `/api/conversation/log/image` | Proxy to the log's thumbnail route (`?id=N`) |
+| `GET`  | `/api/notes` | Proxy to AI server [`/api/notes`](#get-apinotes) (query string forwarded) |
+| `DELETE` | `/api/notes/{id}` | Proxy to AI server [`DELETE /api/notes/{id}`](#delete-apinotesid) |
 | `GET`  | `/themes/{name}/{filename}` | Proxy to AI server theme assets |
 | `GET`  | `/ws` | Hub WebSocket (see message table below) |
 | `POST` | `/api/snapshot` | Receives JPEG from a hub client, forwards to AI server `/api/snapshot` |
@@ -1000,7 +1088,7 @@ relays AI-server messages plus its own local sync:
 
 | `type` | Origin | Payload |
 |---|---|---|
-| `state`, `transcription`, `response`, `wake`, `set_theme`, `themes_changed`, `show_camera`, `stream_*`, `webrtc_signal`, `play_video`, `video_stop`, `show_calendar`, `hide_calendar`, `show_conversation_log`, `hide_conversation_log`, `timer_countdown`, `timer_countdown_cancel`, `timer_countdown_dismiss`, `ptt_active` | relayed from AI server | as in [`/ws/ui`](#wsui) |
+| `state`, `transcription`, `response`, `wake`, `set_theme`, `themes_changed`, `show_camera`, `stream_*`, `webrtc_signal`, `play_video`, `video_stop`, `show_calendar`, `hide_calendar`, `show_conversation_log`, `hide_conversation_log`, `show_notes`, `hide_notes`, `note_added`, `timer_countdown`, `timer_countdown_cancel`, `timer_countdown_dismiss`, `ptt_active` | relayed from AI server | as in [`/ws/ui`](#wsui) |
 | `mute_sync` | local | `{"muted": bool}` |
 | `volume_sync` | local | `{"level": 0.0–1.0}` |
 
@@ -1036,6 +1124,9 @@ in addition to the `Authorization: Bearer` header and is redacted from logs.
 | `GET`  | `/api/satellite/stream.mjpeg` | ✓ (`?token=`) | remote camera fallback |
 | `POST` | `/api/satellite/photo_frame/{start,stop}` | ✓ | phone screensaver |
 | `GET`  | `/api/conversation/log` (+ `/image`) | ✓ | history view |
+| `POST` | `/api/satellite/note` | ✓ | voice note upload — body **streamed** upstream (chunked OK), 64 MB cap at the edge, 300 s upstream timeout |
+| `GET`  | `/api/notes` | ✓ | notes view |
+| `DELETE` | `/api/notes/{id}` | ✓ | delete one note (numeric id only) |
 | `GET` `POST` | `/api/cloud_llm` | ✓ | settings (toggle allowed) |
 | `POST` | `/api/pair/push-register` | ✓ | register APNs/FCM push token |
 | `GET`  | `/api/push/image/{id}.jpg` | — (signed) | inline push-image thumbnail; **server**-validated HMAC, no token |

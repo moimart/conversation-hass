@@ -95,7 +95,7 @@ def orb_params(size, fps) -> tuple[int, int]:
         fps = int(fps)
     except (TypeError, ValueError):
         fps = 12
-    size = max(96, min(416, size)) // 16 * 16
+    size = max(96, min(448, size)) // 16 * 16
     return size, max(4, min(20, fps))
 
 

@@ -61,6 +61,7 @@
    and text — hide-kiosk-controls.css). */
 body.show-calendar #hal-cards-root,
 body.show-conversation-log #hal-cards-root,
+body.show-notes #hal-cards-root,
 body.photo-frame-active #hal-cards-root,
 body.show-timer-countdown #hal-cards-root,
 body.show-mirror #hal-cards-root { display: none; }

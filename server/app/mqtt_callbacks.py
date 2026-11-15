@@ -536,6 +536,17 @@ async def wire(state, bridge) -> None:
         await _push_to_rpi(state, msg)
         await broadcast_to_ui(state, msg)
 
+    async def _mqtt_notes_show():
+        # HA button → kiosk + web mirrors, exactly like the conversation log.
+        msg = {"type": "show_notes", "duration_s": 30}
+        await _push_to_rpi(state, msg)
+        await broadcast_to_ui(state, msg)
+
+    async def _mqtt_notes_hide():
+        msg = {"type": "hide_notes"}
+        await _push_to_rpi(state, msg)
+        await broadcast_to_ui(state, msg)
+
     async def _mqtt_context_clear():
         # Drop PAL's rolling LLM context (history + running summary); refresh
         # the gauge so HA reflects the reset immediately. Long-term Shodh
@@ -941,6 +952,8 @@ async def wire(state, bridge) -> None:
     bridge.on_calendar_hide = _mqtt_calendar_hide
     bridge.on_conversation_log_show = _mqtt_conversation_log_show
     bridge.on_conversation_log_hide = _mqtt_conversation_log_hide
+    bridge.on_notes_show = _mqtt_notes_show
+    bridge.on_notes_hide = _mqtt_notes_hide
     bridge.on_context_clear = _mqtt_context_clear
     bridge.on_photo_frame_show = _mqtt_photo_frame_show
     bridge.on_photo_frame_hide = _mqtt_photo_frame_hide

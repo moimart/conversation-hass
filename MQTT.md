@@ -68,6 +68,8 @@ hal/<device_id>/
 │
 ├── conversation_log/show/set                 bare trigger
 ├── conversation_log/hide/set                 bare trigger
+├── notes/show/set                            bare trigger
+├── notes/hide/set                            bare trigger
 │
 ├── ptt/start                                 bare trigger
 ├── ptt/end                                   bare trigger
@@ -159,6 +161,18 @@ the hub + web mirrors; auto-dismisses after 30 s without interaction.
 |---|---|---|
 | `<base>/conversation_log/show/set` | (any) | Open the conversation log view, scrolled to the newest entries. |
 | `<base>/conversation_log/hide/set` | (any) | Dismiss the view early. |
+
+### Voice notes
+
+Full-screen list of the voice notes recorded on paired devices (transcribed
+server-side, stored in PostgreSQL next to the conversation log — see
+`POST /api/satellite/note` in API.md). Shown on the hub + web mirrors;
+auto-dismisses after 30 s without interaction.
+
+| Topic | Payload | Effect |
+|---|---|---|
+| `<base>/notes/show/set` | (any) | Open the voice notes view, scrolled to the newest note. |
+| `<base>/notes/hide/set` | (any) | Dismiss the view early. |
 
 ### Photo frame
 
@@ -333,6 +347,8 @@ the theme catalog / voice list / model list changes.
 | **Hide Calendar**            | `calendar/hide/set`  payload empty             |
 | **Show Conversation Log**    | `conversation_log/show/set` payload `PRESS`    |
 | **Hide Conversation Log**    | `conversation_log/hide/set` payload `PRESS`    |
+| **Show Notes**               | `notes/show/set`     payload `PRESS`           |
+| **Hide Notes**               | `notes/hide/set`     payload `PRESS`           |
 | **Clear Context**            | `context/clear/set` payload `PRESS` — drops PAL's rolling LLM context (history + summary); keeps long-term memory |
 | **PTT Start**                | `ptt/start`          payload `PRESS`           |
 | **PTT End**                  | `ptt/end`            payload `PRESS`           |

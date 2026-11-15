@@ -92,14 +92,17 @@
 /* Conversation-log button — sits left of the gear. */
 .hal-log { right: 54px; }
 
-/* Mirror (front-camera) button — sits left of the conversation-log button. */
-.hal-mirror { right: 96px; }
+/* Voice-notes button — sits left of the conversation-log button. */
+.hal-notes { right: 96px; }
+
+/* Mirror (front-camera) button — sits left of the voice-notes button. */
+.hal-mirror { right: 138px; }
 .hal-mirror[hidden] { display: none; }
 
 /* Home Assistant launcher — leftmost of the cluster, accent-tinted so it reads
    as a distinct shortcut while the others stay faint white. Android-only;
    revealed by overlay.ts when the HA app is installed. */
-.hal-ha { right: 138px; color: rgb(var(--accent-rgb)); }
+.hal-ha { right: 180px; color: rgb(var(--accent-rgb)); }
 .hal-ha:active { color: var(--accent-glow, rgb(var(--accent-rgb))); }
 .hal-ha[hidden] { display: none; }
 
@@ -107,6 +110,7 @@
    has its own close button) hide the floating gear cluster so they don't sit on
    top of (and tap-fight with) that close affordance. */
 body.show-conversation-log .hal-gear,
+body.show-notes .hal-gear,
 body.show-mirror .hal-gear { display: none; }
 
 /* During an intercom call (ringing / calling / connected) the call card owns
@@ -318,6 +322,74 @@ body.show-mirror .hal-input-bar { display: none; }   /* mirror owns the screen *
     0%, 100% { box-shadow: 0 0 0 0 rgba(224, 85, 69, 0.5); }
     50% { box-shadow: 0 0 0 10px rgba(224, 85, 69, 0); }
 }
+
+/* Voice-note record button: same pulsing red as the live mic while recording;
+   dimmed + non-interactive while the note uploads/transcribes. */
+.hal-rec {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+.hal-rec.active {
+    background: #c0392b;
+    color: #fff;
+    border-color: #e05545;
+    animation: hal-mic-pulse 1.3s ease-in-out infinite;
+}
+.hal-rec.busy { opacity: 0.55; pointer-events: none; }
+/* While typing, the bar needs the room — hide the idle record button. */
+.hal-input-bar:not(.collapsed):not(.recording-note) .hal-rec { display: none; }
+
+/* Elapsed-time pill next to the record button. */
+.hal-rec-time {
+    flex: 0 0 auto;
+    height: 32px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    border-radius: 16px;
+    border: 1px solid rgba(224, 85, 69, 0.5);
+    background: rgba(20, 23, 30, 0.82);
+    color: #ff8a7a;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.hal-rec-time[hidden] { display: none; }
+.hal-rec-time.busy { color: #cdd6e4; border-color: rgba(255, 255, 255, 0.16); }
+/* Typing while a note records: the pill would squeeze the field — drop it. */
+.hal-input-bar:not(.collapsed) .hal-rec-time { display: none; }
+
+/* Transient status toast above the input bar (voice-note results). */
+.hal-toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 8px);
+    z-index: 2147481600;
+    max-width: calc(100vw - 32px);
+    padding: 10px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(20, 23, 30, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #fff;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.35;
+    text-align: center;
+    overflow-wrap: anywhere;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.hal-toast.visible { opacity: 1; transform: translate(-50%, 0); }
+body.intercom-ringing .hal-toast,
+body.intercom-calling .hal-toast,
+body.intercom-in-call .hal-toast { display: none; }
 
 /* Photo-frame "taken at" caption: on the phone the input bar owns the bottom of
    the screen (it stays up during photo mode — only intercom/mirror hide it), so

@@ -24,6 +24,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/stream_buffer.h"
 #include "freertos/task.h"
 
 static const char *TAG = "audio";
@@ -35,7 +36,9 @@ static const char *TAG = "audio";
 static esp_codec_dev_handle_t s_spk, s_mic;
 static int16_t *s_rec;
 static volatile size_t s_rec_n;
-static volatile bool s_rec_on, s_rec_stop, s_rec_vad;
+static volatile bool s_rec_on, s_rec_stop, s_rec_vad, s_rec_discard;
+static StreamBufferHandle_t s_note_sb;   // set = voice-note mode
+#define NOTE_MAX_S 600
 static volatile bool s_play_on, s_play_stop;
 static volatile float s_level;
 static TaskHandle_t s_rec_task;
@@ -95,6 +98,25 @@ static void rec_task(void *arg)
         float noise = 0;
         int noise_frames = 0, silence_ms = 0, total_ms = 0;
         bool speech = false;
+        if (s_note_sb) {
+            // voice note: stream every frame out, no VAD, until stopped or 10 min
+            size_t dropped = 0, total = 0;
+            while (!s_rec_stop && total < (size_t)PAL_SAMPLE_RATE * NOTE_MAX_S) {
+                if (esp_codec_dev_read(s_mic, frame, sizeof(frame)) != ESP_CODEC_DEV_OK) {
+                    vTaskDelay(pdMS_TO_TICKS(5));
+                    continue;
+                }
+                total += FRAME;
+                s_level = fminf(1.0f, rms(frame, FRAME) / 6000.0f);
+                if (xStreamBufferSend(s_note_sb, frame, sizeof(frame), 0) != sizeof(frame)) dropped += FRAME;
+            }
+            dev_close(s_mic);
+            ESP_LOGI(TAG, "note: %u samples (%u dropped: network too slow)", (unsigned)total, (unsigned)dropped);
+            s_note_sb = NULL;
+            s_level = 0;
+            s_rec_on = false;
+            continue;
+        }
         while (!s_rec_stop && s_rec_n + FRAME <= REC_MAX) {
             if (esp_codec_dev_read(s_mic, frame, sizeof(frame)) != ESP_CODEC_DEV_OK) {
                 vTaskDelay(pdMS_TO_TICKS(5));
@@ -124,7 +146,7 @@ static void rec_task(void *arg)
             }
         }
         dev_close(s_mic);
-        if (!speech && s_rec_vad) s_rec_n = 0;
+        if ((!speech && s_rec_vad) || s_rec_discard) s_rec_n = 0;
         ESP_LOGI(TAG, "recorded %u samples (speech=%d)", (unsigned)s_rec_n, speech);
         s_level = 0;
         s_rec_on = false;
@@ -137,6 +159,7 @@ bool audio_record_start(bool vad)
     if (s_rec_on || !s_mic) return false;
     audio_stop_playback();
     s_rec_vad = vad;
+    s_rec_discard = false;
     s_rec_stop = false;
     s_rec_on = true;
     xTaskNotifyGive(s_rec_task);
@@ -144,6 +167,25 @@ bool audio_record_start(bool vad)
 }
 
 void audio_record_stop(void) { s_rec_stop = true; }
+
+void audio_record_abort(void)
+{
+    s_rec_discard = true;
+    s_rec_stop = true;
+}
+
+bool audio_note_start(void *stream_buffer)
+{
+    if (s_rec_on || !s_mic || !stream_buffer) return false;
+    audio_stop_playback();
+    s_note_sb = stream_buffer;
+    s_rec_vad = false;
+    s_rec_discard = false;
+    s_rec_stop = false;
+    s_rec_on = true;
+    xTaskNotifyGive(s_rec_task);
+    return true;
+}
 bool audio_recording(void) { return s_rec_on; }
 
 int16_t *audio_recording_data(size_t *samples)

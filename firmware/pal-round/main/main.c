@@ -19,6 +19,7 @@
 #include "esp_mac.h"
 #include "esp_ota_ops.h"
 #include "esp_pm.h"
+#include "freertos/stream_buffer.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_vfs_fat.h"
@@ -118,7 +119,7 @@ static void apply_info(cJSON *info)
 static void load_orb(void)
 {
     char path[160];
-    snprintf(path, sizeof(path), "/api/device/orb?size=288&fps=12&orb=%s", g_settings.orb[0] ? g_settings.orb : "follow");
+    snprintf(path, sizeof(path), "/api/device/orb?size=448&fps=12&orb=%s", g_settings.orb[0] ? g_settings.orb : "follow");
     cJSON *m = pal_get_json(path, 90000);   // first render of a clip can take a while
     if (m) {
         orb_load_manifest(m);
@@ -472,7 +473,12 @@ static void ota_progress(int pct)
 
 static void do_action(const char *a)
 {
-    if (!strcmp(a, "restart")) {
+    if (!strcmp(a, "wake")) {
+        if (pal_lock()) {
+            ui_screen_wake();
+            pal_unlock();
+        }
+    } else if (!strcmp(a, "restart")) {
         esp_restart();
     } else if (!strcmp(a, "save_reboot")) {
         settings_save();
@@ -549,6 +555,155 @@ static void tick_cb(void *arg) { app_post(EV_TICK); }
 
 // --- app task --------------------------------------------------------------------------------
 
+// --- voice notes -------------------------------------------------------------------------
+//
+// Double-press a button (BOOT, PWR or the orb): the turn that the first press
+// started is dropped and a voice note starts recording. The audio streams to
+// POST /api/satellite/note (chunked, 16 kHz s16le) while you talk, so notes can
+// be long (10 min cap) without buffering them. Press again to finish: the
+// server transcribes it and stores it in the Notes list.
+
+#define DOUBLE_PRESS_US 450000
+static StreamBufferHandle_t s_note_sb;
+static TaskHandle_t s_note_task;
+static volatile bool s_note_on;            // recording or uploading
+static bool s_turn_aborted;
+static int64_t s_note_t0, s_last_press_us;
+static int s_note_status;                  // HTTP status, -1 = no answer
+static bool s_note_stored;
+static char *s_note_text;
+
+static int note_next(char *buf, size_t max)
+{
+    size_t n = xStreamBufferReceive(s_note_sb, buf, max, pdMS_TO_TICKS(200));
+    if (n) return (int)n;
+    if (audio_recording() || xStreamBufferBytesAvailable(s_note_sb)) return 0;
+    return -1;   // recording over and everything sent
+}
+
+static void note_task(void *arg)
+{
+    while (true) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        pal_resp_t r;
+        esp_err_t err = pal_post_stream("/api/satellite/note", "application/octet-stream", "X-Sample-Rate", "16000",
+                                        "X-Sample-Format", "s16le", note_next, &r, 180000);
+        if (audio_recording()) audio_record_stop();      // the upload died early: stop the mic too
+        while (audio_recording()) vTaskDelay(pdMS_TO_TICKS(20));
+        free(s_note_text);
+        s_note_text = NULL;
+        s_note_stored = false;
+        s_note_status = err == ESP_OK ? r.status : -1;
+        if (err == ESP_OK) {
+            cJSON *j = cJSON_Parse(r.body);
+            const char *t = cJSON_GetStringValue(cJSON_GetObjectItem(j, "text"));
+            if (t && t[0]) s_note_text = strdup(t);
+            s_note_stored = !cJSON_IsFalse(cJSON_GetObjectItem(j, "stored")) &&
+                            cJSON_IsNumber(cJSON_GetObjectItem(j, "id"));
+            cJSON_Delete(j);
+            pal_resp_free(&r);
+        }
+        xStreamBufferReset(s_note_sb);
+        s_note_on = false;
+        app_post(EV_NOTE_DONE);
+    }
+}
+
+static void note_show_elapsed(void)
+{
+    int s = (int)((esp_timer_get_time() - s_note_t0) / 1000000);
+    char l1[48];
+    snprintf(l1, sizeof(l1), "\xE2\x97\x8F Recording note  %d:%02d", s / 60, s % 60);
+    if (pal_lock()) {
+        ui_note_status(l1, "Press again to save");
+        pal_unlock();
+    }
+}
+
+static void note_begin(void)
+{
+    if (s_note_on || !g_settings.token[0] || s_pairing) return;
+    if (!s_note_sb) s_note_sb = xStreamBufferCreateWithCaps(256 * 1024, 1, MALLOC_CAP_SPIRAM);  // ~8 s of slack
+    if (!s_note_task) xTaskCreateWithCaps(note_task, "note", 6144, NULL, 5, &s_note_task, MALLOC_CAP_SPIRAM);
+    if (!s_note_sb || !s_note_task) return;
+    // drop the turn the first press started
+    // (its EV_REC_DONE is pending or about to be: swallow it)
+    if (audio_recording() || s_state == PAL_LISTENING) s_turn_aborted = true;
+    if (audio_recording()) audio_record_abort();
+    while (audio_recording()) vTaskDelay(pdMS_TO_TICKS(10));
+    if (pal_lock()) {
+        ui_screen_wake();
+        ui_show_home();
+        pal_unlock();
+    }
+    audio_beep(0);
+    audio_beep(0);                 // two blips = note (one = talk)
+    vTaskDelay(pdMS_TO_TICKS(320));
+    xStreamBufferReset(s_note_sb);
+    if (!audio_note_start(s_note_sb)) {
+        set_state(PAL_IDLE);
+        return;
+    }
+    s_note_on = true;
+    s_note_t0 = esp_timer_get_time();
+    set_state(PAL_LISTENING);
+    note_show_elapsed();
+    xTaskNotifyGive(s_note_task);
+    ESP_LOGI(TAG, "voice note: recording");
+}
+
+static void note_end(void)
+{
+    audio_record_stop();
+    set_state(PAL_PROCESSING);
+    if (pal_lock()) {
+        ui_note_status("Saving note\xE2\x80\xA6", NULL);
+        pal_unlock();
+    }
+}
+
+static void note_done(void)
+{
+    set_state(PAL_IDLE);
+    const char *l1, *l2 = NULL;
+    if (s_note_status == 200 && s_note_text) {
+        l1 = s_note_stored ? "Note saved" : "Transcribed, but not saved";
+        l2 = s_note_text;
+        audio_beep(1);
+    } else if (s_note_status == 422) {
+        l1 = "Nothing heard \xE2\x80\x94 no note saved";
+        audio_beep(2);
+    } else {
+        l1 = "Couldn't save the note";
+        l2 = s_note_status > 0 ? "PAL refused it" : "PAL isn't reachable";
+        audio_beep(2);
+    }
+    ESP_LOGI(TAG, "voice note: status %d stored %d", s_note_status, s_note_stored);
+    if (pal_lock()) {
+        ui_note_status(l1, l2);
+        pal_unlock();
+    }
+}
+
+// Every "talk" press (BOOT, PWR, orb tap) comes through here.
+static void talk_press(void)
+{
+    int64_t now = esp_timer_get_time();
+    bool dbl = now - s_last_press_us < DOUBLE_PRESS_US;
+    s_last_press_us = now;
+    if (s_note_on) {               // recording → finish; uploading → ignore
+        if (audio_recording()) note_end();
+        return;
+    }
+    if (dbl && (audio_recording() || s_state == PAL_LISTENING)) {
+        s_last_press_us = 0;
+        note_begin();
+        return;
+    }
+    if (audio_recording()) audio_record_stop();
+    else begin_listening();
+}
+
 static void app_task(void *arg)
 {
     app_event_t e;
@@ -574,16 +729,23 @@ static void app_task(void *arg)
             break;
         case EV_PTT_PRESS:
             s_ptt_down_us = esp_timer_get_time();
-            if (audio_recording()) audio_record_stop();
-            else begin_listening();
+            talk_press();
             break;
         case EV_PTT_RELEASE:
             // hold-to-talk on the BOOT button: a long hold ends on release
-            if (audio_recording() && esp_timer_get_time() - s_ptt_down_us > 700000) audio_record_stop();
+            if (!s_note_on && audio_recording() && esp_timer_get_time() - s_ptt_down_us > 700000)
+                audio_record_stop();
             break;
         case EV_REC_DONE:
+            if (s_turn_aborted) {          // the turn became a voice note (double press)
+                s_turn_aborted = false;
+                break;
+            }
             audio_beep(1);
             finish_listening();
+            break;
+        case EV_NOTE_DONE:
+            note_done();
             break;
         case EV_PLAY_DONE:
             if (!audio_playing() && s_state == PAL_SPEAKING) set_state(PAL_IDLE);
@@ -597,8 +759,7 @@ static void app_task(void *arg)
                 pal_unlock();
             }
             if (!was_on) break;
-            if (audio_recording()) audio_record_stop();
-            else begin_listening();
+            talk_press();
             break;
         }
         case EV_PWR_LONG:
@@ -623,6 +784,7 @@ static void app_task(void *arg)
             break;
         case EV_TICK:
             s_ticks++;
+            if (s_note_on && audio_recording()) note_show_elapsed();
             if (pal_lock()) {
                 ui_tick();
                 pal_unlock();

@@ -49,6 +49,7 @@ _SCOPE_PERMISSIONS: dict[str, set[str] | None] = {
 #   "layout" — the device's own display layout (routes_ha.py)
 #   "orbs"   — create/select custom orbs (routes_orbs.py)
 #   "voice"  — the device's own TTS voice (routes_http.py /api/satellite/voice)
+#   "notes"  — voice notes: record/list/delete (routes_notes.py)
 DERIVABLE_SCOPES = {"watch"}
 
 

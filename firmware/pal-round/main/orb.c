@@ -15,6 +15,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "app.h"
+#include "bsp/esp-bsp.h"
+#include "esp_lcd_panel_ops.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "esp_heap_caps.h"
@@ -114,12 +116,70 @@ static bool decode_frame(clip_t *c, int i, int buf)
     return ok;
 }
 
+// Showing a frame. Through LVGL a 448 px frame costs ~100 ms of software
+// rendering (it can't keep 12 fps), so when the orb is plainly on screen the
+// frame goes straight to the panel in 8-row bands (byte-swapped into two small
+// internal DMA buffers that alternate: each draw_bitmap first waits for the
+// previous transfer). Bands under the text box / status / timer / toast are
+// handed to LVGL instead (invalidated), which draws them with this same frame
+// underneath. LVGL's image keeps pointing at the newest frame without being
+// invalidated, so anything it redraws later matches what's on the glass.
+#define BAND 8
+static uint16_t *s_bounce[2];
+static int s_bounce_i;
+static bool s_try_direct;          // the orb was plainly on screen at the last LVGL-drawn frame
+
+static bool blit_direct(int buf)
+{
+    lv_area_t holes[4];
+    int nh = ui_orb_overlays(holes, 4);
+    esp_lcd_panel_handle_t panel = bsp_display_panel();
+    if (nh < 0 || !panel || lv_obj_has_flag(s_img, LV_OBJ_FLAG_HIDDEN)) return false;
+    if (!s_bounce[0]) {
+        for (int i = 0; i < 2; i++) s_bounce[i] = heap_caps_malloc(s_size * BAND * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        if (!s_bounce[0] || !s_bounce[1]) return false;
+    }
+    lv_area_t img;
+    lv_obj_get_coords(s_img, &img);
+    // LVGL's copy of the image: point it at this frame, no invalidation
+    const lv_image_dsc_t *src = lv_image_get_src(s_img);
+    lv_image_dsc_t *d = (lv_image_dsc_t *)src;
+    if (d != &s_dsc[0] && d != &s_dsc[1]) return false;
+    d->data = s_px[buf];
+    lv_image_cache_drop(d);
+    for (int y = 0; y < s_size; y += BAND) {
+        int h = s_size - y < BAND ? s_size - y : BAND;
+        lv_area_t band = {img.x1, img.y1 + y, img.x1 + s_size - 1, img.y1 + y + h - 1};
+        bool hidden = false;
+        for (int i = 0; i < nh && !hidden; i++)
+            hidden = band.x1 <= holes[i].x2 && holes[i].x1 <= band.x2 && band.y1 <= holes[i].y2 && holes[i].y1 <= band.y2;
+        if (hidden) {
+            lv_obj_invalidate_area(s_img, &band);
+            continue;
+        }
+        uint16_t *b = s_bounce[s_bounce_i];
+        s_bounce_i ^= 1;
+        const uint16_t *p = (const uint16_t *)s_px[buf] + y * s_size;
+        for (int i = 0; i < s_size * h; i++) b[i] = (uint16_t)(p[i] << 8 | p[i] >> 8);   // panel wants big-endian
+        esp_lcd_panel_draw_bitmap(panel, band.x1, band.y1, band.x2 + 1, band.y2 + 1, b);
+    }
+    return true;
+}
+
 static void show_buf(int buf)
 {
     if (!pal_lock()) return;
+    if (s_try_direct && blit_direct(buf)) {
+        pal_unlock();
+        return;
+    }
+    // first frame of a clip, or the orb is under something: the LVGL way
+    s_dsc[buf].data = s_px[buf];
     lv_image_cache_drop(&s_dsc[buf]);
     lv_image_set_src(s_img, &s_dsc[buf]);
     lv_obj_remove_flag(s_img, LV_OBJ_FLAG_HIDDEN);
+    lv_area_t tmp[4];
+    s_try_direct = ui_orb_overlays(tmp, 4) >= 0;
     pal_unlock();
 }
 
@@ -150,8 +210,11 @@ static void player_task(void *arg)
         }
         bool ok = false;
         int fps = cur && cur->fps ? cur->fps : 12;
+        int64_t td = 0;
         if (cur && cur->f && !(cur->count == 1 && still_done)) {
+            int64_t a = esp_timer_get_time();
             ok = decode_frame(cur, frame, back);
+            td = esp_timer_get_time() - a;
             frame = (frame + 1) % cur->count;
             if (cur->count == 1) still_done = true;
         }
@@ -160,13 +223,15 @@ static void player_task(void *arg)
             show_buf(back);
             back ^= 1;
             static int frames;
-            static int64_t since;
+            static int64_t since, dsum;
             frames++;
+            dsum += td;
             if (!since) since = t0;
             if (t0 - since >= 10000000) {
-                ESP_LOGD(TAG, "orb %d frames/10s (clip fps %d, decode+show %lld ms)", frames, fps,
-                         (long long)((esp_timer_get_time() - t0) / 1000));
+                ESP_LOGI(TAG, "orb %d frames/10s (clip fps %d, decode %lld ms, decode+show %lld ms)", frames, fps,
+                         (long long)(dsum / frames / 1000), (long long)((esp_timer_get_time() - t0) / 1000));
                 frames = 0;
+                dsum = 0;
                 since = t0;
             }
         }
@@ -303,7 +368,7 @@ void orb_create(lv_obj_t *parent, int size)
 
     s_native_timer = lv_timer_create(native_tick, 33, NULL);
     orb_apply_theme();
-    xTaskCreatePinnedToCore(player_task, "orb", 4096, NULL, 4, &s_task, 1);  // internal: reads flash
+    xTaskCreatePinnedToCore(player_task, "orb", 4096, NULL, 4, &s_task, 0);  // internal: reads flash; core 0 (LVGL draws on core 1)
 }
 
 lv_obj_t *orb_obj(void) { return s_wrap; }
@@ -333,9 +398,13 @@ static void set_native_visible(bool native)
         lv_obj_add_flag(s_img, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(s_core, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(s_glow, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
     } else {
+        // video orb: nothing else in its area, so each frame is a plain image
+        // copy (the ring's circular glow made every frame several times slower)
         lv_obj_add_flag(s_core, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_glow, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
     }
     pal_unlock();
 }

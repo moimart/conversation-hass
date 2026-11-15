@@ -45,7 +45,8 @@ def test_theme_colors():
 def test_orb_params_clamp():
     assert d.orb_params("288", "12") == (288, 12)
     assert d.orb_params(300, 99) == (288, 20)       # multiple of 16, fps cap
-    assert d.orb_params(5000, 1) == (416, 4)
+    assert d.orb_params(5000, 1) == (448, 4)
+    assert d.orb_params(448, 12) == (448, 12)      # PAL Round: the orb fills ~96% of the screen
     assert d.orb_params("x", None) == (288, 12)
 
 

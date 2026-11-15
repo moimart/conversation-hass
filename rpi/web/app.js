@@ -542,8 +542,54 @@
     }
     // Mobile companion opens the view locally (log button in the input bar).
     window.HALConversationLog = {
-        open: () => getConversationLog().then((c) => c.show({ duration_s: 0 })),
+        open: () => {
+            if (notesController && notesController.isShown()) notesController.dismiss("preempt");
+            return getConversationLog().then((c) => c.show({ duration_s: 0 }));
+        },
         close: () => { if (conversationLogController) conversationLogController.dismiss("close"); },
+    };
+
+    // --- Voice notes overlay (lazy-loaded on first show; sibling of the log) ---
+    let notesController = null;
+    let notesLoading = null;
+    async function getNotes() {
+        if (notesController) return notesController;
+        if (!notesLoading) {
+            notesLoading = import("./notes.js").then((mod) => {
+                const root = document.getElementById("notes-root");
+                notesController = mod.mountNotes(root);
+                return notesController;
+            }).catch((e) => {
+                console.error("[notes] module load failed:", e);
+                notesLoading = null;
+                throw e;
+            });
+        }
+        return notesLoading;
+    }
+    // The log and the notes view share the same stage slot — opening one
+    // closes the other.
+    function dismissConversationLogIfShown() {
+        if (conversationLogController && conversationLogController.isShown()) {
+            conversationLogController.dismiss("preempt").catch(() => {});
+        }
+    }
+    function dismissNotesIfShown() {
+        if (notesController && notesController.isShown()) {
+            notesController.dismiss("preempt").catch(() => {});
+        }
+    }
+    // Mobile companion: notes button opens the view locally; the voice-note
+    // recorder calls add() with its upload response so a fresh note shows up
+    // immediately (deduped by id against the note_added broadcast).
+    window.HALNotes = {
+        open: () => {
+            dismissConversationLogIfShown();
+            return getNotes().then((n) => n.show({ duration_s: 0 }));
+        },
+        close: () => { if (notesController) notesController.dismiss("close"); },
+        add: (row) => { if (notesController) notesController.add(row); },
+        isShown: () => !!(notesController && notesController.isShown()),
     };
 
     // --- Timer countdown overlay (lazy-loaded on first timer_countdown) ---
@@ -982,6 +1028,7 @@
                 break;
             case "show_conversation_log":
                 withPhotoFramePreempt(() => withCalendarPreempt(() => {
+                    dismissNotesIfShown();
                     getConversationLog().then((clog) => {
                         if (clog.isShown()) clog.update(msg);
                         else clog.show(msg);
@@ -993,14 +1040,31 @@
                     conversationLogController.dismiss("explicit").catch(() => {});
                 }
                 break;
+            case "show_notes":
+                withPhotoFramePreempt(() => withCalendarPreempt(() => {
+                    dismissConversationLogIfShown();
+                    getNotes().then((notes) => {
+                        if (notes.isShown()) notes.update(msg);
+                        else notes.show(msg);
+                    }).catch((e) => console.error("[notes] show failed:", e));
+                }));
+                break;
+            case "hide_notes":
+                if (notesController) {
+                    notesController.dismiss("explicit").catch(() => {});
+                }
+                break;
+            case "note_added":
+                // Live append only — never opens the view by itself.
+                if (notesController && msg.note) notesController.add(msg.note);
+                break;
             case "timer_countdown":
                 // The countdown renders inside the orb — clear any photo
                 // frame first so the orb is actually visible, and dismiss
                 // the calendar / conversation-log overlays that cover it.
                 withPhotoFramePreempt(() => withCalendarPreempt(() => {
-                    if (conversationLogController && conversationLogController.isShown()) {
-                        conversationLogController.dismiss("preempt").catch(() => {});
-                    }
+                    dismissConversationLogIfShown();
+                    dismissNotesIfShown();
                     getTimerOverlay().then((t) => t.show(msg))
                         .catch((e) => console.error("[timer] show failed:", e));
                 }));

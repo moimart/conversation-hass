@@ -335,6 +335,9 @@ int bsp_display_brightness_get(void)
     return brightness * 100 / 255;
 }
 
+// PAL: the panel handle, for the orb's direct frame blits (see main/orb.c)
+esp_lcd_panel_handle_t bsp_display_panel(void) { return panel_handle; }
+
 // PAL: stop both I2S channels (clocks + their PM locks) while neither codec is
 // open. esp_codec_dev re-enables TX to clock the mic and never turns it off.
 void bsp_audio_idle(void)
@@ -420,6 +423,7 @@ esp_err_t bsp_display_new(const bsp_display_config_t *config, esp_lcd_panel_hand
 
     esp_lcd_panel_io_spi_config_t io_config = CO5300_PANEL_IO_QSPI_CONFIG(BSP_LCD_CS, NULL, NULL);
     io_config.trans_queue_depth = CONFIG_BSP_LCD_TRANS_QUEUE_DEPTH;
+    io_config.pclk_hz = 80 * 1000 * 1000;   // PAL: 80 MHz QSPI halves the time to push a 448 px orb frame
     co5300_vendor_config_t vendor_config = {
         .init_cmds = lcd_init_cmds,
         .init_cmds_size = sizeof(lcd_init_cmds) / sizeof(lcd_init_cmds[0]),
@@ -564,6 +568,7 @@ lv_display_t *bsp_display_start_with_config(bsp_display_cfg_t *cfg)
 
     assert(cfg != NULL);
     cfg->lv_adapter_cfg.tick_period_ms = 1000;   // the adapter's timer becomes a harmless 1 Hz no-op
+    cfg->lv_adapter_cfg.task_core_id = 1;        // PAL: LVGL draws on core 1, the orb decodes on core 0
     BSP_ERROR_CHECK_RETURN_NULL(esp_lv_adapter_init(&cfg->lv_adapter_cfg));
     lv_tick_set_cb(pal_lv_tick);
 

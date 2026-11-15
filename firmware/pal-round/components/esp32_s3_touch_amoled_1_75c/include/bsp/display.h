@@ -120,6 +120,9 @@ esp_err_t bsp_display_backlight_off(void);
 /** PAL: panel deep standby (false) / wake + re-init (true). */
 esp_err_t bsp_display_power(bool on);
 
+/** PAL: the LCD panel handle (direct blits). */
+esp_lcd_panel_handle_t bsp_display_panel(void);
+
 #ifdef __cplusplus
 }
 #endif

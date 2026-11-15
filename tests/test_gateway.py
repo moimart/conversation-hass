@@ -62,7 +62,7 @@ def test_auth_cache_positive_only_and_expiry(monkeypatch):
 @pytest.fixture
 async def upstream():
     """Fake ai-server: pair/status gate + echo, counting auth hits."""
-    state = {"status_hits": 0, "proxied": []}
+    state = {"status_hits": 0, "proxied": [], "bodies": []}
 
     async def pair_status(request):
         state["status_hits"] += 1
@@ -73,6 +73,11 @@ async def upstream():
 
     async def echo(request):
         state["proxied"].append((request.method, request.path))
+        n = 0
+        async for chunk in request.content.iter_chunked(65536):
+            n += len(chunk)
+        state["bodies"].append((request.method, request.path, n,
+                                request.headers.get("Transfer-Encoding")))
         return web.json_response({"ok": True, "path": request.path})
 
     async def ws(request):
@@ -449,3 +454,80 @@ async def test_large_orb_upload_passes_the_edge(client):
 async def test_orb_media_surface_tight(client, path):
     cl, state = client
     assert (await cl.get(path, headers=_auth())).status == 404
+
+
+# --- voice notes ----------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path", [
+    ("POST", "/api/satellite/note"),
+    ("GET", "/api/notes"),
+    ("DELETE", "/api/notes/42"),
+])
+async def test_notes_routes_need_token(client, method, path):
+    cl, state = client
+    assert (await cl.request(method, path)).status == 401
+    assert (await cl.request(method, path, headers=_auth("bad"))).status == 401
+    assert state["proxied"] == []
+    good = await cl.request(method, path, headers=_auth())
+    assert good.status == 200
+    assert (method, path) in state["proxied"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path", [
+    ("DELETE", "/api/notes"),              # bulk delete: not a thing
+    ("DELETE", "/api/notes/abc"),
+    ("PUT", "/api/notes/1"),
+    ("GET", "/api/satellite/note"),
+    ("POST", "/api/notes"),
+])
+async def test_notes_surface_tight(client, method, path):
+    cl, state = client
+    assert (await cl.request(method, path, headers=_auth())).status == 404
+    assert state["proxied"] == []
+
+
+@pytest.mark.asyncio
+async def test_large_note_upload_is_streamed_through(client):
+    """A multi-MB note (past aiohttp's 1 MiB default) passes, sent upstream
+    chunked (streamed, not buffered whole)."""
+    cl, state = client
+    body = b"\x01\x00" * (6 * 1024 * 1024)            # 12 MiB
+    resp = await cl.post("/api/satellite/note", data=body, headers={
+        **_auth(), "X-Sample-Rate": "16000", "X-Sample-Format": "s16le"})
+    assert resp.status == 200
+    method, path, n, te = state["bodies"][-1]
+    assert (method, path, n) == ("POST", "/api/satellite/note", len(body))
+    assert te == "chunked"
+
+
+@pytest.mark.asyncio
+async def test_chunked_note_upload_from_client_passes(client):
+    cl, state = client
+
+    async def gen():
+        for _ in range(40):
+            yield b"\x00" * 32768
+
+    resp = await cl.post("/api/satellite/note", data=gen(), headers=_auth())
+    assert resp.status == 200
+    assert state["bodies"][-1][2] == 40 * 32768
+
+
+@pytest.mark.asyncio
+async def test_note_upload_over_cap_is_413(client, monkeypatch):
+    cl, state = client
+    monkeypatch.setattr(gw_mod, "_STREAM_UPLOADS", [
+        ("POST", gw_mod.re.compile(r"^/api/satellite/note$"), 1000, 30)])
+    # declared Content-Length over the cap → rejected before proxying
+    resp = await cl.post("/api/satellite/note", data=b"\x00" * 5000, headers=_auth())
+    assert resp.status == 413
+
+    # chunked (no Content-Length) over the cap → 413 mid-stream
+    async def gen():
+        for _ in range(10):
+            yield b"\x00" * 500
+
+    resp = await cl.post("/api/satellite/note", data=gen(), headers=_auth())
+    assert resp.status == 413

@@ -57,6 +57,7 @@ typedef enum {
     EV_RELOAD,          // re-fetch info / orb / pages
     EV_TICK,            // 1 Hz housekeeping
     EV_ACTION,          // str: "repair" | "portal" | "ota" | "restart" | "reset"
+    EV_NOTE_DONE,       // voice note upload finished (result via note_result())
 } app_event_type_t;
 
 typedef struct {
@@ -98,6 +99,10 @@ esp_err_t pal_get(const char *path, pal_resp_t *out, int timeout_ms);
 esp_err_t pal_post_json(const char *path, const char *json, pal_resp_t *out, int timeout_ms);
 esp_err_t pal_post_bin(const char *path, const void *data, size_t len, const char *ctype,
                        const char *extra_hdr_name, const char *extra_hdr_val, pal_resp_t *out, int timeout_ms);
+// POST a body of unknown length with chunked transfer encoding. `next` fills buf
+// and returns >0 bytes, 0 = nothing yet (call again), <0 = end of body.
+esp_err_t pal_post_stream(const char *path, const char *ctype, const char *h1, const char *v1, const char *h2,
+                          const char *v2, int (*next)(char *buf, size_t max), pal_resp_t *out, int timeout_ms);
 esp_err_t pal_get_to_file(const char *path, const char *file, int timeout_ms);
 void pal_resp_free(pal_resp_t *r);
 cJSON *pal_get_json(const char *path, int timeout_ms);
@@ -120,6 +125,8 @@ void audio_init(void);
 void audio_set_volume(int vol);
 bool audio_record_start(bool vad);               // records into PSRAM; EV_REC_DONE when done
 void audio_record_stop(void);
+void audio_record_abort(void);                   // stop and discard (EV_REC_DONE still fires)
+bool audio_note_start(void *stream_buffer);      // voice note: s16le frames into a StreamBuffer, no VAD, ≤10 min
 bool audio_recording(void);
 int16_t *audio_recording_data(size_t *samples);  // valid until the next record
 float audio_level(void);                         // 0..1, mic or speaker, for the orb
@@ -188,6 +195,8 @@ void ui_show_home(void);
 void ui_set_state(pal_state_t st);
 void ui_set_transcript(const char *text);
 void ui_set_response(const char *text);
+int ui_orb_overlays(lv_area_t *out, int max);  // -1: orb not directly blittable; else rects drawn over it
+void ui_note_status(const char *line1, const char *line2);  // voice note banner in the text box
 void ui_set_weather(const char *cond, double temp, const char *unit, bool show);
 void ui_set_status(void);                          // battery / wifi icons
 void ui_tick(void);                                // clock + timers, 1 Hz

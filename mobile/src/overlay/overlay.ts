@@ -11,6 +11,9 @@ import { sendCommand } from "./command";
 import { startListening, stopListening, isListening } from "./mic";
 import { sttMode, setSttMode, startCapture, stopCaptureAndTranscribe, isCapturing } from "./stt";
 import { unlockAudio } from "./satellite-audio";
+import {
+  NOTE_MAX_SECONDS, isRecordingNote, noteElapsedSeconds, startNoteRecording, stopNoteAndUpload,
+} from "./voice-note";
 import { mountMirror, hasFrontCamera } from "./mirror";
 import { hasHomeAssistant, openHomeAssistant } from "./apps";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
@@ -48,8 +51,20 @@ export function mountOverlay(cfg: HalConfig): void {
   kbd.setAttribute("aria-label", "Type a message");
   kbd.innerHTML = keyboardIcon();
 
+  // Voice note: tap to start recording, tap again to stop + upload. The
+  // server transcribes and stores it (browse with the notes button up top).
+  const rec = document.createElement("button");
+  rec.className = "hal-btn hal-rec";
+  rec.setAttribute("aria-label", "Record a voice note");
+  rec.innerHTML = recordIcon();
+
+  // Elapsed-time pill shown next to the buttons while a note is recording.
+  const recTime = document.createElement("div");
+  recTime.className = "hal-rec-time";
+  recTime.hidden = true;
+
   bar.classList.add("collapsed");
-  bar.append(mic, kbd, input, send);
+  bar.append(mic, rec, recTime, kbd, input, send);
   root.appendChild(bar);
 
   function setTyping(on: boolean) {
@@ -102,6 +117,23 @@ export function mountOverlay(cfg: HalConfig): void {
     }
   });
   root.appendChild(logBtn);
+
+  // Voice notes (next to the conversation log). Opens the full-screen notes
+  // view locally via window.HALNotes (app.js); same open/close behavior.
+  const notesBtn = document.createElement("button");
+  notesBtn.className = "hal-gear hal-notes";
+  notesBtn.setAttribute("aria-label", "Voice notes");
+  notesBtn.innerHTML = notesIcon();
+  notesBtn.addEventListener("click", () => {
+    const api = notesApi();
+    if (api) {
+      if (document.body.classList.contains("show-notes")) api.close();
+      else api.open();
+    } else {
+      setTimeout(() => notesApi()?.open(), 800);   // app.js still booting
+    }
+  });
+  root.appendChild(notesBtn);
 
   // Mirror (front camera) — sits left of the conversation-log button. Created
   // hidden; revealed only once hasFrontCamera() confirms the device has one, so
@@ -207,9 +239,104 @@ export function mountOverlay(cfg: HalConfig): void {
     if (final) { input.value = final; void submit(); } else live()?.cancel();
   }
   mic.addEventListener("click", () => {
+    if (isRecordingNote() || noteBusy) { showToast("Finish the voice note first"); return; }
     if (isListening() || isCapturing()) void endListen();
     else void beginListen();
   });
+
+  // --- Voice note recorder (tap to start, tap to stop + upload) ---
+  let noteBusy = false;                                   // uploading/transcribing
+  let noteTick: ReturnType<typeof setInterval> | null = null;
+  const fmt = (s: number) => {
+    const n = Math.floor(s);
+    return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+  };
+  function recUi(state: "idle" | "recording" | "busy") {
+    rec.classList.toggle("active", state === "recording");
+    rec.classList.toggle("busy", state === "busy");
+    bar.classList.toggle("recording-note", state !== "idle");
+    rec.innerHTML = state === "recording" ? stopIcon() : recordIcon();
+    rec.setAttribute("aria-label", state === "recording" ? "Stop and save the voice note" : "Record a voice note");
+    recTime.hidden = state === "idle";
+    recTime.classList.toggle("busy", state === "busy");
+    if (state === "busy") recTime.textContent = "Saving…";
+  }
+  function stopTick() {
+    if (noteTick !== null) { clearInterval(noteTick); noteTick = null; }
+  }
+  async function beginNote() {
+    if (isListening() || isCapturing()) { showToast("Finish speaking to PAL first"); return; }
+    void haptic();
+    unlockAudio();
+    try {
+      await startNoteRecording();
+    } catch (e) {
+      console.warn("[hal] voice note: mic unavailable", e);
+      showToast("Microphone unavailable");
+      return;
+    }
+    recUi("recording");
+    recTime.textContent = `● 0:00 / ${fmt(NOTE_MAX_SECONDS)}`;
+    noteTick = setInterval(() => {
+      const t = noteElapsedSeconds();
+      recTime.textContent = `● ${fmt(t)} / ${fmt(NOTE_MAX_SECONDS)}`;
+      if (t >= NOTE_MAX_SECONDS) { showToast("10-minute limit reached"); void endNote(); }
+    }, 250);
+  }
+  async function endNote() {
+    if (!isRecordingNote() || noteBusy) return;
+    stopTick();
+    void haptic();
+    noteBusy = true;
+    recUi("busy");
+    let result;
+    try {
+      result = await stopNoteAndUpload(cfg);
+    } finally {
+      noteBusy = false;
+      recUi("idle");
+    }
+    if (result.ok) {
+      const text = (result.note.text || "").trim();
+      const words = text.split(/\s+/).slice(0, 8).join(" ");
+      showToast(`Note saved: “${words}${text.length > words.length ? "…" : ""}”`, 4500);
+      notesApi()?.add?.(result.note);
+    } else if (result.reason === "no_speech") {
+      showToast("Nothing heard — note not saved");
+    } else if (result.reason === "empty") {
+      showToast("Too short — note not saved");
+    } else {
+      showToast(`Couldn't save the note: ${result.message || "error"}`, 4500);
+    }
+  }
+  rec.addEventListener("click", () => {
+    if (noteBusy) return;
+    if (isRecordingNote()) void endNote();
+    else void beginNote();
+  });
+}
+
+type NotesApi = { open: () => void; close: () => void; add?: (row: unknown) => void };
+function notesApi(): NotesApi | undefined {
+  return (window as unknown as { HALNotes?: NotesApi }).HALNotes;
+}
+
+// Small transient status line above the input bar (voice-note results).
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+function showToast(text: string, ms = 3000): void {
+  const root = document.getElementById("hal-overlay-root");
+  if (!root) return;
+  let el = root.querySelector<HTMLElement>(".hal-toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "hal-toast";
+    el.setAttribute("role", "status");
+    root.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add("visible");
+  if (toastTimer !== null) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el!.classList.remove("visible"), ms);
 }
 
 function showSettings(cfg: HalConfig): void {
@@ -588,6 +715,18 @@ function gearIcon(): string {
 
 function logIcon(): string {
   return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`;
+}
+
+function notesIcon(): string {
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>`;
+}
+
+function recordIcon(): string {
+  return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4" fill="#e05545" stroke="none"/></svg>`;
+}
+
+function stopIcon(): string {
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
 }
 
 function mirrorIcon(): string {

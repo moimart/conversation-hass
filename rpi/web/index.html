@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="calendar.css">
     <link rel="stylesheet" href="conversation_log.css">
+    <link rel="stylesheet" href="notes.css">
     <link rel="stylesheet" href="timer_overlay.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
@@ -155,6 +156,11 @@
          the left (mirror of the calendar stage). -->
     <div class="clog-stage" id="conversation-log-root" aria-hidden="true">
       <!-- Populated by conversation_log.js on first show_conversation_log -->
+    </div>
+
+    <!-- Voice notes — sibling of the conversation log (same stage + look). -->
+    <div class="notes-stage" id="notes-root" aria-hidden="true">
+      <!-- Populated by notes.js on first show_notes -->
     </div>
 
     <!-- Photo frame — full-screen ambient image with white clock overlay.

@@ -732,6 +732,147 @@ def build_local_tools(state) -> LocalToolsClient:
         hide_conversation_log_tool,
     )
 
+    # --- Voice notes ---------------------------------------------------------
+    # Same routing as the conversation log (phone turn → that phone; else the
+    # kiosk + web mirrors), plus read/delete access to the stored notes.
+
+    async def show_notes_tool(args: dict) -> str:
+        duration_s = args.get("duration_s")
+        try:
+            duration_s = max(5, min(600, int(duration_s))) if duration_s is not None else 30
+        except (TypeError, ValueError):
+            duration_s = 30
+        where = await _conversation_log_targets({"type": "show_notes", "duration_s": duration_s})
+        return f"Voice notes shown on the {where}"
+
+    tools.register(
+        "show_notes",
+        (
+            "Display the full-screen voice notes view — the timestamped list of "
+            "voice notes the user recorded on their devices. Use when the user "
+            "says 'show my notes', 'open my voice notes', 'bring up my notes', "
+            "etc. On the kiosk it auto-dismisses after duration_s (default 30s) "
+            "of no interaction. To READ notes (answer questions about them) use "
+            "list_notes instead."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "duration_s": {"type": "integer", "minimum": 5, "maximum": 600, "description": "Kiosk auto-dismiss after this many idle seconds (default 30)"},
+            },
+        },
+        show_notes_tool,
+    )
+
+    async def hide_notes_tool(_args: dict) -> str:
+        await _conversation_log_targets({"type": "hide_notes"})
+        return "Voice notes hidden"
+
+    tools.register(
+        "hide_notes",
+        "Dismiss the voice notes view. Use when the user says 'hide my notes', 'close the notes', etc.",
+        {"type": "object", "properties": {}},
+        hide_notes_tool,
+    )
+
+    def _notes_store():
+        clog = getattr(state, "conversation_log", None)
+        return clog if clog is not None and getattr(clog, "enabled", False) else None
+
+    async def list_notes_tool(args: dict) -> str:
+        from .routes_notes import format_note_line
+        store = _notes_store()
+        if store is None:
+            return "Voice notes are not available (no database configured)."
+        try:
+            limit = max(1, min(100, int(args.get("limit", 20))))
+        except (TypeError, ValueError):
+            limit = 20
+        query = str(args.get("query") or "").strip() or None
+        try:
+            page = await store.fetch_notes(limit=limit, q=query)
+        except Exception as e:
+            return f"Voice notes are unavailable right now ({type(e).__name__})."
+        rows = list(reversed(page.get("rows") or []))  # newest first
+        if not rows:
+            return f"No voice notes match '{query}'." if query else "There are no voice notes."
+        head = f"{len(rows)} voice note(s), newest first:"
+        return head + "\n" + "\n".join(format_note_line(n) for n in rows)
+
+    tools.register(
+        "list_notes",
+        (
+            "List the user's recorded voice notes (transcribed text), newest "
+            "first. Each line is '#<id> [<YYYY-MM-DD HH:MM>, <device>] <text>'. "
+            "`query` filters by a case-insensitive substring of the text; "
+            "`limit` caps the count (default 20, max 100). Use it to answer "
+            "'what did I note about X', 'read my last note', etc."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20, "description": "Max notes to return (newest first)"},
+                "query": {"type": "string", "description": "Optional case-insensitive text filter"},
+            },
+        },
+        list_notes_tool,
+    )
+
+    async def get_note_tool(args: dict) -> str:
+        from .routes_notes import format_note_line
+        store = _notes_store()
+        if store is None:
+            return "Voice notes are not available (no database configured)."
+        try:
+            note_id = int(args.get("id"))
+        except (TypeError, ValueError):
+            return "I need a numeric note id."
+        try:
+            note = await store.get_note(note_id)
+        except Exception as e:
+            return f"Voice notes are unavailable right now ({type(e).__name__})."
+        if note is None:
+            return f"There is no voice note #{note_id}."
+        dur = note.get("duration_s")
+        extra = f" ({dur:.0f}s recording)" if isinstance(dur, (int, float)) else ""
+        return format_note_line(note) + extra
+
+    tools.register(
+        "get_note",
+        "Get one voice note by its numeric id (as shown by list_notes): timestamp, recording device, and full text.",
+        {
+            "type": "object",
+            "properties": {"id": {"type": "integer", "description": "Note id"}},
+            "required": ["id"],
+        },
+        get_note_tool,
+    )
+
+    async def delete_note_tool(args: dict) -> str:
+        store = _notes_store()
+        if store is None:
+            return "Voice notes are not available (no database configured)."
+        try:
+            note_id = int(args.get("id"))
+        except (TypeError, ValueError):
+            return "I need a numeric note id."
+        try:
+            removed = await store.delete_note(note_id)
+        except Exception as e:
+            return f"Voice notes are unavailable right now ({type(e).__name__})."
+        return f"Deleted voice note #{note_id}." if removed else f"There is no voice note #{note_id}."
+
+    tools.register(
+        "delete_note",
+        "Permanently delete one voice note by its numeric id (as shown by list_notes). Only when the user explicitly asks to delete that note.",
+        {
+            "type": "object",
+            "properties": {"id": {"type": "integer", "description": "Note id"}},
+            "required": ["id"],
+        },
+        delete_note_tool,
+    )
+
     # --- Voice timers --------------------------------------------------------
 
     async def start_timer_tool(args: dict) -> str:

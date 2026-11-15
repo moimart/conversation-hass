@@ -113,6 +113,42 @@ static esp_err_t request(const char *path, esp_http_client_method_t m, const voi
     return err;
 }
 
+esp_err_t pal_post_stream(const char *path, const char *ctype, const char *h1, const char *v1, const char *h2,
+                          const char *v2, int (*next)(char *buf, size_t max), pal_resp_t *out, int timeout_ms)
+{
+    memset(out, 0, sizeof(*out));
+    esp_http_client_handle_t h = open_client(pal_base(), path, HTTP_METHOD_POST, timeout_ms);
+    if (!h) return ESP_FAIL;
+    if (ctype) esp_http_client_set_header(h, "Content-Type", ctype);
+    if (h1) esp_http_client_set_header(h, h1, v1);
+    if (h2) esp_http_client_set_header(h, h2, v2);
+    const size_t cap = 4096;
+    char *buf = heap_caps_malloc(cap + 16, MALLOC_CAP_SPIRAM);
+    esp_err_t err = buf ? esp_http_client_open(h, -1) : ESP_ERR_NO_MEM;   // -1 = chunked
+    bool writing = err == ESP_OK;
+    // the client only sets the header: chunk framing is ours ("<hex>\r\n<data>\r\n" … "0\r\n\r\n")
+    while (writing) {                       // a failed open/write ends the upload early
+        int n = next(buf, cap);
+        if (n < 0) break;
+        if (n == 0) continue;
+        char hdr[12];
+        int hl = snprintf(hdr, sizeof(hdr), "%x\r\n", n);
+        memcpy(buf + n, "\r\n", 2);
+        if (esp_http_client_write(h, hdr, hl) != hl || esp_http_client_write(h, buf, n + 2) != n + 2) {
+            ESP_LOGW(TAG, "%s: upload write failed", path);
+            writing = false;
+            err = ESP_FAIL;
+        }
+    }
+    free(buf);
+    if (writing && esp_http_client_write(h, "0\r\n\r\n", 5) != 5) err = ESP_FAIL;
+    if (err == ESP_OK) err = read_all(h, out);
+    esp_http_client_close(h);
+    esp_http_client_cleanup(h);
+    if (err != ESP_OK) ESP_LOGW(TAG, "%s failed: %s", path, esp_err_to_name(err));
+    return err;
+}
+
 esp_err_t pal_get(const char *path, pal_resp_t *out, int timeout_ms)
 {
     return request(path, HTTP_METHOD_GET, NULL, 0, NULL, NULL, NULL, out, timeout_ms);

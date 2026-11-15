@@ -414,6 +414,8 @@ class MQTTBridge:
         # Conversation log overlay (bare-trigger buttons).
         self.on_conversation_log_show: Callable[[], Awaitable[None]] | None = None
         self.on_conversation_log_hide: Callable[[], Awaitable[None]] | None = None
+        self.on_notes_show: Callable[[], Awaitable[None]] | None = None
+        self.on_notes_hide: Callable[[], Awaitable[None]] | None = None
         # Clear the rolling LLM context (bare-trigger button).
         self.on_context_clear: Callable[[], Awaitable[None]] | None = None
         # Push-to-Talk callbacks. Bare-trigger topics (payload ignored):
@@ -890,6 +892,31 @@ class MQTTBridge:
                 "device": device,
             },
         ))
+        # Voice notes overlay (show + hide).
+        configs.append((
+            f"{DISCOVERY_PREFIX}/button/{self.device_id}/show_notes/config",
+            {
+                "name": "Show Notes",
+                "unique_id": f"{self.device_id}_show_notes",
+                "command_topic": f"{self.base}/notes/show/set",
+                "payload_press": "",
+                "icon": "mdi:note-text-outline",
+                "availability": avail,
+                "device": device,
+            },
+        ))
+        configs.append((
+            f"{DISCOVERY_PREFIX}/button/{self.device_id}/hide_notes/config",
+            {
+                "name": "Hide Notes",
+                "unique_id": f"{self.device_id}_hide_notes",
+                "command_topic": f"{self.base}/notes/hide/set",
+                "payload_press": "",
+                "icon": "mdi:note-off-outline",
+                "availability": avail,
+                "device": device,
+            },
+        ))
         configs.append((
             f"{DISCOVERY_PREFIX}/button/{self.device_id}/clear_context/config",
             {
@@ -1071,6 +1098,8 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/calendar/hide/set")
                     await client.subscribe(f"{self.base}/conversation_log/show/set")
                     await client.subscribe(f"{self.base}/conversation_log/hide/set")
+                    await client.subscribe(f"{self.base}/notes/show/set")
+                    await client.subscribe(f"{self.base}/notes/hide/set")
                     await client.subscribe(f"{self.base}/context/clear/set")
                     await client.subscribe(f"{self.base}/ptt/start")
                     await client.subscribe(f"{self.base}/ptt/end")
@@ -1220,6 +1249,14 @@ class MQTTBridge:
             elif topic == f"{self.base}/conversation_log/hide/set":
                 if self.on_conversation_log_hide:
                     await self.on_conversation_log_hide()
+
+            elif topic == f"{self.base}/notes/show/set":
+                if self.on_notes_show:
+                    await self.on_notes_show()
+
+            elif topic == f"{self.base}/notes/hide/set":
+                if self.on_notes_hide:
+                    await self.on_notes_hide()
 
             elif topic == f"{self.base}/context/clear/set":
                 if self.on_context_clear:

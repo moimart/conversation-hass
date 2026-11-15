@@ -45,7 +45,7 @@ static void pmu_task(void *arg)
             if (st & IRQ2_PKEY_SHORT) app_post(EV_PWR_SHORT);
             if (st & IRQ2_PKEY_LONG) app_post(EV_PWR_LONG);
         }
-        vTaskDelay(pdMS_TO_TICKS(150));
+        vTaskDelay(pdMS_TO_TICKS(60));   // fast enough to see both presses of a double press
     }
 }
 
