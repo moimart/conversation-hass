@@ -24,6 +24,8 @@ ui_choices_t g_choices;
 static lv_obj_t *s_tv, *s_home, *s_box, *s_clockpage, *s_weather_lbl;
 static void box_sync(void);
 static void box_style(void);
+static lv_obj_t *s_batt_ic, *s_batt_t;
+static int s_batt_shown = -2;
 static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
 static lv_obj_t *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_shield;
 static lv_obj_t *s_vol, *s_bright, *s_info, *s_update_btn;
@@ -228,6 +230,44 @@ static void build_clock_page(void)
     lv_obj_add_flag(s_weather_ic, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_weather_t, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_weather_lbl, LV_OBJ_FLAG_HIDDEN);
+    // battery level, top centre (hidden on USB-only power)
+    s_batt_ic = mk_label(s_clockpage, g_fonts.icon22, g_theme.accent, "");
+    s_batt_t = mk_label(s_clockpage, g_fonts.text20, g_theme.text_dim, "");
+    lv_obj_add_flag(s_batt_ic, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_batt_t, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void batt_sync(void)
+{
+    int pct = pmu_battery_pct();
+    bool chg = pct >= 0 && pmu_charging();
+    int key = pct < 0 ? -1 : pct * 2 + chg;
+    if (key == s_batt_shown) return;
+    s_batt_shown = key;
+    if (pct < 0) {
+        lv_obj_add_flag(s_batt_ic, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_batt_t, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    uint32_t icon = chg ? ICON_BATTERY_CHARGING
+                  : pct >= 95 ? ICON_BATTERY
+                  : pct >= 80 ? ICON_BATTERY_90
+                  : pct >= 60 ? ICON_BATTERY_70
+                  : pct >= 40 ? ICON_BATTERY_50
+                  : pct >= 25 ? ICON_BATTERY_30
+                  : pct >= 15 ? ICON_BATTERY_20
+                  : pct >= 8 ? ICON_BATTERY_10 : ICON_BATTERY_ALERT;
+    char ic[6];
+    lv_label_set_text(s_batt_ic, mdi(icon, ic));
+    lv_label_set_text_fmt(s_batt_t, "%d%%", pct);
+    lv_color_t c = (pct <= 15 && !chg) ? lv_color_hex(0xFF6B6B) : g_theme.accent;
+    lv_obj_set_style_text_color(s_batt_ic, c, 0);
+    lv_obj_remove_flag(s_batt_ic, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(s_batt_t, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_update_layout(s_clockpage);
+    int w = lv_obj_get_width(s_batt_ic) + 6 + lv_obj_get_width(s_batt_t);
+    lv_obj_align(s_batt_ic, LV_ALIGN_CENTER, -w / 2 + lv_obj_get_width(s_batt_ic) / 2, -150);
+    lv_obj_align_to(s_batt_t, s_batt_ic, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
 }
 
 // --- settings ----------------------------------------------------------------------
@@ -818,6 +858,7 @@ void ui_tick(void)
         s_text_set_at = 0;
     }
     ui_set_status();
+    if (s_screen_on) batt_sync();
     // screen timeout (never while something is happening)
     if (s_screen_on && g_settings.screen_timeout_s && s_state == PAL_IDLE && !audio_playing() && !s_pair && !s_setup &&
         !s_ota && esp_timer_get_time() - s_last_activity > (int64_t)g_settings.screen_timeout_s * 1000000LL) {
@@ -945,6 +986,8 @@ void ui_apply_theme(void)
     lv_obj_set_style_text_color(s_date, g_theme.accent, 0);
     lv_obj_set_style_text_color(s_weather_ic, g_theme.accent, 0);
     lv_obj_set_style_text_color(s_weather_t, g_theme.text, 0);
+    lv_obj_set_style_text_color(s_batt_t, g_theme.text_dim, 0);
+    s_batt_shown = -2;   // re-colour the icon on the next tick
     lv_obj_set_style_text_color(s_said, g_theme.text_dim, 0);
     lv_obj_set_style_text_color(s_reply, g_theme.text, 0);
     lv_obj_set_style_text_color(s_hint, g_theme.text_dim, 0);

@@ -792,7 +792,12 @@ static void app_task(void *arg)
                 ui_tick();
                 pal_unlock();
             }
-            if (s_ticks % 25 == 0) ws_send_text("{\"type\":\"ping\"}");
+            if (s_ticks % 25 == 0) {
+                char ping[64];
+                snprintf(ping, sizeof(ping), "{\"type\":\"ping\",\"battery\":%d,\"charging\":%s}", pmu_battery_pct(),
+                         pmu_charging() ? "true" : "false");
+                ws_send_text(ping);
+            }
             if (s_ticks % 10 == 0)
                 ESP_LOGI(TAG, "heap: internal %u (largest dma %u)", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                          (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));

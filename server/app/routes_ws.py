@@ -458,6 +458,18 @@ async def ptt_endpoint(websocket: WebSocket):
         log.warning(f"PTT WebSocket error: {e}")
 
 
+def _note_battery(state, name: str, pct: int, charging: bool) -> None:
+    """Satellites with a battery (the PAL Round) report it in their pings.
+    Kept on state.device_battery and logged when it changes."""
+    if not hasattr(state, "device_battery"):
+        state.device_battery = {}
+    prev = state.device_battery.get(name)
+    cur = {"battery": pct, "charging": charging}
+    state.device_battery[name] = cur
+    if prev != cur and pct >= 0:
+        log.info(f"battery {name}: {pct}%{' (charging)' if charging else ''}")
+
+
 @router.websocket("/ws/ui")
 async def ui_endpoint(websocket: WebSocket):
     """WebSocket for the web UI to receive live transcription and state updates."""
@@ -552,6 +564,9 @@ async def ui_endpoint(websocket: WebSocket):
             mtype = msg.get("type")
             if mtype == "ping":
                 await websocket.send_json({"type": "pong"})
+                if is_satellite and isinstance(msg.get("battery"), int):
+                    _note_battery(state, state.pairing.device_name(token) or "satellite",
+                                  msg["battery"], bool(msg.get("charging")))
             elif mtype == "webrtc_signal" and is_satellite:
                 # A satellite consuming a fanned-out live stream. Two stream kinds:
                 #   rtsp — go2rtc, stateless per-offer (non-trickle): negotiate the
