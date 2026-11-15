@@ -68,6 +68,7 @@ void net_start(void)
     strlcpy((char *)wc.sta.password, g_settings.wifi_pass, sizeof(wc.sta.password));
     wc.sta.threshold.authmode = g_settings.wifi_pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
     wc.sta.pmf_cfg.capable = true;
+    wc.sta.listen_interval = 3;   // used only in MAX_MODEM (screen off): wake every 3rd beacon
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_set_config(WIFI_IF_STA, &wc);
     esp_wifi_start();
@@ -76,6 +77,13 @@ void net_start(void)
 }
 
 bool net_is_up(void) { return s_up; }
+
+void net_power_save(bool deep)
+{
+    // screen on: wake for every DTIM beacon (snappy); screen off: every 3rd
+    // beacon (~300 ms). The socket stays up either way.
+    esp_wifi_set_ps(deep ? WIFI_PS_MAX_MODEM : WIFI_PS_MIN_MODEM);
+}
 
 int net_rssi(void)
 {

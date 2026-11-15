@@ -119,6 +119,7 @@ static bool on_no_swipe(lv_obj_t *o)
 // enough sideways, jump one page and ignore the rest of the touch (no click).
 static lv_indev_t *s_indev;
 static bool s_was_pressed;
+static lv_timer_t *s_swipe_timer, *s_anim_timer;
 
 static void swipe_poll(lv_timer_t *t)
 {
@@ -481,17 +482,21 @@ void ui_settings_refresh(void)
                           pal_base(), g_settings.wifi_ssid, net_rssi(), batt);
 }
 
+static void orb_sync_active(void);
+
 void ui_settings_open(void)
 {
     ui_settings_refresh();
     lv_tileview_set_tile_by_index(s_set_tv, 0, 0, LV_ANIM_OFF);
     dots_cb(NULL);
     lv_obj_remove_flag(s_set, LV_OBJ_FLAG_HIDDEN);
+    orb_sync_active();
 }
 
 void ui_settings_close(void)
 {
     if (s_set) lv_obj_add_flag(s_set, LV_OBJ_FLAG_HIDDEN);
+    orb_sync_active();
 }
 
 
@@ -766,6 +771,7 @@ static void timer_anim(lv_timer_t *t)
 
 void ui_tick(void)
 {
+    orb_sync_active();   // overlays (setup, pairing, update) come and go
     if (net_time_valid()) {
         time_t now = time(NULL);
         struct tm tm;
@@ -803,13 +809,31 @@ static void shield_cb(lv_event_t *e)
     }
 }
 
+// The orb only decodes while someone can see it: screen on, home page, no
+// overlay on top. Video decoding is the biggest CPU load on the device.
+static void orb_sync_active(void)
+{
+    bool covered = (s_set && !lv_obj_has_flag(s_set, LV_OBJ_FLAG_HIDDEN)) || s_setup || s_pair || s_ota;
+    orb_set_active(s_screen_on && !covered && lv_tileview_get_tile_active(s_tv) == s_home);
+}
+
+static void tile_changed(lv_event_t *e) { orb_sync_active(); }
+
+static void brightness_restore(lv_timer_t *t)
+{
+    if (s_screen_on) bsp_display_brightness_set(g_settings.brightness);
+}
+
+// Screen off = panel in deep standby, LVGL stops drawing (no invalidation),
+// its timers slow down (touch still polled, to wake), the orb stops, and
+// Wi-Fi drops to a deeper modem sleep. The PAL socket stays connected.
 void ui_screen_sleep(void)
 {
     if (!s_screen_on) return;
     s_screen_on = false;
     ui_settings_close();
-    orb_set_active(false);
-    bsp_display_brightness_set(0);
+    lv_tileview_set_tile(s_tv, s_home, LV_ANIM_OFF);
+    orb_sync_active();
     if (!s_shield) {
         s_shield = lv_obj_create(lv_layer_sys());
         lv_obj_remove_style_all(s_shield);
@@ -817,7 +841,19 @@ void ui_screen_sleep(void)
         lv_obj_add_flag(s_shield, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(s_shield, shield_cb, LV_EVENT_ALL, NULL);
     }
-    lv_tileview_set_tile(s_tv, s_home, LV_ANIM_OFF);
+    lv_display_t *d = lv_display_get_default();
+    lv_display_enable_invalidation(d, false);
+    lv_timer_t *rt = lv_display_get_refr_timer(d);
+    if (rt) lv_timer_set_period(rt, 500);
+    if (s_swipe_timer) lv_timer_pause(s_swipe_timer);
+    if (s_anim_timer) lv_timer_pause(s_anim_timer);
+    if (s_indev) {
+        lv_timer_t *it = lv_indev_get_read_timer(s_indev);
+        if (it) lv_timer_set_period(it, 100);
+    }
+    bsp_display_brightness_set(0);
+    bsp_display_power(false);
+    net_power_save(true);
     ESP_LOGI(TAG, "screen off");
 }
 
@@ -826,9 +862,26 @@ void ui_screen_wake(void)
     ui_activity();
     if (s_screen_on) return;
     s_screen_on = true;
-    orb_set_active(true);
-    bsp_display_brightness_set(g_settings.brightness);
+    net_power_save(false);
+    bsp_display_power(true);   // panel RAM was lost: redraw everything, then light it
+    lv_display_t *d = lv_display_get_default();
+    lv_display_enable_invalidation(d, true);
+    lv_timer_t *rt = lv_display_get_refr_timer(d);
+    if (rt) lv_timer_set_period(rt, LV_DEF_REFR_PERIOD);
+    if (s_indev) {
+        lv_timer_t *it = lv_indev_get_read_timer(s_indev);
+        if (it) lv_timer_set_period(it, LV_DEF_REFR_PERIOD);   // LVGL's default read period
+    }
+    if (s_swipe_timer) lv_timer_resume(s_swipe_timer);
+    if (s_anim_timer) lv_timer_resume(s_anim_timer);
+    lv_obj_invalidate(lv_screen_active());
+    lv_obj_invalidate(lv_layer_top());
+    lv_obj_invalidate(lv_layer_sys());
+    lv_timer_t *bt = lv_timer_create(brightness_restore, 120, NULL);
+    lv_timer_set_repeat_count(bt, 1);
+    orb_sync_active();
     ui_tick();
+    ESP_LOGI(TAG, "screen on");
 }
 
 bool ui_screen_on(void) { return s_screen_on; }
@@ -868,12 +921,13 @@ void ui_init(void)
     make_jumpy(s_tv);
     build_home();
     build_settings();
-    lv_timer_create(timer_anim, 250, NULL);
+    s_anim_timer = lv_timer_create(timer_anim, 250, NULL);
+    lv_obj_add_event_cb(s_tv, tile_changed, LV_EVENT_VALUE_CHANGED, NULL);
     lv_indev_t *indev = bsp_display_get_input_dev();
     if (indev) {
         lv_indev_add_event_cb(indev, indev_cb, LV_EVENT_PRESSED, NULL);
         s_indev = indev;
-        lv_timer_create(swipe_poll, 30, NULL);
+        s_swipe_timer = lv_timer_create(swipe_poll, 30, NULL);
     }
     ui_activity();
 }

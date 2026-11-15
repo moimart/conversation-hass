@@ -3,6 +3,7 @@
 #pragma once
 #include "esp_lcd_types.h"
 #include "esp_err.h"
+#include <stdbool.h>
 
 /* LCD color formats */
 #define ESP_LCD_COLOR_FORMAT_RGB565    (1)
@@ -115,6 +116,9 @@ esp_err_t bsp_display_backlight_on(void);
  *      - ESP_ERR_INVALID_ARG   Parameter error
  */
 esp_err_t bsp_display_backlight_off(void);
+
+/** PAL: panel deep standby (false) / wake + re-init (true). */
+esp_err_t bsp_display_power(bool on);
 
 #ifdef __cplusplus
 }

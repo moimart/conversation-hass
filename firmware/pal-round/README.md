@@ -71,7 +71,15 @@ echo 0.1.1 > server/runtime/firmware/pal-round/version   # = CONFIG_APP_PROJECT_
 ## Notes
 
 - **Fonts:** Inter for text and Material Design Icons (the set Home Assistant uses)
-  are embedded as TTFs and rendered with FreeType at runtime. The icon names the
+  are embedded as TTFs and rendered with tiny_ttf at runtime. The icon names the
   server may send are in `tools/icon_names.txt`. Run `tools/gen_icons.py` to
   regenerate `main/icons.h` + `server/app/device_icons.py`.
 - **Audio:** everything runs at 16 kHz mono 16-bit on one full-duplex I2S port.
+- **Power:** dynamic frequency scaling (240 ↔ 40 MHz) with automatic light sleep;
+  Wi-Fi modem sleep keeps the PAL socket up (every DTIM beacon with the screen on,
+  every 3rd with it off). Screen off = the panel in deep standby, LVGL not drawing,
+  the orb stopped; the codecs and speaker amp are powered only while recording or
+  playing; the orb only decodes on the home page. LVGL's clock comes from
+  `esp_timer` (no 1 ms tick timer). Light sleep is held off while a USB host is
+  attached (so the console works). Console `pm` / `top` show lock and per-task
+  CPU time; `beep` / `rec` test the speaker / mic.

@@ -6,6 +6,11 @@
 // speech, at 15 s, or when the caller stops it (button release / second tap).
 // Playback takes a whole WAV (TTS replies are short) and streams it out in
 // chunks so it can be interrupted.
+//
+// Power: both codecs (and the speaker amplifier, via the ES8311's PA pin) are
+// only open while in use. The mic opens per recording; the speaker opens for a
+// playback and closes 1.5 s after the queue runs dry. A closed I2S channel also
+// releases its PM lock, so the chip can light-sleep.
 #include <math.h>
 #include <string.h>
 #include "app.h"
@@ -36,6 +41,34 @@ static volatile float s_level;
 static TaskHandle_t s_rec_task;
 static QueueHandle_t s_play_q;
 static SemaphoreHandle_t s_dev_lock;
+static bool s_spk_open;
+static int s_volume = 70;
+
+static const esp_codec_dev_sample_info_t FS = {
+    .sample_rate = PAL_SAMPLE_RATE, .channel = 1, .bits_per_sample = 16,
+};
+
+// open/close the two halves of the shared full-duplex port one at a time
+static bool dev_open(esp_codec_dev_handle_t dev)
+{
+    xSemaphoreTake(s_dev_lock, portMAX_DELAY);
+    esp_codec_dev_sample_info_t fs = FS;
+    bool ok = esp_codec_dev_open(dev, &fs) == ESP_CODEC_DEV_OK;
+    if (ok && dev == s_mic) esp_codec_dev_set_in_gain(s_mic, 30.0f);
+    if (ok && dev == s_spk) esp_codec_dev_set_out_vol(s_spk, s_volume);
+    xSemaphoreGive(s_dev_lock);
+    if (!ok) ESP_LOGE(TAG, "%s open failed", dev == s_mic ? "mic" : "speaker");
+    return ok;
+}
+
+static void dev_close(esp_codec_dev_handle_t dev)
+{
+    xSemaphoreTake(s_dev_lock, portMAX_DELAY);
+    esp_codec_dev_close(dev);
+    bool other_open = dev == s_mic ? s_spk_open : s_rec_on;
+    if (!other_open) bsp_audio_idle();
+    xSemaphoreGive(s_dev_lock);
+}
 
 typedef struct { uint8_t *buf; size_t len; bool notify; } play_job_t;
 
@@ -54,6 +87,11 @@ static void rec_task(void *arg)
     while (true) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         s_rec_n = 0;
+        if (!dev_open(s_mic)) {
+            s_rec_on = false;
+            app_post(EV_REC_DONE);
+            continue;
+        }
         float noise = 0;
         int noise_frames = 0, silence_ms = 0, total_ms = 0;
         bool speech = false;
@@ -85,6 +123,7 @@ static void rec_task(void *arg)
                 if (!speech && total_ms >= 6000) { s_rec_n = 0; break; }
             }
         }
+        dev_close(s_mic);
         if (!speech && s_rec_vad) s_rec_n = 0;
         ESP_LOGI(TAG, "recorded %u samples (speech=%d)", (unsigned)s_rec_n, speech);
         s_level = 0;
@@ -142,13 +181,18 @@ static void play_task(void *arg)
 {
     play_job_t job;
     while (true) {
-        if (xQueueReceive(s_play_q, &job, portMAX_DELAY) != pdTRUE) continue;
+        if (xQueueReceive(s_play_q, &job, s_spk_open ? pdMS_TO_TICKS(1500) : portMAX_DELAY) != pdTRUE) {
+            dev_close(s_spk);           // idle: codec + amplifier off
+            s_spk_open = false;
+            continue;
+        }
+        if (!s_spk_open) s_spk_open = dev_open(s_spk);
         const uint8_t *pcm;
         size_t n;
         int rate, ch;
         s_play_on = true;
         s_play_stop = false;
-        if (wav_pcm(job.buf, job.len, &pcm, &n, &rate, &ch)) {
+        if (s_spk_open && wav_pcm(job.buf, job.len, &pcm, &n, &rate, &ch)) {
             if (rate != PAL_SAMPLE_RATE || ch != 1) {
                 ESP_LOGW(TAG, "wav %d Hz x%d (expected 16 kHz mono) — playing anyway", rate, ch);
             }
@@ -229,31 +273,25 @@ void audio_beep(int kind)
 
 void audio_set_volume(int vol)
 {
-    if (s_spk) esp_codec_dev_set_out_vol(s_spk, vol < 0 ? 0 : (vol > 100 ? 100 : vol));
+    s_volume = vol < 0 ? 0 : (vol > 100 ? 100 : vol);
+    if (s_spk && s_spk_open) esp_codec_dev_set_out_vol(s_spk, s_volume);
 }
 
 void audio_init(void)
 {
     s_dev_lock = xSemaphoreCreateMutex();
+    // opening/closing channels that are already in that state logs a harmless
+    // "channel has not been enabled yet" error on every power-down
+    esp_log_level_set("i2s_common", ESP_LOG_NONE);
     s_rec = heap_caps_malloc(REC_MAX * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     s_play_q = xQueueCreate(4, sizeof(play_job_t));
     s_spk = bsp_audio_codec_speaker_init();
     s_mic = bsp_audio_codec_microphone_init();
-    esp_codec_dev_sample_info_t fs = {
-        .sample_rate = PAL_SAMPLE_RATE, .channel = 1, .bits_per_sample = 16,
-    };
-    if (s_spk && esp_codec_dev_open(s_spk, &fs) != ESP_CODEC_DEV_OK) {
-        ESP_LOGE(TAG, "speaker open failed");
-        s_spk = NULL;
-    }
-    if (s_mic) {
-        if (esp_codec_dev_open(s_mic, &fs) != ESP_CODEC_DEV_OK) {
-            ESP_LOGE(TAG, "mic open failed");
-            s_mic = NULL;
-        } else {
-            esp_codec_dev_set_in_gain(s_mic, 30.0f);
-        }
-    }
+    // probe both once, then leave them closed until needed
+    if (s_spk && !dev_open(s_spk)) s_spk = NULL;
+    if (s_spk) dev_close(s_spk);
+    if (s_mic && !dev_open(s_mic)) s_mic = NULL;
+    if (s_mic) dev_close(s_mic);
     audio_set_volume(g_settings.volume);
     xTaskCreatePinnedToCoreWithCaps(rec_task, "rec", 4096, NULL, 6, &s_rec_task, 1, MALLOC_CAP_SPIRAM);
     xTaskCreatePinnedToCoreWithCaps(play_task, "play", 4096, NULL, 6, NULL, 1, MALLOC_CAP_SPIRAM);

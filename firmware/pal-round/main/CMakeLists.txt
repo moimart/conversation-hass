@@ -6,5 +6,5 @@ idf_component_register(
     EMBED_FILES "assets/inter.ttf" "assets/mdi.ttf"
     REQUIRES json nvs_flash esp_wifi esp_netif esp_event esp_http_client esp_http_server app_update
              esp_app_format esp_timer fatfs wear_levelling driver esp_driver_gpio esp_driver_usb_serial_jtag
-             esp_driver_i2c lwip mbedtls esp_psram esp32_s3_touch_amoled_1_75c
+             esp_driver_i2c esp_pm lwip mbedtls esp_psram esp32_s3_touch_amoled_1_75c
 )

@@ -147,6 +147,9 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void);
  */
 esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void);
 
+/** PAL: disable both I2S channels while no codec is open (saves power). */
+void bsp_audio_idle(void);
+
 /**************************************************************************************************
  *
  * SPIFFS

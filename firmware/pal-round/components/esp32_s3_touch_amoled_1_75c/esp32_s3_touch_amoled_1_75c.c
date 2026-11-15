@@ -5,6 +5,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_check.h"
 #include "esp_spiffs.h"
 #include "driver/gpio.h"
@@ -334,6 +335,30 @@ int bsp_display_brightness_get(void)
     return brightness * 100 / 255;
 }
 
+// PAL: stop both I2S channels (clocks + their PM locks) while neither codec is
+// open. esp_codec_dev re-enables TX to clock the mic and never turns it off.
+void bsp_audio_idle(void)
+{
+    if (i2s_tx_chan) i2s_channel_disable(i2s_tx_chan);   // INVALID_STATE if already off: fine
+    if (i2s_rx_chan) i2s_channel_disable(i2s_rx_chan);
+}
+
+// PAL: real panel power-down. Off = display off + sleep-in + deep standby
+// (panel RAM is lost); on = reset + re-init + display on. Brightness is the
+// caller's to restore, and LVGL must redraw everything afterwards.
+esp_err_t bsp_display_power(bool on)
+{
+    if (panel_handle == NULL) return ESP_ERR_INVALID_STATE;
+    if (on) {
+        esp_err_t err = esp_lcd_panel_disp_sleep(panel_handle, false);
+        esp_lcd_panel_set_gap(panel_handle, 0x06, 0);
+        esp_lcd_panel_disp_on_off(panel_handle, true);
+        return err;
+    }
+    esp_lcd_panel_disp_on_off(panel_handle, false);
+    return esp_lcd_panel_disp_sleep(panel_handle, true);
+}
+
 esp_err_t bsp_display_backlight_off(void)
 {
     ESP_LOGI(TAG, "Backlight off");
@@ -529,12 +554,18 @@ lv_display_t *bsp_display_start(void)
 }
 
 
+// PAL: LVGL reads its clock from esp_timer instead of a 1 ms periodic tick
+// timer (1000 wake-ups a second would keep the chip out of light sleep).
+static uint32_t pal_lv_tick(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+
 lv_display_t *bsp_display_start_with_config(bsp_display_cfg_t *cfg)
 {
     lv_display_t *disp;
 
     assert(cfg != NULL);
+    cfg->lv_adapter_cfg.tick_period_ms = 1000;   // the adapter's timer becomes a harmless 1 Hz no-op
     BSP_ERROR_CHECK_RETURN_NULL(esp_lv_adapter_init(&cfg->lv_adapter_cfg));
+    lv_tick_set_cb(pal_lv_tick);
 
     BSP_NULL_CHECK(disp = bsp_display_lcd_init(cfg), NULL);
 

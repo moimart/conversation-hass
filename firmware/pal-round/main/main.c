@@ -18,6 +18,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_ota_ops.h"
+#include "esp_pm.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_vfs_fat.h"
@@ -518,27 +519,30 @@ static void do_action(const char *a)
 
 // --- buttons -------------------------------------------------------------------------------
 
-static void IRAM_ATTR boot_isr(void *arg)
+// BOOT is polled (40 ms) instead of interrupt-driven: GPIO edge interrupts are
+// lost while the chip light-sleeps, and a poll wakes it anyway.
+static void buttons_task(void *arg)
 {
-    static int64_t last;
-    int64_t now = esp_timer_get_time();
-    if (now - last < 30000) return;   // debounce
-    last = now;
-    app_event_t e = {.type = gpio_get_level(BOOT_BTN) == 0 ? EV_PTT_PRESS : EV_PTT_RELEASE};
-    BaseType_t woken = pdFALSE;
-    if (s_q) xQueueSendFromISR(s_q, &e, &woken);
-    if (woken) portYIELD_FROM_ISR();
+    int prev = 1, stable = 1;
+    while (true) {
+        int lvl = gpio_get_level(BOOT_BTN);
+        if (lvl == prev && lvl != stable) {   // two equal samples = debounced
+            stable = lvl;
+            app_post(lvl == 0 ? EV_PTT_PRESS : EV_PTT_RELEASE);
+        }
+        prev = lvl;
+        vTaskDelay(pdMS_TO_TICKS(40));
+    }
 }
 
 static void buttons_init(void)
 {
     gpio_config_t c = {
         .pin_bit_mask = 1ULL << BOOT_BTN, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE,
-        .intr_type = GPIO_INTR_ANYEDGE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&c);
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(BOOT_BTN, boot_isr, NULL);
+    xTaskCreateWithCaps(buttons_task, "btn", 2560, NULL, 6, NULL, MALLOC_CAP_SPIRAM);
 }
 
 static void tick_cb(void *arg) { app_post(EV_TICK); }
@@ -648,14 +652,22 @@ void app_main(void)
     snprintf(s_devname, sizeof(s_devname), "PAL Round %02X%02X", mac[4], mac[5]);
     ESP_LOGI(TAG, "%s firmware %s", s_devname, pal_fw_version());
 
+    // Dynamic frequency scaling + automatic light sleep: the CPU runs at 240 MHz
+    // only while a task is busy, drops to 40 MHz otherwise, and light-sleeps when
+    // every task is waiting (Wi-Fi stays associated through modem sleep). While a
+    // USB host is attached, light sleep is held off so the serial console works.
+    esp_pm_config_t pm = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
+    esp_err_t pm_err = esp_pm_configure(&pm);
+    if (pm_err != ESP_OK) ESP_LOGW(TAG, "power management: %s", esp_err_to_name(pm_err));
+
     s_q = xQueueCreate(32, sizeof(app_event_t));
     settings_load();
     storage_init();
 
     bsp_display_start();
-    bsp_display_brightness_set(g_settings.brightness);
     fonts_init();
     if (pal_lock()) {
+        bsp_display_brightness_set(g_settings.brightness);   // under the lock: not mid-flush
         ui_init();
         ui_settings_refresh();
         pal_unlock();

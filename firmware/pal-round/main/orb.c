@@ -131,7 +131,7 @@ static void player_task(void *arg)
     bool still_done = false;
     while (true) {
         if (!s_active || !s_have_clips) {
-            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(250));
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   // woken by set_active / a new manifest
             continue;
         }
         int64_t t0 = esp_timer_get_time();
@@ -317,6 +317,7 @@ void orb_set_state(pal_state_t st)
 
 void orb_set_active(bool on)
 {
+    if (on == s_active) return;
     s_active = on;
     if (s_native_timer) {
         if (on) lv_timer_resume(s_native_timer);

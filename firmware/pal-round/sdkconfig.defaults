@@ -73,3 +73,20 @@ CONFIG_FREERTOS_USE_TRACE_FACILITY=y
 # Internal RAM is tight (Wi-Fi + DMA bounce buffers): big stacks go to PSRAM
 CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
 CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y
+
+# Power: DFS + automatic light sleep (configured in app_main), tickless idle.
+# No auto light sleep while a USB host is attached (keeps the serial console alive).
+CONFIG_PM_ENABLE=y
+CONFIG_PM_PROFILING=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
+# GPIOs keep their state in light sleep (panel reset, amp enable, I2S)
+# CONFIG_PM_SLP_DISABLE_GPIO is not set
+# keep the sleep path out of IRAM: internal RAM is what Wi-Fi + display DMA need
+# CONFIG_PM_SLP_IRAM_OPT is not set
+# CONFIG_PM_RTOS_IDLE_OPT is not set
+# CPU power-down in light sleep needs ~35 KB of internal RAM for retention: off
+# CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP is not set
+# console "top": per-task CPU time
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y

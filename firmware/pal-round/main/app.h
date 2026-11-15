@@ -79,6 +79,7 @@ typedef enum { PAL_IDLE, PAL_LISTENING, PAL_PROCESSING, PAL_SPEAKING } pal_state
 
 void net_start(void);
 bool net_is_up(void);
+void net_power_save(bool deep);                  // deeper Wi-Fi modem sleep (screen off)
 int net_rssi(void);
 bool net_discover_pal(char *base, size_t len);   // _pal._tcp → http://ip:port
 void net_set_tz(const char *posix_tz);
