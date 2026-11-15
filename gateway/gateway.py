@@ -49,6 +49,12 @@ TRUST_CF_IP = os.environ.get("TRUST_CF_IP", "1").strip().lower() in ("1", "true"
 # Store reviewer can pair over the internet (a token can normally only be minted
 # on the LAN). OFF by default — real deployments keep pairing home-side.
 ALLOW_PAIR_REDEEM = os.environ.get("GATEWAY_ALLOW_PAIR_REDEEM", "").strip().lower() in ("1", "true", "yes", "on")
+# Remote MCP for Claude connectors (server: oauth_mcp.py, PAL_REMOTE_MCP=1).
+# OFF by default. When on, the OAuth endpoints + /mcp are exposed WITHOUT a
+# pairing token: the SERVER enforces OAuth on /mcp (it must answer 401 with
+# WWW-Authenticate itself, or Claude can't discover the auth server), and an
+# authorization can only be approved with a code shown on a PAL screen.
+ALLOW_MCP = os.environ.get("GATEWAY_ALLOW_MCP", "").strip().lower() in ("1", "true", "yes", "on")
 
 # Hop-by-hop headers that must not be forwarded verbatim.
 _HOP_HEADERS = {
@@ -133,7 +139,33 @@ if ALLOW_PAIR_REDEEM:
     # Pre-auth: the redeem body's (demo) code is the gate, so no token here.
     _ALLOWLIST.append(("POST", r"^/api/pair/redeem$", False, False))
     log.info("gateway: /api/pair/redeem allowlisted (GATEWAY_ALLOW_PAIR_REDEEM)")
+# Public path -> upstream path (the public MCP URL is <gateway>/mcp; the LAN
+# server's own /mcp is the unauthenticated LAN MCP and must never be reached).
+_REWRITES: dict[str, str] = {}
+if ALLOW_MCP:
+    _ALLOWLIST += [
+        ("GET",    r"^/\.well-known/oauth-protected-resource(/mcp)?$", False, False),
+        ("GET",    r"^/\.well-known/oauth-authorization-server$",      False, False),
+        ("POST",   r"^/oauth/register$",                               False, False),
+        ("GET",    r"^/oauth/authorize$",                              False, False),
+        ("POST",   r"^/oauth/authorize$",                              False, False),
+        ("POST",   r"^/oauth/token$",                                  False, False),
+        ("POST",   r"^/mcp$",                                          False, True),
+        ("GET",    r"^/mcp$",                                          False, True),
+        ("DELETE", r"^/mcp$",                                          False, False),
+    ]
+    _REWRITES["/mcp"] = "/remote-mcp/mcp"
+    log.info("gateway: remote MCP + OAuth allowlisted (GATEWAY_ALLOW_MCP)")
 _ALLOWLIST = [(m, re.compile(p), a, s) for (m, p, a, s) in _ALLOWLIST]
+
+
+def _upstream_path(request) -> str:
+    """rel_url with any public→upstream path rewrite applied."""
+    path = _REWRITES.get(request.path)
+    if path is None:
+        return str(request.rel_url)
+    qs = request.query_string
+    return path + (f"?{qs}" if qs else "")
 
 # Allowlisted upload routes whose request body is STREAMED to the upstream
 # (chunk by chunk, never held whole in memory) with their own byte cap, and a
@@ -307,7 +339,7 @@ class Gateway:
             log.info(f"401 {request.method} {request.path} from {ip}")
             return web.Response(status=401, text="unauthorized")
 
-        target = f"{AI_SERVER_URL}{request.rel_url}"
+        target = f"{AI_SERVER_URL}{_upstream_path(request)}"
         headers = _forward_headers(request)
         session = await self._ensure_session()
         upload = next(((cap, tmo) for (m, rx, cap, tmo) in _STREAM_UPLOADS

@@ -65,17 +65,20 @@
         if (timer) { clearInterval(timer); timer = null; }
     }
 
-    function show(code, expiresIn) {
+    // `title` / `hint` are optional: the same overlay shows the code that
+    // approves a remote MCP connector ("Connect Claude").
+    function show(code, expiresIn, title, hint) {
         var doc = document;
         ensureDom(doc);
         clearTimer();
+        var t = root.querySelector(".hal-pair-title");
+        if (t) t.textContent = title || "Pair your device";
+        var lead = hint || "Enter this code in the app";
         codeEl.textContent = String(code || "------");
         var remaining = parseInt(expiresIn, 10);
         if (!isFinite(remaining) || remaining <= 0) remaining = 0;
         function render() {
-            countEl.textContent = remaining > 0
-                ? "Enter this code in the app · " + remaining + "s"
-                : "Enter this code in the app";
+            countEl.textContent = remaining > 0 ? lead + " · " + remaining + "s" : lead;
         }
         render();
         root.classList.add("visible");

@@ -1129,7 +1129,7 @@
             case "show_pairing_code":
                 // Mobile device pairing: the server minted a code; show it
                 // fullscreen so the user can type it into the companion app.
-                if (window.HALPairingOverlay) window.HALPairingOverlay.show(msg.code, msg.expires_in);
+                if (window.HALPairingOverlay) window.HALPairingOverlay.show(msg.code, msg.expires_in, msg.title, msg.hint);
                 break;
             case "hide_pairing_code":
                 if (window.HALPairingOverlay) window.HALPairingOverlay.hide();

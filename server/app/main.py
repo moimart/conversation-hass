@@ -814,6 +814,15 @@ async def lifespan(app: FastAPI):
         hal_mcp = build_mcp_server(state)
         app.mount("/mcp", hal_mcp.sse_app())
         log.info("MCP server mounted at /mcp")
+        # Remote, OAuth-gated MCP for Claude connectors (via the gateway's /mcp).
+        # Off unless PAL_REMOTE_MCP=1 + HAL_GATEWAY_URL (see oauth_mcp.py).
+        from contextlib import AsyncExitStack
+        from .oauth_mcp import mount_remote_mcp
+        state.remote_mcp_stack = AsyncExitStack()
+        try:
+            await mount_remote_mcp(app, state, state.remote_mcp_stack)
+        except Exception as e:
+            log.warning(f"remote MCP not mounted: {type(e).__name__}: {e}")
 
     # Demo has NO hub on /ws/audio, so the conversation callbacks that deliver a
     # turn's reply are never wired (audio_endpoint sets them). Without them a
@@ -974,6 +983,11 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if getattr(state, "remote_mcp_stack", None) is not None:
+        try:
+            await state.remote_mcp_stack.aclose()
+        except Exception:
+            pass
     if getattr(state, "theme_scheduler_task", None):
         state.theme_scheduler_task.cancel()
     if getattr(state, "weather_task", None):
@@ -1326,6 +1340,8 @@ app.include_router(_ha_router)
 app.include_router(_orbs_router)
 app.include_router(_device_router)
 app.include_router(_notes_router)
+from .oauth_mcp import router as _oauth_router  # noqa: E402
+app.include_router(_oauth_router)
 
 # Re-export the moved WS + HTTP handlers and request models so existing
 # callers/tests that do `from .main import <handler>` (or `srv.<handler>`)

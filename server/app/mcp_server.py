@@ -20,8 +20,14 @@ if TYPE_CHECKING:
 log = logging.getLogger("hal.mcp_server")
 
 
-def build_mcp_server(state: "AppState") -> FastMCP:
-    """Create the MCP server with HAL's tools registered via decorators."""
+def build_mcp_server(state: "AppState", *, allow: set[str] | None = None,
+                     on_call=None, **settings) -> FastMCP:
+    """Create the MCP server with HAL's tools registered via decorators.
+
+    The LAN server (`/mcp/sse`) gets every tool. The remote, OAuth-gated
+    server (oauth_mcp.py) passes `allow` — every tool not in it is REMOVED
+    (not hidden), so it can neither be listed nor called — plus `on_call`
+    (audit hook: name, args) and FastMCP `settings` (streamable HTTP)."""
     mcp = FastMCP(
         "PAL Voice Assistant",
         instructions=(
@@ -34,9 +40,12 @@ def build_mcp_server(state: "AppState") -> FastMCP:
         transport_security=TransportSecuritySettings(
             enable_dns_rebinding_protection=False,
         ),
+        **settings,
     )
 
     async def _call(name: str, args: dict) -> str:
+        if on_call is not None:
+            on_call(name, args)
         if state.local_tools and name in state.local_tools.tool_names:
             return await state.local_tools.call_tool(name, args)
         return f"Tool {name} not available"
@@ -234,4 +243,11 @@ def build_mcp_server(state: "AppState") -> FastMCP:
         return f"Deleted orb {name}"
 
     log.info(f"MCP server built with {len(mcp._tool_manager._tools)} tools")
+    if allow is not None:
+        for t in [t.name for t in mcp._tool_manager.list_tools()]:
+            if t not in allow:
+                mcp.remove_tool(t)
+        missing = allow - {t.name for t in mcp._tool_manager.list_tools()}
+        if missing:
+            log.warning(f"mcp allowlist names unknown tools: {sorted(missing)}")
     return mcp

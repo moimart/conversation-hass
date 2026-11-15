@@ -531,3 +531,51 @@ async def test_note_upload_over_cap_is_413(client, monkeypatch):
 
     resp = await cl.post("/api/satellite/note", data=gen(), headers=_auth())
     assert resp.status == 413
+
+
+# remote MCP (Claude connectors)
+
+@pytest.mark.asyncio
+async def test_remote_mcp_routes_off_by_default(client):
+    cl, state = client
+    for method, path in [("GET", "/.well-known/oauth-protected-resource"),
+                         ("GET", "/.well-known/oauth-authorization-server"),
+                         ("POST", "/oauth/register"), ("GET", "/oauth/authorize"),
+                         ("POST", "/oauth/token"), ("POST", "/mcp")]:
+        assert (await cl.request(method, path, headers=_auth())).status == 404
+    assert state["proxied"] == []
+
+
+@pytest.mark.asyncio
+async def test_remote_mcp_routes_when_enabled(upstream, monkeypatch):
+    """GATEWAY_ALLOW_MCP=1: the OAuth surface + /mcp pass WITHOUT a pairing
+    token (the server enforces OAuth), /mcp is rewritten to /remote-mcp/mcp,
+    and the LAN-only MCP + admin routes stay unreachable."""
+    state, _server = upstream
+    monkeypatch.setenv("GATEWAY_ALLOW_MCP", "1")
+    mod = _load_gateway()
+    assert mod.ALLOW_MCP is True
+    monkeypatch.setattr(mod, "AI_SERVER_URL", state["url"])
+    cl = TestClient(TestServer(mod.build_app()))
+    await cl.start_server()
+    try:
+        for method, path in [("GET", "/.well-known/oauth-protected-resource"),
+                             ("GET", "/.well-known/oauth-protected-resource/mcp"),
+                             ("GET", "/.well-known/oauth-authorization-server"),
+                             ("POST", "/oauth/register"), ("GET", "/oauth/authorize"),
+                             ("POST", "/oauth/authorize"), ("POST", "/oauth/token")]:
+            assert (await cl.request(method, path)).status == 200, path
+            assert (method, path) in state["proxied"]
+        r = await cl.post("/mcp?x=1", data=b'{"jsonrpc":"2.0"}')
+        assert r.status == 200
+        assert ("POST", "/remote-mcp/mcp") in state["proxied"]
+        assert state["status_hits"] == 0          # no pairing-token subrequests
+        # never exposed: the LAN MCP, the remote mount directly, admin + pairing
+        for method, path in [("GET", "/mcp/sse"), ("POST", "/remote-mcp/mcp"),
+                             ("GET", "/api/oauth/grants"), ("POST", "/api/oauth/revoke"),
+                             ("POST", "/api/pair/request"), ("POST", "/api/pair/redeem")]:
+            assert (await cl.request(method, path, headers=_auth())).status == 404, path
+    finally:
+        await cl.close()
+    monkeypatch.delenv("GATEWAY_ALLOW_MCP", raising=False)
+    _load_gateway()

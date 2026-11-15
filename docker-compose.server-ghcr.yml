@@ -35,6 +35,8 @@ services:
       - HAL_DEVICE_ID=${HAL_DEVICE_ID:-hal-default}
       - HAL_DEVICE_NAME=${HAL_DEVICE_NAME:-HAL}
       - HAL_GATEWAY_URL=${HAL_GATEWAY_URL:-}
+      # Remote MCP for Claude connectors (oauth_mcp.py); also opens the gateway routes below
+      - PAL_REMOTE_MCP=${PAL_REMOTE_MCP:-}
       - SENDSPIN_PLAYER_ENTITY=${SENDSPIN_PLAYER_ENTITY:-}
       - SENDSPIN_PAUSE_DURING_TTS=${SENDSPIN_PAUSE_DURING_TTS:-false}
       - GO2RTC_URL=${GO2RTC_URL:-http://host.docker.internal:1984}
@@ -156,6 +158,7 @@ services:
       - AUTH_CACHE_TTL=${GATEWAY_AUTH_CACHE_TTL:-30}
       - RATE_LIMIT_RPM=${GATEWAY_RATE_LIMIT_RPM:-240}
       - TRUST_CF_IP=${GATEWAY_TRUST_CF_IP:-1}
+      - GATEWAY_ALLOW_MCP=${PAL_REMOTE_MCP:-}
     depends_on:
       - ai-server
 

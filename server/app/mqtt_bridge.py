@@ -415,6 +415,7 @@ class MQTTBridge:
         self.on_conversation_log_show: Callable[[], Awaitable[None]] | None = None
         self.on_conversation_log_hide: Callable[[], Awaitable[None]] | None = None
         self.on_notes_show: Callable[[], Awaitable[None]] | None = None
+        self.on_remote_mcp_revoke: Callable[[], Awaitable[None]] | None = None
         self.on_notes_hide: Callable[[], Awaitable[None]] | None = None
         # Clear the rolling LLM context (bare-trigger button).
         self.on_context_clear: Callable[[], Awaitable[None]] | None = None
@@ -905,6 +906,20 @@ class MQTTBridge:
                 "device": device,
             },
         ))
+        # Remote MCP (Claude connectors): revoke every OAuth grant at once.
+        configs.append((
+            f"{DISCOVERY_PREFIX}/button/{self.device_id}/revoke_remote_mcp/config",
+            {
+                "name": "Revoke Remote MCP Access",
+                "unique_id": f"{self.device_id}_revoke_remote_mcp",
+                "command_topic": f"{self.base}/remote_mcp/revoke/set",
+                "payload_press": "",
+                "icon": "mdi:link-off",
+                "entity_category": "config",
+                "availability": avail,
+                "device": device,
+            },
+        ))
         configs.append((
             f"{DISCOVERY_PREFIX}/button/{self.device_id}/hide_notes/config",
             {
@@ -1100,6 +1115,7 @@ class MQTTBridge:
                     await client.subscribe(f"{self.base}/conversation_log/hide/set")
                     await client.subscribe(f"{self.base}/notes/show/set")
                     await client.subscribe(f"{self.base}/notes/hide/set")
+                    await client.subscribe(f"{self.base}/remote_mcp/revoke/set")
                     await client.subscribe(f"{self.base}/context/clear/set")
                     await client.subscribe(f"{self.base}/ptt/start")
                     await client.subscribe(f"{self.base}/ptt/end")
@@ -1257,6 +1273,10 @@ class MQTTBridge:
             elif topic == f"{self.base}/notes/hide/set":
                 if self.on_notes_hide:
                     await self.on_notes_hide()
+
+            elif topic == f"{self.base}/remote_mcp/revoke/set":
+                if self.on_remote_mcp_revoke:
+                    await self.on_remote_mcp_revoke()
 
             elif topic == f"{self.base}/context/clear/set":
                 if self.on_context_clear:

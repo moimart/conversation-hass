@@ -542,6 +542,11 @@ async def wire(state, bridge) -> None:
         await _push_to_rpi(state, msg)
         await broadcast_to_ui(state, msg)
 
+    async def _mqtt_remote_mcp_revoke():
+        from .oauth_mcp import store
+        n = store().revoke(None)
+        log.info(f"MQTT: revoked {n} remote MCP grant(s)")
+
     async def _mqtt_notes_hide():
         msg = {"type": "hide_notes"}
         await _push_to_rpi(state, msg)
@@ -953,6 +958,7 @@ async def wire(state, bridge) -> None:
     bridge.on_conversation_log_show = _mqtt_conversation_log_show
     bridge.on_conversation_log_hide = _mqtt_conversation_log_hide
     bridge.on_notes_show = _mqtt_notes_show
+    bridge.on_remote_mcp_revoke = _mqtt_remote_mcp_revoke
     bridge.on_notes_hide = _mqtt_notes_hide
     bridge.on_context_clear = _mqtt_context_clear
     bridge.on_photo_frame_show = _mqtt_photo_frame_show
