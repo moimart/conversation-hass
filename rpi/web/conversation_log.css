@@ -281,3 +281,10 @@ body.orientation-portrait .clog-scroll::-webkit-scrollbar { display: none; }
 /* Phone-specific sizing lives in the mobile shell's stylesheet
    (mobile/src/overlay/hide-kiosk-controls.css) — the kiosk's CSS viewport can
    be narrow too, so a media query here would mis-fire on the panel. */
+
+/* The kiosk clock/date/weather sit above every stage (z-index 12): hide them
+   while the log or the notes view is open, or they draw over its header. */
+body.show-conversation-log #clock,
+body.show-notes #clock {
+    visibility: hidden;
+}
