@@ -64,6 +64,8 @@ static esp_err_t h_root(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req,
         "</select><small>Not listed? Type it:</small><input name=ssid2 placeholder='Network name'>"
         "<label>Password</label><input name=pass type=password>"
+        "<label>Backup network <small>(optional — used if the first is unreachable)</small></label>"
+        "<input name=bssid placeholder='Network name'><input name=bpass type=password placeholder='Password'>"
         "<label>PAL server <small>(optional — found automatically)</small></label>"
         "<input name=server placeholder='http://10.20.30.185:8765'>"
         "<button>Save &amp; restart</button></form></body></html>");
@@ -99,15 +101,21 @@ static void reboot_task(void *arg)
 
 static esp_err_t h_save(httpd_req_t *req)
 {
-    char body[512] = {0};
+    char body[768] = {0};
     int n = httpd_req_recv(req, body, sizeof(body) - 1);
     if (n <= 0) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty");
     body[n] = 0;
-    char ssid[33], ssid2[33], pass[65], server[128];
+    char ssid[33], ssid2[33], pass[65], server[128], bssid[33], bpass[65];
     form_get(body, "ssid", ssid, sizeof(ssid));
     form_get(body, "ssid2", ssid2, sizeof(ssid2));
     form_get(body, "pass", pass, sizeof(pass));
     form_get(body, "server", server, sizeof(server));
+    form_get(body, "bssid", bssid, sizeof(bssid));
+    form_get(body, "bpass", bpass, sizeof(bpass));
+    if (bssid[0]) {
+        strlcpy(g_settings.wifi2_ssid, bssid, sizeof(g_settings.wifi2_ssid));
+        strlcpy(g_settings.wifi2_pass, bpass, sizeof(g_settings.wifi2_pass));
+    }
     const char *use = ssid2[0] ? ssid2 : ssid;
     if (!use[0]) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "pick a network");
     strlcpy(g_settings.wifi_ssid, use, sizeof(g_settings.wifi_ssid));

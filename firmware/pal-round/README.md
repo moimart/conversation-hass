@@ -62,9 +62,15 @@ hub shows into the round keypad.
 
 ```
 wifi "My Network" password
+wifi2 "Backup Network" password    # optional backup network (wifi2 - removes it)
 server http://10.20.30.185:8765     # optional (otherwise discovered)
 status
 ```
+
+**Backup Wi-Fi:** after 4 failed attempts on one network the device switches to
+the other; while on the backup it scans for the main network every 10 minutes and
+moves back when it's in range. Set it on the console (`wifi2`) or in the setup
+portal. `net main|backup|check` forces a switch / the check (for testing).
 
 ## OTA updates
 

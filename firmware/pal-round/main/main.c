@@ -473,7 +473,9 @@ static void ota_progress(int pct)
 
 static void do_action(const char *a)
 {
-    if (!strcmp(a, "wake")) {
+    if (!strcmp(a, "netcheck")) {
+        net_check_main();
+    } else if (!strcmp(a, "wake")) {
         if (pal_lock()) {
             ui_screen_wake();
             pal_unlock();
@@ -785,6 +787,7 @@ static void app_task(void *arg)
         case EV_TICK:
             s_ticks++;
             if (s_note_on && audio_recording()) note_show_elapsed();
+            if (s_ticks % 600 == 0) net_check_main();   // on the backup network: is the main one back?
             if (pal_lock()) {
                 ui_tick();
                 pal_unlock();

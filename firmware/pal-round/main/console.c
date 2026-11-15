@@ -51,6 +51,19 @@ static void handle(char *line)
         printf("OK wifi=%s — rebooting\n", g_settings.wifi_ssid);
         fflush(stdout);
         app_post_str(EV_ACTION, "save_reboot");   // NVS writes need an internal stack
+    } else if (!strcmp(argv[0], "wifi2") && argc >= 2) {
+        // backup network ("wifi2 -" removes it); used when the main one is unreachable
+        bool clear = !strcmp(argv[1], "-");
+        strlcpy(g_settings.wifi2_ssid, clear ? "" : argv[1], sizeof(g_settings.wifi2_ssid));
+        strlcpy(g_settings.wifi2_pass, !clear && argc > 2 ? argv[2] : "", sizeof(g_settings.wifi2_pass));
+        app_post(EV_SETTINGS_CHANGED);
+        printf("OK backup wifi=%s\n", clear ? "(none)" : g_settings.wifi2_ssid);
+    } else if (!strcmp(argv[0], "net") && argc == 2 && !strcmp(argv[1], "check")) {
+        app_post_str(EV_ACTION, "netcheck");   // the 10-minute "is the main network back?" check, now
+        printf("OK checking\n");
+    } else if (!strcmp(argv[0], "net") && argc == 2) {
+        net_force(!strcmp(argv[1], "backup") ? 1 : 0);   // test the failover by hand
+        printf("OK switching to the %s network\n", argv[1]);
     } else if (!strcmp(argv[0], "server") && argc == 2) {
         size_t l = strlen(argv[1]);
         while (l && argv[1][l - 1] == '/') argv[1][--l] = 0;
@@ -59,9 +72,10 @@ static void handle(char *line)
         printf("OK server=%s\n", g_settings.server);
         app_post(EV_WIFI_UP);   // re-run the connect flow
     } else if (!strcmp(argv[0], "status")) {
-        printf("device=%s fw=%s\nwifi=%s up=%d rssi=%d\nserver=%s gateway=%s active=%s\npaired=%s dashboard=%s orb=%s\n"
+        printf("device=%s fw=%s\nwifi=%s up=%d rssi=%d (main=%s backup=%s)\nserver=%s gateway=%s active=%s\npaired=%s dashboard=%s orb=%s\n"
                "ws=%d battery=%d%% charging=%d screen=%d playing=%d recording=%d\n",
-               pal_device_name(), pal_fw_version(), g_settings.wifi_ssid, net_is_up(), net_rssi(), g_settings.server,
+               pal_device_name(), pal_fw_version(), net_ssid(), net_is_up(), net_rssi(), g_settings.wifi_ssid,
+               g_settings.wifi2_ssid[0] ? g_settings.wifi2_ssid : "-", g_settings.server,
                g_settings.gateway, pal_base(), g_settings.token[0] ? "yes" : "no", g_settings.dashboard,
                g_settings.orb, ws_connected(), pmu_battery_pct(), pmu_charging(), ui_screen_on(), audio_playing(),
                audio_recording());
@@ -87,7 +101,7 @@ static void handle(char *line)
     } else if (!strcmp(argv[0], "reboot")) {
         esp_restart();
     } else {
-        printf("commands: wifi <ssid> [pass] | server <url> | status | pm | top | wake | press | beep | rec | unpair | reset | reboot\n");
+        printf("commands: wifi <ssid> [pass] | wifi2 <ssid> [pass] (backup; '-' clears) | net main|backup|check | server <url> | status | pm | top | wake | press | beep | rec | unpair | reset | reboot\n");
     }
     fflush(stdout);
 }

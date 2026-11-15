@@ -41,6 +41,8 @@ void settings_load(void)
     }
     get_str(h, "ssid", g_settings.wifi_ssid, sizeof(g_settings.wifi_ssid), "");
     get_str(h, "pass", g_settings.wifi_pass, sizeof(g_settings.wifi_pass), "");
+    get_str(h, "ssid2", g_settings.wifi2_ssid, sizeof(g_settings.wifi2_ssid), "");
+    get_str(h, "pass2", g_settings.wifi2_pass, sizeof(g_settings.wifi2_pass), "");
     get_str(h, "server", g_settings.server, sizeof(g_settings.server), "");
     get_str(h, "gateway", g_settings.gateway, sizeof(g_settings.gateway), "");
     get_str(h, "token", g_settings.token, sizeof(g_settings.token), "");
@@ -52,7 +54,7 @@ void settings_load(void)
     if (nvs_get_u8(h, "bright", &u8) == ESP_OK) g_settings.brightness = u8 < 5 ? 5 : (u8 > 100 ? 100 : u8);
     if (nvs_get_u16(h, "tmo", &u16) == ESP_OK) g_settings.screen_timeout_s = u16;
     nvs_close(h);
-    ESP_LOGI(TAG, "wifi=%s server=%s paired=%s dash=%s", g_settings.wifi_ssid, g_settings.server,
+    ESP_LOGI(TAG, "wifi=%s backup=%s server=%s paired=%s dash=%s", g_settings.wifi_ssid, g_settings.wifi2_ssid[0] ? g_settings.wifi2_ssid : "-", g_settings.server,
              g_settings.token[0] ? "yes" : "no", g_settings.dashboard);
 }
 
@@ -65,6 +67,8 @@ void settings_save(void)
     }
     nvs_set_str(h, "ssid", g_settings.wifi_ssid);
     nvs_set_str(h, "pass", g_settings.wifi_pass);
+    nvs_set_str(h, "ssid2", g_settings.wifi2_ssid);
+    nvs_set_str(h, "pass2", g_settings.wifi2_pass);
     nvs_set_str(h, "server", g_settings.server);
     nvs_set_str(h, "gateway", g_settings.gateway);
     nvs_set_str(h, "token", g_settings.token);

@@ -486,7 +486,7 @@ void ui_settings_refresh(void)
     char batt[32] = "USB power";
     if (bat >= 0) snprintf(batt, sizeof(batt), "Battery %d%%%s", bat, pmu_charging() ? ", charging" : "");
     lv_label_set_text_fmt(s_info, "%s\nFirmware %s\n%s\n%s · %d dBm\n%s", pal_device_name(), pal_fw_version(),
-                          pal_base(), g_settings.wifi_ssid, net_rssi(), batt);
+                          pal_base(), net_ssid(), net_rssi(), batt);
 }
 
 static void orb_sync_active(void);
