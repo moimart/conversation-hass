@@ -65,6 +65,8 @@ static void handle(char *line)
                g_settings.gateway, pal_base(), g_settings.token[0] ? "yes" : "no", g_settings.dashboard,
                g_settings.orb, ws_connected(), pmu_battery_pct(), pmu_charging(), ui_screen_on(), audio_playing(),
                audio_recording());
+    } else if (!strcmp(argv[0], "press")) {
+        app_post(EV_PTT_PRESS);            // = a BOOT press (tests: "press" twice = voice note)
     } else if (!strcmp(argv[0], "wake")) {
         app_post_str(EV_ACTION, "wake");   // screen on (tests)
     } else if (!strcmp(argv[0], "beep")) {
@@ -85,7 +87,7 @@ static void handle(char *line)
     } else if (!strcmp(argv[0], "reboot")) {
         esp_restart();
     } else {
-        printf("commands: wifi <ssid> [pass] | server <url> | status | pm | top | wake | beep | rec | unpair | reset | reboot\n");
+        printf("commands: wifi <ssid> [pass] | server <url> | status | pm | top | wake | press | beep | rec | unpair | reset | reboot\n");
     }
     fflush(stdout);
 }
