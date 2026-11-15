@@ -65,9 +65,6 @@ static void handle(char *line)
                g_settings.gateway, pal_base(), g_settings.token[0] ? "yes" : "no", g_settings.dashboard,
                g_settings.orb, ws_connected(), pmu_battery_pct(), pmu_charging(), ui_screen_on(), audio_playing(),
                audio_recording());
-    } else if (!strcmp(argv[0], "exp")) {
-        extern void ui_exp_toggle_box(void);
-        ui_exp_toggle_box();
     } else if (!strcmp(argv[0], "wake")) {
         app_post_str(EV_ACTION, "wake");   // screen on (tests)
     } else if (!strcmp(argv[0], "beep")) {

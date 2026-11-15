@@ -952,44 +952,8 @@ void ui_apply_theme(void)
     orb_apply_theme();
 }
 
-void ui_exp_toggle_box(void)   // TEMP perf experiment
-{
-    if (pal_lock()) {
-        if (lv_obj_has_flag(s_box, LV_OBJ_FLAG_HIDDEN)) lv_obj_remove_flag(s_box, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_box, LV_OBJ_FLAG_HIDDEN);
-        pal_unlock();
-    }
-}
-
-// perf probe: where a refresh spends its time (logged every 10 s)
-static void refr_probe(lv_event_t *e)
-{
-    static int64_t t_refr, t_wait, sum_refr, sum_wait, last_log;
-    static int n, strips;
-    int64_t now = esp_timer_get_time();
-    switch (lv_event_get_code(e)) {
-    case LV_EVENT_REFR_START: t_refr = now; break;
-    case LV_EVENT_FLUSH_WAIT_START: t_wait = now; break;
-    case LV_EVENT_FLUSH_WAIT_FINISH: sum_wait += now - t_wait; break;
-    case LV_EVENT_FLUSH_START: strips++; break;
-    case LV_EVENT_REFR_READY:
-        sum_refr += now - t_refr;
-        n++;
-        if (now - last_log > 10000000 && n) {
-            ESP_LOGI(TAG, "refresh: %d/10s, avg %lld ms (flush wait %lld ms), %d strips/refresh", n,
-                     sum_refr / n / 1000, sum_wait / n / 1000, strips / n);
-            n = strips = 0;
-            sum_refr = sum_wait = 0;
-            last_log = now;
-        }
-        break;
-    default: break;
-    }
-}
-
 void ui_init(void)
 {
-    lv_display_add_event_cb(lv_display_get_default(), refr_probe, LV_EVENT_ALL, NULL);
     g_theme = (pal_theme_t){
         .bg = lv_color_black(), .text = lv_color_hex(0xf2f2f5), .text_dim = lv_color_hex(0x8a8a96),
         .accent = lv_color_hex(0xff8050), .accent_deep = lv_color_hex(0x8a3418),

@@ -8,8 +8,8 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 
 | Screen | |
 |---|---|
-| **Home** | Clock, date, weather, the orb, what you said and PAL's reply |
-| **Swipe left** | Home Assistant pages: the dashboard you pick in Settings, as native round tiles (tap = toggle / run; long-press a light or cover = brightness / position dial) and full-page climate, media and weather controls |
+| **Home** | The orb (~96% of the screen) with what you said and PAL's reply in a box over it |
+| **Swipe left** | Clock, date and weather, then Home Assistant pages: the dashboard you pick in Settings, as native round tiles (tap = toggle / run; long-press a light or cover = brightness / position dial) and full-page climate, media and weather controls |
 | **Swipe up** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, re-pair |
 
 **Talking to PAL:** tap the orb (or press **BOOT**) and speak. Recording stops by
@@ -19,11 +19,19 @@ reply comes back over the device's `/ws/ui` socket: state, text, and the spoken
 reply (`tts_play` → `/api/satellite/tts?rate=16000`). Announcements, finished
 timers and the per-device voice all work as on the phones.
 
-**PWR button:** short press = screen on/off, long press = power off.
+**Voice notes:** double-press a button (BOOT, PWR, or double-tap the orb). Two
+blips, and the box shows "● Recording note 0:12". Talk as long as you like (10 min
+cap); the audio streams to `POST /api/satellite/note` while you speak. Press once
+more to finish: PAL transcribes it and stores it in the Notes list (the Notes
+view on the hub/phones, and the `list_notes` MCP tool).
+
+**PWR button:** short press = wake the screen / talk, long press = power off.
 
 **The orb** shows the hub's orb, or this device's own pick from Settings. The server
-re-renders the theme's clips or a custom orb as `.palm` files: 288 px circular
-JPEG frames at 12 fps. The device caches them in flash and decodes them with
+re-renders the theme's clips or a custom orb as `.palm` files: 448 px circular
+JPEG frames at 12 fps. Frames are decoded on core 0 and written straight to the
+panel (LVGL only redraws the bands under the text box/status), which is what
+keeps a steady 12 fps at this size. The device caches them in flash and decodes them with
 `esp_new_jpeg`. Themes without orb media get a native LVGL orb in the theme's
 accent colour.
 

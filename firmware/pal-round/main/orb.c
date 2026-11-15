@@ -228,7 +228,7 @@ static void player_task(void *arg)
             dsum += td;
             if (!since) since = t0;
             if (t0 - since >= 10000000) {
-                ESP_LOGI(TAG, "orb %d frames/10s (clip fps %d, decode %lld ms, decode+show %lld ms)", frames, fps,
+                ESP_LOGD(TAG, "orb %d frames/10s (clip fps %d, decode %lld ms, decode+show %lld ms)", frames, fps,
                          (long long)(dsum / frames / 1000), (long long)((esp_timer_get_time() - t0) / 1000));
                 frames = 0;
                 dsum = 0;
@@ -368,7 +368,7 @@ void orb_create(lv_obj_t *parent, int size)
 
     s_native_timer = lv_timer_create(native_tick, 33, NULL);
     orb_apply_theme();
-    xTaskCreatePinnedToCore(player_task, "orb", 4096, NULL, 4, &s_task, 0);  // internal: reads flash; core 0 (LVGL draws on core 1)
+    xTaskCreatePinnedToCore(player_task, "orb", 4096, NULL, 2, &s_task, 0);  // internal: reads flash; core 0; prio 2 < LVGL draw thread (3, unpinned) so decoding never stalls drawing
 }
 
 lv_obj_t *orb_obj(void) { return s_wrap; }
