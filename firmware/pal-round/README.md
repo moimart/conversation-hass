@@ -10,6 +10,7 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 |---|---|
 | **Home** | The orb (~96% of the screen) with what you said and PAL's reply in a box over it |
 | **Swipe left** | Clock, date and weather, then Home Assistant pages: the dashboard you pick in Settings, as native round tiles (tap = toggle / run; long-press a light or cover = brightness / position dial) and full-page climate, media and weather controls |
+| **Swipe right** (from the orb) | How-to page: talk, voice notes, settings |
 | **Swipe up** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, re-pair |
 
 **Talking to PAL:** tap the orb (or press **BOOT**) and speak. Recording stops by

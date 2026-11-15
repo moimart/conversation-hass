@@ -24,7 +24,7 @@ ui_choices_t g_choices;
 static lv_obj_t *s_tv, *s_home, *s_box, *s_clockpage, *s_weather_lbl;
 static void box_sync(void);
 static void box_style(void);
-static lv_obj_t *s_batt_ic, *s_batt_t;
+static lv_obj_t *s_batt_ic, *s_batt_t, *s_helppage, *s_help_title;
 static int s_batt_shown = -2;
 static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
 static lv_obj_t *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_shield;
@@ -159,7 +159,7 @@ static void orb_tap(lv_event_t *e)
 
 static void build_home(void)
 {
-    s_home = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_RIGHT);
+    s_home = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
     lv_obj_remove_flag(s_home, LV_OBJ_FLAG_SCROLLABLE);
 
     orb_create(s_home, ORB_SIZE);
@@ -202,8 +202,6 @@ static void build_home(void)
     lv_obj_set_width(s_reply, LV_PCT(100));
     lv_obj_set_style_max_height(s_reply, 44, 0);
     lv_label_set_long_mode(s_reply, LV_LABEL_LONG_DOT);
-    s_hint = mk_label(s_box, g_fonts.text16, g_theme.text_dim, "Press a button to talk\nDouble-press for a voice note\nHold the orb for settings");
-    lv_obj_set_width(s_hint, LV_PCT(100));
     box_sync();
     box_style();
 
@@ -213,13 +211,28 @@ static void build_home(void)
     lv_obj_add_flag(s_status, LV_OBJ_FLAG_HIDDEN);
 }
 
+// The page left of home: how to use the device (the orb page stays clean).
+static void build_help_page(void)
+{
+    s_helppage = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_RIGHT);
+    lv_obj_remove_flag(s_helppage, LV_OBJ_FLAG_SCROLLABLE);
+    s_help_title = mk_label(s_helppage, g_fonts.text26, g_theme.accent, "How to use");
+    lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -120);
+    s_hint = mk_label(s_helppage, g_fonts.text20, g_theme.text,
+                      "Tap the orb or press a\nbutton to talk\n\n"
+                      "Double-press the bottom\nbutton for a voice note\n\n"
+                      "Hold the orb for settings");
+    lv_obj_set_style_text_line_space(s_hint, 4, 0);
+    lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, 20);
+}
+
 // The page right of home: clock, date and the weather (the orb has the home
 // screen to itself). It survives dashboard reloads (ui_clear_pages).
 static void build_clock_page(void)
 {
-    s_clockpage = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
+    s_clockpage = lv_tileview_add_tile(s_tv, 2, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
     lv_obj_remove_flag(s_clockpage, LV_OBJ_FLAG_SCROLLABLE);
-    s_page_cols = 1;
+    s_page_cols = 2;
     s_clock = mk_label(s_clockpage, g_fonts.clock, g_theme.text, "--:--");
     lv_obj_align(s_clock, LV_ALIGN_CENTER, 0, -70);
     s_date = mk_label(s_clockpage, g_fonts.text26, g_theme.accent, "");
@@ -568,9 +581,9 @@ void ui_clear_pages(void)
     lv_tileview_set_tile(s_tv, s_home, LV_ANIM_OFF);
     for (int i = (int)lv_obj_get_child_count(s_tv) - 1; i >= 0; i--) {
         lv_obj_t *c = lv_obj_get_child(s_tv, i);
-        if (c != s_home && c != s_clockpage) lv_obj_delete(c);
+        if (c != s_home && c != s_clockpage && c != s_helppage) lv_obj_delete(c);
     }
-    s_page_cols = 1;
+    s_page_cols = 2;
 }
 
 // --- overlays -------------------------------------------------------------------------
@@ -717,7 +730,7 @@ static void box_sync(void)
     bool said = lv_label_get_text(s_said)[0] != 0, reply = lv_label_get_text(s_reply)[0] != 0;
     if (said) lv_obj_remove_flag(s_said, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(s_said, LV_OBJ_FLAG_HIDDEN);
     if (reply) lv_obj_remove_flag(s_reply, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(s_reply, LV_OBJ_FLAG_HIDDEN);
-    if (said || reply) lv_obj_add_flag(s_hint, LV_OBJ_FLAG_HIDDEN); else lv_obj_remove_flag(s_hint, LV_OBJ_FLAG_HIDDEN);
+    if (said || reply) lv_obj_remove_flag(s_box, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(s_box, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void box_style(void)
@@ -850,8 +863,8 @@ void ui_tick(void)
         strftime(b, sizeof(b), "%a %e %b", &tm);
         lv_label_set_text(s_date, b);
     }
-    // the conversation text fades back to the hint after 30 s of quiet
-    if (s_state == PAL_IDLE && s_text_set_at && esp_timer_get_time() - s_text_set_at > 30000000LL) {
+    // the conversation box hides itself a minute after the last text
+    if (s_state == PAL_IDLE && s_text_set_at && esp_timer_get_time() - s_text_set_at > 60000000LL) {
         lv_label_set_text(s_said, "");
         lv_label_set_text(s_reply, "");
         box_sync();
@@ -990,7 +1003,8 @@ void ui_apply_theme(void)
     s_batt_shown = -2;   // re-colour the icon on the next tick
     lv_obj_set_style_text_color(s_said, g_theme.text_dim, 0);
     lv_obj_set_style_text_color(s_reply, g_theme.text, 0);
-    lv_obj_set_style_text_color(s_hint, g_theme.text_dim, 0);
+    lv_obj_set_style_text_color(s_hint, g_theme.text, 0);
+    lv_obj_set_style_text_color(s_help_title, g_theme.accent, 0);
     box_style();
     orb_apply_theme();
 }
@@ -1008,8 +1022,10 @@ void ui_init(void)
     lv_obj_set_style_bg_opa(s_tv, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(s_tv, LV_SCROLLBAR_MODE_OFF);
     make_jumpy(s_tv);
+    build_help_page();
     build_home();
     build_clock_page();
+    lv_tileview_set_tile(s_tv, s_home, LV_ANIM_OFF);
     build_settings();
     s_anim_timer = lv_timer_create(timer_anim, 250, NULL);
     lv_obj_add_event_cb(s_tv, tile_changed, LV_EVENT_VALUE_CHANGED, NULL);
