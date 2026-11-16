@@ -7,6 +7,8 @@ scope grants `device` (full tokens; watch → 403).
     GET /api/device/orb/{key}.palm       a rendered clip
     GET /api/device/pages?dashboard=     an HA dashboard as device pages
     GET /api/device/firmware/{model}.bin OTA image
+    POST /api/satellite/ble_pair         a phone asks online PAL Rounds to open
+                                         Bluetooth pairing (see BLE_LINK.md)
 """
 from __future__ import annotations
 
@@ -217,3 +219,35 @@ async def device_firmware(request: Request, model: str):
         return Response(status_code=404)
     return FileResponse(os.path.join(_firmware_dir(), model, "firmware.bin"),
                         media_type="application/octet-stream")
+
+
+ROUND_NAME_PREFIX = "PAL Round"
+
+
+@router.post("/api/satellite/ble_pair")
+async def ble_pair(request: Request):
+    """A paired phone (the Android app) asks every online PAL Round to open
+    Bluetooth pairing for 2 minutes, so the phone can bond and relay the
+    Round's traffic when it has no Wi-Fi. The Round then shows a passkey the
+    user types into Android's pairing dialog. -> {"ok", "devices": N}."""
+    from .main import _get_state
+    from .pairing import extract_bearer
+    state = _get_state(request.app)
+    token = extract_bearer(request)
+    if not (token and state.pairing and state.pairing.is_valid_token(token)):
+        return Response(status_code=401)
+    if not state.pairing.scope_allows(token, "ws_ui"):
+        return Response(status_code=403)
+    requester = state.pairing.device_name(token) or "a phone"
+    sent = 0
+    for tok, ws in list(state.satellite_ws.items()):
+        name = state.pairing.device_name(tok) or ""
+        if tok == token or not name.startswith(ROUND_NAME_PREFIX):
+            continue
+        try:
+            await ws.send_json({"type": "ble_pair", "from": requester})
+            sent += 1
+        except Exception:
+            pass
+    log.info(f"ble_pair requested by {requester}: {sent} PAL Round(s)")
+    return {"ok": True, "devices": sent}

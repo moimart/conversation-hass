@@ -91,6 +91,8 @@ _ALLOWLIST = [
     ("GET",    r"^/api/notes$",                         True,  False),
     ("DELETE", r"^/api/notes/\d+$",                     True,  False),
     # The device's own TTS voice (pick from the TTS server's voices).
+    # A phone asks online PAL Rounds to open Bluetooth pairing (BLE relay).
+    ("POST", r"^/api/satellite/ble_pair$",              True,  False),
     ("GET",  r"^/api/satellite/voice$",                 True,  False),
     ("POST", r"^/api/satellite/voice$",                 True,  False),
     ("GET",  r"^/api/conversation/log$",                True,  False),

@@ -183,6 +183,8 @@ async def test_satellite_voice_allowed_with_token(client):
     assert (await cl.get("/api/satellite/voice")).status == 401   # no token
     assert (await cl.get("/api/satellite/voice", headers=_auth())).status == 200
     assert (await cl.post("/api/satellite/voice", headers=_auth())).status == 200
+    assert (await cl.post("/api/satellite/ble_pair")).status == 401   # no token
+    assert (await cl.post("/api/satellite/ble_pair", headers=_auth())).status == 200
     assert ("GET", "/api/satellite/voice") in state["proxied"]
     assert ("POST", "/api/satellite/voice") in state["proxied"]
 
