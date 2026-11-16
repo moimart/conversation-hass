@@ -32,6 +32,7 @@ typedef struct {
     uint8_t volume;        // 0..100
     uint8_t brightness;    // 5..100
     uint16_t screen_timeout_s; // 0 = never
+    uint8_t ble_bond;      // a phone is bonded for the Bluetooth link (BLE_LINK.md)
 } pal_settings_t;
 
 extern pal_settings_t g_settings;
@@ -60,6 +61,7 @@ typedef enum {
     EV_TICK,            // 1 Hz housekeeping
     EV_ACTION,          // str: "repair" | "portal" | "ota" | "restart" | "reset"
     EV_NOTE_DONE,       // voice note upload finished (result via note_result())
+    EV_LINK,            // str: "ble" (Wi-Fi gave up: go relay) | "c<passkey>" | "paired" | "pairend" | "pairfail"
 } app_event_type_t;
 
 typedef struct {
@@ -91,6 +93,23 @@ int net_rssi(void);
 bool net_discover_pal(char *base, size_t len);   // _pal._tcp → http://ip:port
 void net_set_tz(const char *posix_tz);
 bool net_time_valid(void);
+bool net_ble_mode(void);                         // Wi-Fi off, reaching PAL through the phone
+void net_enter_ble(void);
+void net_leave_ble(int idx);                     // back to Wi-Fi network idx (0 main, 1 backup)
+
+// ---------------------------------------------------------------------------
+// ble_link.c — PAL through a bonded phone over BLE (firmware/pal-round/BLE_LINK.md)
+
+bool link_start(void);                           // relay mode: advertise for the bonded phone
+void link_stop(void);
+bool link_pair_start(void);                      // 2-minute pairing window (shows a passkey)
+void link_pair_finish(void);                     // window over: drop the stack unless relaying
+void link_forget(void);                          // delete bonds
+bool link_active(void);                          // relay mode on
+bool link_up(void);                              // phone connected + HELLO exchanged
+bool link_pairing(void);
+int link_streams(void);
+const char *link_state(void);
 void portal_start(void);                         // SoftAP + captive setup page
 bool portal_active(void);
 const char *portal_ssid(void);

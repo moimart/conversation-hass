@@ -32,6 +32,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PalMirrorPlugin.class);
         // PalApps gates the Home Assistant launcher shortcut (is HA installed?).
         registerPlugin(PalAppsPlugin.class);
+        // PalLink: the PAL Round BLE internet relay (pairing + foreground service).
+        registerPlugin(PalLinkPlugin.class);
         super.onCreate(savedInstanceState);
         // Draw edge-to-edge, including INTO the camera cutout (must call
         // setAttributes() to actually apply the layout mode, not just mutate

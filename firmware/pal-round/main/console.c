@@ -71,14 +71,24 @@ static void handle(char *line)
         app_post(EV_SETTINGS_CHANGED);
         printf("OK server=%s\n", g_settings.server);
         app_post(EV_WIFI_UP);   // re-run the connect flow
+    } else if (!strcmp(argv[0], "ble") && argc == 2) {
+        // Bluetooth link (BLE_LINK.md): pair = open the 2-min window, on/off = force
+        // relay mode / back to Wi-Fi (tests), forget = delete the phone's bond
+        const char *a = argv[1];
+        if (!strcmp(a, "on")) app_post_str(EV_LINK, "ble");
+        else if (!strcmp(a, "off")) app_post_str(EV_ACTION, "bleoff");
+        else if (!strcmp(a, "pair")) app_post_str(EV_ACTION, "blepair");
+        else if (!strcmp(a, "forget")) app_post_str(EV_ACTION, "bleforget");
+        printf("OK ble %s (state=%s bonded=%d relay=%d streams=%d)\n", a, link_state(), g_settings.ble_bond,
+               link_active(), link_streams());
     } else if (!strcmp(argv[0], "status")) {
         printf("device=%s fw=%s\nwifi=%s up=%d rssi=%d (main=%s backup=%s)\nserver=%s gateway=%s active=%s\npaired=%s dashboard=%s orb=%s\n"
-               "ws=%d battery=%d%% charging=%d screen=%d playing=%d recording=%d\n",
+               "ws=%d battery=%d%% charging=%d screen=%d playing=%d recording=%d\nble=%s bonded=%d relay=%d streams=%d\n",
                pal_device_name(), pal_fw_version(), net_ssid(), net_is_up(), net_rssi(), g_settings.wifi_ssid,
                g_settings.wifi2_ssid[0] ? g_settings.wifi2_ssid : "-", g_settings.server,
                g_settings.gateway, pal_base(), g_settings.token[0] ? "yes" : "no", g_settings.dashboard,
                g_settings.orb, ws_connected(), pmu_battery_pct(), pmu_charging(), ui_screen_on(), audio_playing(),
-               audio_recording());
+               audio_recording(), link_state(), g_settings.ble_bond, link_active(), link_streams());
     } else if (!strcmp(argv[0], "press")) {
         app_post(EV_PTT_PRESS);            // = a BOOT press (tests: "press" twice = voice note)
     } else if (!strcmp(argv[0], "wake")) {
@@ -101,7 +111,7 @@ static void handle(char *line)
     } else if (!strcmp(argv[0], "reboot")) {
         esp_restart();
     } else {
-        printf("commands: wifi <ssid> [pass] | wifi2 <ssid> [pass] (backup; '-' clears) | net main|backup|check | server <url> | status | pm | top | wake | press | beep | rec | unpair | reset | reboot\n");
+        printf("commands: wifi <ssid> [pass] | wifi2 <ssid> [pass] (backup; '-' clears) | net main|backup|check | ble pair|on|off|forget | server <url> | status | pm | top | wake | press | beep | rec | unpair | reset | reboot\n");
     }
     fflush(stdout);
 }
