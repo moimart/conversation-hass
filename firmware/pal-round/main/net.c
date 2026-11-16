@@ -1,5 +1,6 @@
 // Wi-Fi station with auto-reconnect, SNTP time, and mDNS discovery of PAL
 // (`_pal._tcp`, advertised by the hal-mdns container on the AI server).
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include "app.h"
@@ -23,6 +24,12 @@ static esp_netif_t *s_sta;
 #define MAX_FAILS 4
 static int s_net;            // 0 = main, 1 = backup
 static int s_fails;
+// Bluetooth relay: when every configured network has failed MAX_FAILS times and
+// a phone is bonded, Wi-Fi is switched off and PAL is reached through the phone
+// (ble_link.c). net_check_main() scans for the networks every 10 minutes.
+static volatile bool s_ble;
+static int s_total_fails;
+static bool s_ble_asked;
 
 static bool has_backup(void) { return g_settings.wifi2_ssid[0] != 0; }
 
@@ -42,7 +49,73 @@ static void apply_net(int idx)
     ESP_LOGI(TAG, "using %s network \"%s\"", idx ? "backup" : "main", ssid);
 }
 
-const char *net_ssid(void) { return s_net ? g_settings.wifi2_ssid : g_settings.wifi_ssid; }
+const char *net_ssid(void)
+{
+    if (s_ble) return "Phone (Bluetooth)";
+    return s_net ? g_settings.wifi2_ssid : g_settings.wifi_ssid;
+}
+
+bool net_ble_mode(void) { return s_ble; }
+
+static bool ble_possible(void) { return g_settings.ble_bond && g_settings.gateway[0] && g_settings.token[0]; }
+
+void net_enter_ble(void)
+{
+    if (s_ble || !ble_possible() || portal_active()) return;
+    s_ble = true;
+    ESP_LOGW(TAG, "no Wi-Fi network reachable: switching to the phone (Bluetooth)");
+    esp_wifi_stop();
+    if (!link_start()) {
+        ESP_LOGE(TAG, "bluetooth relay unavailable: back to Wi-Fi");
+        s_ble = false;
+        s_ble_asked = false;
+        s_total_fails = 0;
+        esp_wifi_start();
+    }
+}
+
+void net_leave_ble(int idx)
+{
+    if (!s_ble) return;
+    link_stop();
+    s_ble = false;
+    s_ble_asked = false;
+    s_total_fails = 0;
+    apply_net(idx);
+    esp_wifi_start();
+    esp_wifi_connect();   // already started by the scan: no STA_START this time
+}
+
+// While relaying: is one of our networks back? Wi-Fi is started just for the scan.
+static void ble_scan_networks(void)
+{
+    if (esp_wifi_start() != ESP_OK) return;
+    wifi_scan_config_t sc = {.show_hidden = true};
+    int rssi[2] = {-127, -127};   // best signal of the main / backup network
+    if (esp_wifi_scan_start(&sc, true) == ESP_OK) {
+        uint16_t n = 0;
+        esp_wifi_scan_get_ap_num(&n);
+        if (n > 24) n = 24;
+        wifi_ap_record_t *aps = calloc(n ? n : 1, sizeof(*aps));
+        if (aps && esp_wifi_scan_get_ap_records(&n, aps) == ESP_OK) {
+            for (int i = 0; i < n; i++) {
+                const char *id = (const char *)aps[i].ssid;
+                int w = !strcmp(id, g_settings.wifi_ssid) ? 0 : (has_backup() && !strcmp(id, g_settings.wifi2_ssid)) ? 1 : -1;
+                if (w >= 0 && aps[i].rssi > rssi[w]) rssi[w] = aps[i].rssi;
+            }
+        }
+        free(aps);
+        esp_wifi_clear_ap_list();
+    }
+    int found = rssi[0] > -82 ? 0 : rssi[1] > -82 ? 1 : -1;   // the main network wins
+    int best = found >= 0 ? rssi[found] : -127;
+    if (found >= 0) {
+        ESP_LOGI(TAG, "\"%s\" is back (%d dBm): leaving Bluetooth", found ? g_settings.wifi2_ssid : g_settings.wifi_ssid, best);
+        net_leave_ble(found);
+    } else {
+        esp_wifi_stop();
+    }
+}
 bool net_on_backup(void) { return s_net == 1; }
 
 void net_force(int idx)   // console test: jump to the main (0) / backup (1) network now
@@ -54,6 +127,10 @@ void net_force(int idx)   // console test: jump to the main (0) / backup (1) net
 
 void net_check_main(void)
 {
+    if (s_ble) {
+        ble_scan_networks();
+        return;
+    }
     if (s_net != 1 || !g_settings.wifi_ssid[0] || portal_active()) return;
     wifi_scan_config_t sc = {.ssid = (uint8_t *)g_settings.wifi_ssid, .show_hidden = true};
     if (esp_wifi_scan_start(&sc, true) != ESP_OK) return;
@@ -70,12 +147,18 @@ void net_check_main(void)
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        if (g_settings.wifi_ssid[0]) esp_wifi_connect();
+        if (g_settings.wifi_ssid[0] && !s_ble) esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         if (s_up) app_post(EV_WIFI_DOWN);
         s_up = false;
+        if (s_ble || s_ble_asked) return;   // relaying through the phone (or about to)
         if (g_settings.wifi_ssid[0] && !portal_active()) {
             wifi_event_sta_disconnected_t *d = data;
+            if (++s_total_fails >= (has_backup() ? 2 : 1) * MAX_FAILS && ble_possible()) {
+                s_ble_asked = true;
+                app_post_str(EV_LINK, "ble");
+                return;
+            }
             if (++s_fails >= MAX_FAILS && has_backup()) {
                 // reason 201 = not found (out of range / 5 GHz only), 15/204 = wrong password
                 ESP_LOGW(TAG, "\"%s\" unreachable after %d tries (reason %d)", net_ssid(), MAX_FAILS,
@@ -90,6 +173,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         ESP_LOGI(TAG, "got ip " IPSTR, IP2STR(&e->ip_info.ip));
         s_up = true;
         s_fails = 0;
+        s_total_fails = 0;
         if (!s_sntp) {
             esp_sntp_config_t c = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
             esp_netif_sntp_init(&c);
@@ -128,17 +212,18 @@ void net_start(void)
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 }
 
-bool net_is_up(void) { return s_up; }
+bool net_is_up(void) { return s_up || link_up(); }
 
 void net_power_save(bool deep)
 {
     // screen on: wake for every DTIM beacon (snappy); screen off: every 3rd
     // beacon (~300 ms). The socket stays up either way.
-    esp_wifi_set_ps(deep ? WIFI_PS_MAX_MODEM : WIFI_PS_MIN_MODEM);
+    if (!s_ble) esp_wifi_set_ps(deep ? WIFI_PS_MAX_MODEM : WIFI_PS_MIN_MODEM);
 }
 
 int net_rssi(void)
 {
+    if (s_ble) return -127;
     wifi_ap_record_t ap;
     return (s_up && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) ? ap.rssi : -127;
 }

@@ -65,7 +65,7 @@ CONFIG_WL_SECTOR_SIZE_4096=y
 # OTA
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 CONFIG_APP_PROJECT_VER_FROM_CONFIG=y
-CONFIG_APP_PROJECT_VER="0.1.1"
+CONFIG_APP_PROJECT_VER="0.2.0"
 
 # Console on USB (flashing + provisioning)
 CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=y
@@ -90,3 +90,37 @@ CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
 # console "top": per-task CPU time
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y
+
+# --- Bluetooth LE link to a bonded phone (BLE_LINK.md) ---
+# NimBLE, peripheral only, one connection. The host allocates from PSRAM; the
+# stack is initialised only while relaying / pairing (ble_link.c) and torn down
+# after, so Wi-Fi-only operation keeps today's internal RAM.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_MAX_BONDS=3
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+CONFIG_BT_NIMBLE_SM_SC=y
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=512
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=5120
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=48
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_SIZE=256
+CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
+# controller sleeps between connection events; the main crystal is the low
+# power clock (no 32 kHz crystal assumed) and stays powered in light sleep
+CONFIG_BT_CTRL_MODEM_SLEEP=y
+CONFIG_BT_CTRL_MODEM_SLEEP_MODE_1=y
+CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL=y
+CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y
+# gateway host → 127.0.0.1 while relaying (lwip_hook_netconn_external_resolve)
+CONFIG_LWIP_HOOK_NETCONN_EXT_RESOLVE_CUSTOM=y
+# controller code in flash instead of IRAM (~20 KB internal RAM back). BLE can
+# hiccup while flash is erased, so relay mode avoids flash writes (orbs come
+# from the cache). One advertising set + one connection.
+CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY=y
+CONFIG_BT_CTRL_BLE_MAX_ACT=2

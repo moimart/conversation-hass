@@ -424,7 +424,7 @@ static void action_cb(lv_event_t *e)
 {
     ui_activity();
     const char *a = lv_event_get_user_data(e);
-    if (strcmp(a, "ota")) ui_settings_close();
+    if (strcmp(a, "ota")) ui_settings_close();   // (blepair shows its own screen)
     app_post_str(EV_ACTION, a);
 }
 
@@ -489,10 +489,11 @@ static void build_settings(void)
     lv_obj_align(l, LV_ALIGN_CENTER, 0, 70);
 
     p = set_page(3, "Device");
-    s_update_btn = action_btn(p, ICON_DOWNLOAD, "Update", "ota", -60, -50);
-    action_btn(p, ICON_WIFI, "Wi-Fi", "portal", 60, -50);
-    action_btn(p, ICON_LINK_VARIANT, "Pair", "repair", -60, 66);
-    action_btn(p, ICON_REFRESH, "Restart", "restart", 60, 66);
+    s_update_btn = action_btn(p, ICON_DOWNLOAD, "Update", "ota", -112, -56);
+    action_btn(p, ICON_WIFI, "Wi-Fi", "portal", 0, -56);
+    action_btn(p, ICON_CELLPHONE, "Phone", "blepair", 112, -56);
+    action_btn(p, ICON_LINK_VARIANT, "Pair", "repair", -60, 60);
+    action_btn(p, ICON_REFRESH, "Restart", "restart", 60, 60);
 
     p = set_page(4, "About");
     s_info = mk_label(p, g_fonts.text16, g_theme.text_dim, "");

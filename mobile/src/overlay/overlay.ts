@@ -16,6 +16,10 @@ import {
 } from "./voice-note";
 import { mountMirror, hasFrontCamera } from "./mirror";
 import { hasHomeAssistant, openHomeAssistant } from "./apps";
+import {
+  PalLink, isBleLinkSupported, gatewayHostFor, requestRoundPairingMode, bleStatusText,
+  type BleLinkStatus,
+} from "./ble-link";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 
 export function mountOverlay(cfg: HalConfig): void {
@@ -421,6 +425,19 @@ ${ORB_SECTION_HTML}
           <input class="hal-sheet-select hal-time" id="hal-pf-quiet-end" type="time" />
         </div>
       </div>
+      <div id="hal-round-box" hidden>
+        <div class="hal-sheet-title" style="margin-top:14px">PAL Round</div>
+        <div class="hal-sheet-row">
+          <div class="hal-sheet-row-text">
+            <div class="hal-sheet-row-label">Share internet with PAL Round</div>
+            <div class="hal-sheet-row-sub" id="hal-round-status">Not paired</div>
+          </div>
+          <button class="hal-switch" id="hal-round-toggle" role="switch" aria-checked="false" aria-label="Share internet with PAL Round"></button>
+        </div>
+        <div class="hal-sheet-row-sub" id="hal-round-hint" hidden></div>
+        <button class="hal-sheet-btn" id="hal-round-pair">Pair a PAL Round</button>
+        <button class="hal-sheet-btn danger" id="hal-round-forget" hidden>Forget PAL Round</button>
+      </div>
       <div class="hal-sheet-title" style="margin-top:14px">Layout</div>
       <div class="hal-sheet-row">
         <div class="hal-sheet-row-text">
@@ -448,6 +465,106 @@ ${ORB_SECTION_HTML}
   mountPhotoFrameToggle(back);
   mountLayoutControls(back, close);
   mountOrbSection(cfg, back);
+  void mountRoundLink(cfg, back);
+}
+
+// PAL Round BLE link (Android only, like the HA launcher): share this phone's
+// internet with a bonded PAL Round when it has no Wi-Fi. The relay only ever
+// talks to the paired gateway host, so it needs a gateway URL from pairing.
+async function mountRoundLink(cfg: HalConfig, back: HTMLElement): Promise<void> {
+  if (!isBleLinkSupported()) return;
+  const box = back.querySelector<HTMLElement>("#hal-round-box");
+  const toggle = back.querySelector<HTMLButtonElement>("#hal-round-toggle");
+  const statusEl = back.querySelector<HTMLElement>("#hal-round-status");
+  const hint = back.querySelector<HTMLElement>("#hal-round-hint");
+  const pairBtn = back.querySelector<HTMLButtonElement>("#hal-round-pair");
+  const forgetBtn = back.querySelector<HTMLButtonElement>("#hal-round-forget");
+  if (!box || !toggle || !statusEl || !hint || !pairBtn || !forgetBtn) return;
+
+  let status: BleLinkStatus;
+  try { status = await PalLink.status(); } catch { return; }   // plugin missing (old build)
+  box.hidden = false;
+  box.style.display = "contents";   // children join the sheet's flex column
+
+  const gwHost = gatewayHostFor(cfg);
+  let pairing = false;
+  const setHint = (text: string | null) => {
+    hint.textContent = text ?? "";
+    hint.hidden = !text;
+  };
+  const render = (s: BleLinkStatus) => {
+    status = s;
+    const on = s.enabled && s.paired;
+    toggle.classList.toggle("on", on);
+    toggle.setAttribute("aria-checked", String(on));
+    toggle.disabled = !s.paired || (!gwHost && !on);
+    statusEl.textContent = bleStatusText(s);
+    pairBtn.textContent = s.paired ? "Pair a different PAL Round" : "Pair a PAL Round";
+    pairBtn.disabled = pairing;
+    forgetBtn.hidden = !s.paired;
+    if (!pairing) {
+      setHint(!gwHost
+        ? "This app has no gateway address — re-pair it with PAL to enable sharing."
+        : null);
+    }
+  };
+  render(status);
+
+  let handles: Array<{ remove(): Promise<void> }> = [];
+  handles = await Promise.all([
+    PalLink.addListener("statusChange", (s) => {
+      if (!back.isConnected) { handles.forEach((h) => void h.remove()); return; }
+      render(s);
+    }),
+    PalLink.addListener("pairState", (p) => {
+      if (!back.isConnected || !pairing) return;
+      setHint(p.state === "bonding"
+        ? "Type the code shown on the PAL Round"
+        : "Looking for the PAL Round…");
+    }),
+  ]);
+
+  toggle.addEventListener("click", async () => {
+    if (toggle.disabled) return;
+    toggle.disabled = true;
+    try {
+      const turnOn = !toggle.classList.contains("on");
+      render(turnOn && gwHost
+        ? await PalLink.start({ gatewayHost: gwHost })
+        : await PalLink.stop());
+    } catch (e) {
+      setHint(`Couldn't change sharing: ${(e as Error).message}`);
+      toggle.disabled = false;
+    }
+  });
+
+  pairBtn.addEventListener("click", async () => {
+    if (pairing) return;
+    pairing = true;
+    pairBtn.disabled = true;
+    setHint("Asking PAL to put the PAL Round in pairing mode…");
+    const n = await requestRoundPairingMode(cfg);
+    // Scan regardless: the Round may already be in pairing mode by hand.
+    setHint(n === 0
+      ? "No PAL Round is online — on the Round open Settings → Pair a phone"
+      : "Looking for the PAL Round…");
+    try {
+      const s = await PalLink.pair(gwHost ? { gatewayHost: gwHost } : {});
+      pairing = false;
+      render(s);
+      setHint(`Paired with ${s.deviceName || "PAL Round"}.`);
+    } catch (e) {
+      pairing = false;
+      render(status);
+      setHint((e as Error).message || "Pairing failed");
+    }
+  });
+
+  forgetBtn.addEventListener("click", async () => {
+    if (!confirm("Forget this PAL Round? It will stop using this phone's internet.")) return;
+    try { render(await PalLink.unpair()); }
+    catch (e) { setHint(`Couldn't forget: ${(e as Error).message}`); }
+  });
 }
 
 // Satellite layout editor entry (mobile/src/layout). Opens edit mode over the

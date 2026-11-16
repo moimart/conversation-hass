@@ -85,6 +85,8 @@ static void toast(const char *t)
     }
 }
 
+static void ble_pair_begin(const char *from);
+
 static void setup_screen(const char *title, const char *body, const char *qr)
 {
     if (pal_lock()) {
@@ -437,6 +439,8 @@ static void on_msg(cJSON *m)
             cJSON_Delete(info);
         }
         load_orb();
+    } else if (!strcmp(type, "ble_pair")) {   // a phone asked through PAL (POST /api/satellite/ble_pair)
+        ble_pair_begin(cJSON_GetStringValue(cJSON_GetObjectItem(m, "from")));
     } else if (!strcmp(type, "weather_update")) {
         cJSON *t = cJSON_GetObjectItem(m, "temp");
         if (pal_lock()) {
@@ -471,9 +475,66 @@ static void ota_progress(int pct)
     }
 }
 
+// --- Bluetooth link (BLE_LINK.md) ----------------------------------------------------------
+
+static void ble_pair_begin(const char *from)
+{
+    if (!link_pair_start()) {
+        toast("Bluetooth unavailable");
+        return;
+    }
+    if (pal_lock()) {
+        ui_screen_wake();
+        pal_unlock();
+    }
+    char body[160];
+    snprintf(body, sizeof(body), "%s%s%sOpen the PAL app → Settings → PAL Round → Pair. Press a button to cancel.",
+             from ? "Requested by " : "", from ? from : "", from ? ".\n" : "");
+    setup_screen("Pair a phone", body, NULL);
+}
+
+static void on_link(const char *ev)
+{
+    if (!strcmp(ev, "ble")) {
+        net_enter_ble();
+    } else if (ev[0] == 'c') {   // passkey to show
+        char code[8];
+        snprintf(code, sizeof(code), "%.3s %.3s", ev + 1, ev + 4);
+        setup_screen(code, "Type this code on your phone", NULL);
+    } else if (!strcmp(ev, "paired")) {
+        g_settings.ble_bond = 1;
+        settings_save();
+        link_pair_finish();
+        setup_screen(NULL, NULL, NULL);
+        toast("Phone paired");
+        audio_beep(1);
+    } else if (!strcmp(ev, "pairend") || !strcmp(ev, "pairfail")) {
+        link_pair_finish();
+        setup_screen(NULL, NULL, NULL);
+        toast(ev[4] == 'f' ? "Pairing failed" : "Pairing timed out");
+    }
+}
+
+static bool ble_pair_cancel(void)
+{
+    if (!link_pairing()) return false;
+    link_pair_finish();
+    setup_screen(NULL, NULL, NULL);
+    toast("Pairing cancelled");
+    return true;
+}
+
 static void do_action(const char *a)
 {
-    if (!strcmp(a, "netcheck")) {
+    if (!strcmp(a, "blepair")) {
+        ble_pair_begin(NULL);
+    } else if (!strcmp(a, "bleoff")) {
+        net_leave_ble(0);
+    } else if (!strcmp(a, "bleforget")) {
+        if (net_ble_mode()) net_leave_ble(0);
+        link_forget();
+        toast("Phone forgotten");
+    } else if (!strcmp(a, "netcheck")) {
         net_check_main();
     } else if (!strcmp(a, "wake")) {
         if (pal_lock()) {
@@ -730,6 +791,7 @@ static void app_task(void *arg)
             cJSON_Delete(e.json);
             break;
         case EV_PTT_PRESS:
+            if (ble_pair_cancel()) break;
             s_ptt_down_us = esp_timer_get_time();
             talk_press();
             break;
@@ -746,6 +808,9 @@ static void app_task(void *arg)
             audio_beep(1);
             finish_listening();
             break;
+        case EV_LINK:
+            on_link(e.str);
+            break;
         case EV_NOTE_DONE:
             note_done();
             break;
@@ -753,6 +818,7 @@ static void app_task(void *arg)
             if (!audio_playing() && s_state == PAL_SPEAKING) set_state(PAL_IDLE);
             break;
         case EV_PWR_SHORT: {
+            if (ble_pair_cancel()) break;
             // either button talks; a press while the screen is off just wakes it
             bool was_on = true;
             if (pal_lock()) {

@@ -51,7 +51,9 @@ static bool probe(const char *base)
 
 void pal_choose_base(void)
 {
-    if (probe(g_settings.server)) {
+    if (net_ble_mode()) {   // through the phone: only the gateway is reachable
+        strlcpy(s_base, g_settings.gateway, sizeof(s_base));
+    } else if (probe(g_settings.server)) {
         strlcpy(s_base, g_settings.server, sizeof(s_base));
     } else if (g_settings.gateway[0] && probe(g_settings.gateway)) {
         strlcpy(s_base, g_settings.gateway, sizeof(s_base));

@@ -333,3 +333,33 @@ async def test_satellite_tts_rate(monkeypatch):
         assert wf.getframerate() == 16000
     bogus = await get_satellite_tts(_req("tok", {"rate": "999999"}))
     assert bogus.body == plain.body
+
+
+@pytest.mark.asyncio
+async def test_ble_pair_reaches_online_rounds_only(monkeypatch):
+    from server.app import routes_device as r
+
+    class WS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, m):
+            self.sent.append(m)
+
+    names = {"phone": "Pixel", "full": "Pixel", "r1": "PAL Round 0274", "tab": "Tablet"}
+    round_ws, tab_ws, me_ws = WS(), WS(), WS()
+    st = SimpleNamespace(
+        pairing=SimpleNamespace(
+            is_valid_token=lambda t: t in names or t == "watch",
+            scope_allows=lambda t, p: t != "watch",
+            device_name=lambda t: names.get(t),
+        ),
+        satellite_ws={"r1": round_ws, "tab": tab_ws, "full": me_ws},
+    )
+    monkeypatch.setitem(sys.modules, "server.app.main", SimpleNamespace(_get_state=lambda app: st))
+    out = await r.ble_pair(_req("full"))
+    assert out == {"ok": True, "devices": 1}
+    assert round_ws.sent == [{"type": "ble_pair", "from": "Pixel"}]
+    assert tab_ws.sent == [] and me_ws.sent == []
+    assert (await r.ble_pair(_req("watch"))).status_code == 403
+    assert (await r.ble_pair(_req("nope"))).status_code == 401

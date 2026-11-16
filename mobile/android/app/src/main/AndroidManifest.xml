@@ -33,6 +33,21 @@
 
         </activity>
 
+        <!-- PAL Round BLE link: relays the Round's TLS bytes to the PAL gateway
+             (firmware/pal-round/BLE_LINK.md). -->
+        <service
+            android:name=".PalLinkService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+        <receiver
+            android:name=".PalLinkBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -61,4 +76,18 @@
     <uses-feature android:name="android.hardware.camera.front" android:required="false" />
     <!-- WebRTC audio in the WebView (intercom calls). -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- PAL Round BLE link (PalLinkPlugin / PalLinkService). Android 12+: SCAN
+         (pairing only; never used to derive location) + CONNECT. Android ≤ 11:
+         legacy BLUETOOTH/ADMIN + fine location for the pairing scan. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 </manifest>
