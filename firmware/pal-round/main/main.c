@@ -117,15 +117,49 @@ static void apply_info(cJSON *info)
     }
 }
 
-static void load_orb(void)
+// Orb changes run on their own task: the server may first have to render the
+// clips (up to ~90 s) and then they download to flash. The app task stays free
+// (buttons, screen on/off, speech) and the home screen shows "Changing orb…".
+static TaskHandle_t s_orbld_task;
+
+static void orb_fetch(void)
 {
+    char orb[64] = "follow";
+    if (pal_lock()) {              // (the settings UI writes g_settings.orb under this lock)
+        if (g_settings.orb[0]) strlcpy(orb, g_settings.orb, sizeof(orb));
+        pal_unlock();
+    }
     char path[160];
-    snprintf(path, sizeof(path), "/api/device/orb?size=448&fps=12&orb=%s", g_settings.orb[0] ? g_settings.orb : "follow");
+    snprintf(path, sizeof(path), "/api/device/orb?size=448&fps=12&orb=%s", orb);
     cJSON *m = pal_get_json(path, 90000);   // first render of a clip can take a while
     if (m) {
         orb_load_manifest(m);
         cJSON_Delete(m);
     }
+}
+
+static void orbld_task(void *arg)
+{
+    while (true) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   // several requests → one load
+        if (!g_settings.token[0]) continue;
+        if (pal_lock()) {
+            ui_orb_busy(true);
+            pal_unlock();
+        }
+        orb_fetch();
+        if (pal_lock()) {
+            ui_orb_busy(false);
+            pal_unlock();
+        }
+    }
+}
+
+static void load_orb(void)
+{
+    // internal stack: the download writes the FAT cache (flash)
+    if (!s_orbld_task) xTaskCreatePinnedToCore(orbld_task, "orbld", 7168, NULL, 4, &s_orbld_task, 1);
+    if (s_orbld_task) xTaskNotifyGive(s_orbld_task);
 }
 
 static void load_pages(void)
@@ -869,10 +903,10 @@ static void app_task(void *arg)
         case EV_SETTINGS_CHANGED:
             settings_save();
             break;
-        case EV_RELOAD:
+        case EV_RELOAD:                // str: "orb" | "pages" | "" (both)
             if (g_settings.token[0]) {
-                load_orb();
-                load_pages();
+                if (strcmp(e.str, "pages")) load_orb();
+                if (strcmp(e.str, "orb")) load_pages();
             }
             break;
         case EV_ACTION:

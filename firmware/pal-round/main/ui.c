@@ -475,12 +475,8 @@ static void picker_apply(picker_t *p)
     if (p->kind == PK_TMO) {
         g_settings.screen_timeout_s = TMO_VALS[p->idx];
     } else if (p->kind == PK_DASH) {
-        if (p->idx == 0) strcpy(g_settings.dashboard, "-");
-        else strlcpy(g_settings.dashboard, g_choices.dash_ids[p->idx - 1], sizeof(g_settings.dashboard));
-        app_post(EV_RELOAD);
-    } else if (g_choices.orb_n) {
-        strlcpy(g_settings.orb, g_choices.orb_ids[p->idx], sizeof(g_settings.orb));
-        app_post(EV_RELOAD);
+    } else {
+        return;   // dashboard + orb are slow to load: committed when Settings closes (settings_commit)
     }
     app_post(EV_SETTINGS_CHANGED);
 }
@@ -664,6 +660,7 @@ void ui_settings_refresh(void)
     lv_slider_set_value(s_bright, g_settings.brightness, LV_ANIM_OFF);
     int t = g_settings.screen_timeout_s;
     s_pk[PK_TMO].idx = t == 15 ? 0 : t == 30 ? 1 : t == 60 ? 2 : t == 300 ? 3 : 4;
+    if (!lv_obj_has_flag(s_set, LV_OBJ_FLAG_HIDDEN)) goto info;   // open: keep the user's pending picks
     s_pk[PK_DASH].idx = 0;
     for (int i = 0; i < g_choices.dash_n; i++)
         if (!strcmp(g_choices.dash_ids[i], g_settings.dashboard)) s_pk[PK_DASH].idx = i + 1;
@@ -671,6 +668,7 @@ void ui_settings_refresh(void)
     for (int i = 0; i < g_choices.orb_n; i++)
         if (!strcmp(g_choices.orb_ids[i], g_settings.orb)) s_pk[PK_ORB].idx = i;
     for (int i = 0; i < 3; i++) picker_show(&s_pk[i]);
+info:;
     lv_obj_t *ul = lv_obj_get_child(s_update_btn, 1);
     lv_label_set_text(ul, g_choices.update[0] ? g_choices.update : "Update");
     lv_obj_set_style_bg_color(s_update_btn, g_choices.update[0] ? g_theme.accent_deep : lv_color_hex(0x26262c), 0);
@@ -692,10 +690,82 @@ void ui_settings_open(void)
     orb_sync_active();
 }
 
+// The dashboard and orb pickers only take effect when Settings closes (✕, an
+// action, or the screen going off): loading either takes a while, so stepping
+// through the choices doesn't start a load for every one.
+static void settings_commit(void)
+{
+    bool changed = false;
+    char dash[64];
+    int di = s_pk[PK_DASH].idx;
+    if (di == 0) strcpy(dash, "-");
+    else if (di - 1 < g_choices.dash_n) strlcpy(dash, g_choices.dash_ids[di - 1], sizeof(dash));
+    else strlcpy(dash, g_settings.dashboard, sizeof(dash));   // list changed under us: keep
+    if (strcmp(dash, g_settings.dashboard)) {
+        strlcpy(g_settings.dashboard, dash, sizeof(g_settings.dashboard));
+        app_post_str(EV_RELOAD, "pages");
+        changed = true;
+    }
+    if (g_choices.orb_n && s_pk[PK_ORB].idx < g_choices.orb_n &&
+        strcmp(g_choices.orb_ids[s_pk[PK_ORB].idx], g_settings.orb)) {
+        strlcpy(g_settings.orb, g_choices.orb_ids[s_pk[PK_ORB].idx], sizeof(g_settings.orb));
+        app_post_str(EV_RELOAD, "orb");
+        changed = true;
+    }
+    if (changed) app_post(EV_SETTINGS_CHANGED);
+}
+
 void ui_settings_close(void)
 {
-    if (s_set) lv_obj_add_flag(s_set, LV_OBJ_FLAG_HIDDEN);
+    if (s_set && !lv_obj_has_flag(s_set, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(s_set, LV_OBJ_FLAG_HIDDEN);
+        settings_commit();
+    }
     orb_sync_active();
+}
+
+// "Changing orb…" pill at the top of the home screen. Shown only if the load
+// takes more than a beat (a reconnect replays set_orb and usually finds
+// nothing to do).
+static lv_obj_t *s_orb_busy;
+static bool s_orb_busy_on;
+
+static void orb_busy_show(lv_timer_t *t)
+{
+    if (s_orb_busy_on && s_orb_busy) lv_obj_remove_flag(s_orb_busy, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_orb_busy(bool on)
+{
+    s_orb_busy_on = on;
+    if (!s_orb_busy) {
+        s_orb_busy = lv_obj_create(s_home);
+        lv_obj_remove_style_all(s_orb_busy);
+        lv_obj_set_size(s_orb_busy, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_color(s_orb_busy, lv_color_hex(0x2a2a30), 0);
+        lv_obj_set_style_bg_opa(s_orb_busy, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(s_orb_busy, 18, 0);
+        lv_obj_set_style_pad_hor(s_orb_busy, 14, 0);
+        lv_obj_set_style_pad_ver(s_orb_busy, 7, 0);
+        lv_obj_set_style_pad_column(s_orb_busy, 8, 0);
+        lv_obj_set_flex_flow(s_orb_busy, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(s_orb_busy, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_t *sp = lv_spinner_create(s_orb_busy);
+        lv_obj_set_size(sp, 20, 20);
+        lv_obj_set_style_arc_width(sp, 3, LV_PART_MAIN);
+        lv_obj_set_style_arc_width(sp, 3, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(sp, lv_color_hex(0x44444c), LV_PART_MAIN);
+        lv_obj_set_style_arc_color(sp, g_theme.accent, LV_PART_INDICATOR);
+        mk_label(s_orb_busy, g_fonts.text16, lv_color_white(), "Changing orb\xE2\x80\xA6");
+        lv_obj_align(s_orb_busy, LV_ALIGN_TOP_MID, 0, 58);
+        lv_obj_add_flag(s_orb_busy, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (on) {
+        lv_timer_t *t = lv_timer_create(orb_busy_show, 700, NULL);
+        lv_timer_set_repeat_count(t, 1);
+    } else {
+        lv_obj_add_flag(s_orb_busy, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 
@@ -1053,7 +1123,7 @@ int ui_orb_overlays(lv_area_t *out, int max)
 {
     bool covered = (s_set && !lv_obj_has_flag(s_set, LV_OBJ_FLAG_HIDDEN)) || s_setup || s_pair || s_ota;
     if (!s_screen_on || covered || lv_tileview_get_tile_active(s_tv) != s_home) return -1;
-    lv_obj_t *over[] = {s_box, s_status, s_timer_lbl, s_toast};
+    lv_obj_t *over[] = {s_box, s_status, s_timer_lbl, s_toast, s_orb_busy};
     int n = 0;
     for (size_t i = 0; i < sizeof(over) / sizeof(over[0]) && n < max; i++) {
         if (!over[i] || lv_obj_has_flag(over[i], LV_OBJ_FLAG_HIDDEN)) continue;

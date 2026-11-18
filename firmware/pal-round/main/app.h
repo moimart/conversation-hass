@@ -58,7 +58,7 @@ typedef enum {
     EV_PWR_LONG,
     EV_PAIR_CODE,       // str: 6 digits typed on the keypad
     EV_SETTINGS_CHANGED,
-    EV_RELOAD,          // re-fetch info / orb / pages
+    EV_RELOAD,          // str: "orb" | "pages" | "" — re-fetch them
     EV_TICK,            // 1 Hz housekeeping
     EV_ACTION,          // str: "repair" | "portal" | "ota" | "restart" | "reset"
     EV_NOTE_DONE,       // voice note upload finished (result via note_result())
@@ -241,6 +241,7 @@ void ui_settings_open(void);
 void ui_no_swipe(lv_obj_t *obj);
 void ui_settings_close(void);
 void ui_toast(const char *text);
+void ui_orb_busy(bool on);                       // "Changing orb…" on the home screen (shown after a beat)
 void ui_ota_progress(int pct);                     // -1 = hide
 void ui_set_pair_message(const char *msg);
 

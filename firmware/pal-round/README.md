@@ -12,7 +12,7 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 | **Swipe left** | Clock, date and weather, then Home Assistant pages: the dashboard you pick in Settings, as native round tiles (tap = toggle / run; long-press a light or cover = brightness / position dial) and full-page climate, media and weather controls |
 | **Swipe right** (from the orb) | How-to page: which button does what, the battery level, and the **lock**: while locked, BOOT and PWR do nothing (no talk, no notes, no power-off) except the top-button double press (screen on / off) and touch is limited to the orb, this page and the fidget page — no Settings, no clock/HA pages — so PAL can't listen at all and nothing can be changed. A lock icon shows under the orb; swipe back here to unlock. Saved across reboots |
 | **Swipe right twice** (from the orb) | Fidget: a round pop-it of rainbow bubbles — press to pop (soft pop sound), they all spring back once every one is popped. Reachable and usable while locked |
-| **Hold the orb** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, phone (Bluetooth), re-pair |
+| **Hold the orb** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, phone (Bluetooth), re-pair. The dashboard and orb you pick apply when Settings closes; the orb then loads in the background ("Changing orb…" on the home screen) while everything else keeps working |
 
 **Buttons:** the bottom one (**BOOT**) is for voice commands, the top one (**PWR**) for
 voice notes. One press starts, the next press stops; touching the orb never records.
