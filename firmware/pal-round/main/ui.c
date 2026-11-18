@@ -243,8 +243,10 @@ static void build_help_page(void)
     s_help_title = mk_label(s_helppage, g_fonts.text26, g_theme.accent, "How to use");
     lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -165);
     s_hint = mk_label(s_helppage, g_fonts.text20, g_theme.text,
-                      "Press a button to talk\n\n"
-                      "Double-press the bottom\nbutton for a voice note\n\n"
+                      "Bottom button: talk to PAL\n"
+                      "press again to send\n\n"
+                      "Top button: voice note\n"
+                      "press again to save\n\n"
                       "Hold the orb for settings");
     lv_obj_set_style_text_line_space(s_hint, 4, 0);
     lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, -38);

@@ -90,7 +90,9 @@ static void handle(char *line)
                g_settings.orb, ws_connected(), pmu_battery_pct(), pmu_charging(), ui_screen_on(), audio_playing(),
                audio_recording(), link_state(), g_settings.ble_bond, link_active(), link_streams());
     } else if (!strcmp(argv[0], "press")) {
-        app_post(EV_PTT_PRESS);            // = a BOOT press (tests: "press" twice = voice note)
+        app_post(EV_PTT_PRESS);            // = a bottom (BOOT) press: voice command start/stop
+    } else if (!strcmp(argv[0], "note")) {
+        app_post(EV_PWR_SHORT);            // = a top (PWR) press: voice note start/save
     } else if (!strcmp(argv[0], "wake")) {
         app_post_str(EV_ACTION, "wake");   // screen on (tests)
     } else if (!strcmp(argv[0], "beep")) {

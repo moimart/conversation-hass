@@ -35,7 +35,6 @@ static QueueHandle_t s_q;
 static pal_state_t s_state = PAL_IDLE;
 static bool s_loaded;          // info/orb/pages fetched for this connection
 static bool s_pairing;
-static int64_t s_ptt_down_us;
 static int s_ticks;
 static char s_devname[32];
 
@@ -627,12 +626,11 @@ static void tick_cb(void *arg) { app_post(EV_TICK); }
 // be long (10 min cap) without buffering them. Press again to finish: the
 // server transcribes it and stores it in the Notes list.
 
-#define DOUBLE_PRESS_US 450000
 static StreamBufferHandle_t s_note_sb;
 static TaskHandle_t s_note_task;
 static volatile bool s_note_on;            // recording or uploading
 static bool s_turn_aborted;
-static int64_t s_note_t0, s_last_press_us;
+static int64_t s_note_t0;
 static int s_note_status;                  // HTTP status, -1 = no answer
 static bool s_note_stored;
 static char *s_note_text;
@@ -749,23 +747,25 @@ static void note_done(void)
     }
 }
 
-// Every "talk" press (BOOT, PWR, orb tap) comes through here.
-static void talk_press(void)
+// Button roles (one press starts, the next press stops; touch never records):
+//   bottom = BOOT → voice command,  top = PWR → voice note.
+static void command_press(void)
 {
-    int64_t now = esp_timer_get_time();
-    bool dbl = now - s_last_press_us < DOUBLE_PRESS_US;
-    s_last_press_us = now;
-    if (s_note_on) {               // recording → finish; uploading → ignore
+    if (s_note_on) {               // a note is running: that's the top button's job
+        toast("Recording a note - press the top button to save");
+        return;
+    }
+    if (audio_recording()) audio_record_stop();   // second press: send it
+    else begin_listening();
+}
+
+static void note_press(void)
+{
+    if (s_note_on) {               // recording → save; uploading → ignore
         if (audio_recording()) note_end();
         return;
     }
-    if (dbl && (audio_recording() || s_state == PAL_LISTENING)) {
-        s_last_press_us = 0;
-        note_begin();
-        return;
-    }
-    if (audio_recording()) audio_record_stop();
-    else begin_listening();
+    note_begin();                  // (drops a voice command that was recording)
 }
 
 static void app_task(void *arg)
@@ -791,18 +791,14 @@ static void app_task(void *arg)
             on_msg(e.json);
             cJSON_Delete(e.json);
             break;
-        case EV_PTT_PRESS:
+        case EV_PTT_PRESS:             // bottom button: voice command
             if (ble_pair_cancel()) break;
-            s_ptt_down_us = esp_timer_get_time();
-            talk_press();
+            command_press();
             break;
-        case EV_PTT_RELEASE:
-            // hold-to-talk on the BOOT button: a long hold ends on release
-            if (!s_note_on && audio_recording() && esp_timer_get_time() - s_ptt_down_us > 700000)
-                audio_record_stop();
+        case EV_PTT_RELEASE:           // (no hold-to-talk: press again to send)
             break;
         case EV_REC_DONE:
-            if (s_turn_aborted) {          // the turn became a voice note (double press)
+            if (s_turn_aborted) {          // the command turn became a voice note (top button)
                 s_turn_aborted = false;
                 break;
             }
@@ -828,15 +824,7 @@ static void app_task(void *arg)
                 break;
             }
             if (ble_pair_cancel()) break;
-            // either button talks; a press while the screen is off just wakes it
-            bool was_on = true;
-            if (pal_lock()) {
-                was_on = ui_screen_on();
-                ui_screen_wake();
-                pal_unlock();
-            }
-            if (!was_on) break;
-            talk_press();
+            note_press();                  // top button: voice note (wakes the screen itself)
             break;
         }
         case EV_PWR_LONG:

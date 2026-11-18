@@ -13,20 +13,23 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 | **Swipe right** (from the orb) | How-to page: talk, voice notes, settings — and the **lock**: while locked, BOOT and PWR do nothing (no talk, no power-off) and touch is limited to swiping between the orb and this page — no Settings, no clock/HA pages — so PAL can't listen at all and nothing can be changed. A lock icon shows under the orb; swipe back here to unlock. Saved across reboots |
 | **Swipe up** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, re-pair |
 
-**Talking to PAL:** press **BOOT** (or PWR) and speak — touching the orb never listens. Recording stops by
-itself when you pause; holding BOOT records until you let go. The audio goes to
+**Buttons:** the bottom one (**BOOT**) is for voice commands, the top one (**PWR**) for
+voice notes. One press starts, the next press stops; touching the orb never records.
+
+**Talking to PAL:** press the bottom button and speak; press it again to send (it also
+sends by itself when you pause). The audio goes to
 PAL's speech-to-text (`/api/satellite/stt`), the text to `/api/command`, and the
 reply comes back over the device's `/ws/ui` socket: state, text, and the spoken
 reply (`tts_play` → `/api/satellite/tts?rate=16000`). Announcements, finished
 timers and the per-device voice all work as on the phones.
 
-**Voice notes:** double-press a button (BOOT or PWR). Two
+**Voice notes:** press the top button (PWR). Two
 blips, and the box shows "● Recording note 0:12". Talk as long as you like (10 min
-cap); the audio streams to `POST /api/satellite/note` while you speak. Press once
+cap); the audio streams to `POST /api/satellite/note` while you speak. Press it once
 more to finish: PAL transcribes it and stores it in the Notes list (the Notes
 view on the hub/phones, and the `list_notes` MCP tool).
 
-**PWR button:** short press = wake the screen / talk, long press = power off.
+**PWR button:** short press = voice note start / save, long press = power off.
 
 **The orb** shows the hub's orb, or this device's own pick from Settings. The server
 re-renders the theme's clips or a custom orb as `.palm` files: 448 px circular
