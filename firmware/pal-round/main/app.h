@@ -161,6 +161,7 @@ bool audio_play_wav(uint8_t *wav, size_t len);   // takes ownership (free()), as
 void audio_stop_playback(void);
 bool audio_playing(void);
 void audio_beep(int kind);                       // 0 = listen, 1 = done, 2 = error
+void audio_pop(void);                            // fidget-page pop (skipped while busy)
 
 // ---------------------------------------------------------------------------
 // pmu.c — AXP2101 (battery + power key)

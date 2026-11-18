@@ -24,7 +24,7 @@ ui_choices_t g_choices;
 static lv_obj_t *s_tv, *s_home, *s_box, *s_clockpage, *s_weather_lbl;
 static void box_sync(void);
 static void box_style(void);
-static lv_obj_t *s_batt_ic[2], *s_batt_t[2], *s_helppage, *s_help_title, *s_lock_btn;
+static lv_obj_t *s_batt_ic[2], *s_batt_t[2], *s_fidgetpage, *s_helppage, *s_help_title, *s_lock_btn;
 static int s_batt_shown = -2;
 static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
 static lv_obj_t *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_shield;
@@ -144,8 +144,8 @@ static void swipe_poll(lv_timer_t *t)
     else if (s_setup || s_pair || s_ota || ha_dial_obj()) return;
     else {
         tv = s_tv;
-        // locked: only the orb and the page left of it (with the lock) are reachable
-        n = g_settings.btn_lock ? 2 : s_page_cols + 1;
+        // locked: only the orb and the pages left of it (lock, fidget) are reachable
+        n = g_settings.btn_lock ? 3 : s_page_cols + 1;   // fidget, how-to, orb
     }
     ui_activity();
     jump(tv, n, dx < 0 ? LV_DIR_LEFT : LV_DIR_RIGHT);
@@ -157,7 +157,7 @@ static void swipe_poll(lv_timer_t *t)
 
 static void build_home(void)
 {
-    s_home = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
+    s_home = lv_tileview_add_tile(s_tv, 2, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
     lv_obj_remove_flag(s_home, LV_OBJ_FLAG_SCROLLABLE);
 
     orb_create(s_home, ORB_SIZE);
@@ -213,6 +213,95 @@ static void build_home(void)
 static lv_obj_t *round_btn(lv_obj_t *parent, uint32_t icon, int size);
 static void batt_make(int i, lv_obj_t *page);
 
+// --- fidget page ------------------------------------------------------------------
+//
+// Leftmost page: a round "pop-it" of rainbow bubbles. Press one and it pops
+// (sinks, darkens, soft pop sound); when every bubble is popped they all spring
+// back. Works while the device is locked (it's reachable then, and does nothing
+// but pop).
+
+#define FIDGET_MAX 40
+static lv_obj_t *s_bub[FIDGET_MAX];
+static uint16_t s_bub_hue[FIDGET_MAX];
+static int s_bub_n, s_bub_popped;
+static bool s_bub_down[FIDGET_MAX];
+
+static void bubble_style(int i)
+{
+    lv_obj_t *b = s_bub[i];
+    uint16_t h = s_bub_hue[i];
+    if (s_bub_down[i]) {           // popped: sunk in, darker, a rim
+        lv_obj_set_style_bg_color(b, lv_color_hsv_to_rgb(h, 75, 32), 0);
+        lv_obj_set_style_bg_grad_dir(b, LV_GRAD_DIR_NONE, 0);
+        lv_obj_set_style_border_color(b, lv_color_hsv_to_rgb(h, 70, 70), 0);
+        lv_obj_set_style_border_width(b, 3, 0);
+        lv_obj_set_style_transform_scale(b, 236, 0);
+    } else {                       // up: domed (light top, deeper bottom)
+        lv_obj_set_style_bg_color(b, lv_color_hsv_to_rgb(h, 45, 100), 0);
+        lv_obj_set_style_bg_grad_color(b, lv_color_hsv_to_rgb(h, 85, 78), 0);
+        lv_obj_set_style_bg_grad_dir(b, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(b, 0, 0);
+        lv_obj_set_style_transform_scale(b, 256, 0);
+    }
+}
+
+static void bubbles_reset(lv_timer_t *t)
+{
+    for (int i = 0; i < s_bub_n; i++) {
+        s_bub_down[i] = false;
+        bubble_style(i);
+    }
+    s_bub_popped = 0;
+}
+
+static void bubble_cb(lv_event_t *e)
+{
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    ui_activity();
+    if (s_bub_down[i] || s_bub_popped >= s_bub_n) return;
+    s_bub_down[i] = true;
+    bubble_style(i);
+    audio_pop();
+    if (++s_bub_popped == s_bub_n) {   // all popped: spring back after a beat
+        lv_timer_t *t = lv_timer_create(bubbles_reset, 600, NULL);
+        lv_timer_set_repeat_count(t, 1);
+    }
+}
+
+static void build_fidget_page(void)
+{
+    s_fidgetpage = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_RIGHT);
+    lv_obj_remove_flag(s_fidgetpage, LV_OBJ_FLAG_SCROLLABLE);
+    const int d = 62, pitch = 70, row = 61, rmax = 226;   // hex grid inside the round screen
+    s_bub_n = 0;
+    for (int r = -3; r <= 3; r++) {
+        int y = r * row;
+        int off = (r & 1) ? pitch / 2 : 0;
+        for (int c = -4; c <= 4; c++) {
+            int x = c * pitch + off;
+            if (s_bub_n >= FIDGET_MAX) break;
+            int dist2 = x * x + y * y;
+            int lim = rmax - d / 2;
+            if (dist2 > lim * lim) continue;
+            lv_obj_t *b = lv_obj_create(s_fidgetpage);
+            lv_obj_remove_style_all(b);
+            lv_obj_set_size(b, d, d);
+            lv_obj_set_style_radius(b, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+            lv_obj_set_style_transform_pivot_x(b, d / 2, 0);
+            lv_obj_set_style_transform_pivot_y(b, d / 2, 0);
+            lv_obj_align(b, LV_ALIGN_CENTER, x, y);
+            lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(b, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+            lv_obj_add_event_cb(b, bubble_cb, LV_EVENT_PRESSED, (void *)(intptr_t)s_bub_n);
+            s_bub_hue[s_bub_n] = (uint16_t)(((r + 3) * 360 / 7) % 360);   // one colour per row
+            s_bub[s_bub_n] = b;
+            bubble_style(s_bub_n);
+            s_bub_n++;
+        }
+    }
+}
+
 // The lock button mirrors g_settings.btn_lock: icon, caption and colour.
 static void lock_sync(void)
 {
@@ -239,7 +328,7 @@ static void lock_cb(lv_event_t *e)
 // working while locked, so this page is always reachable to unlock).
 static void build_help_page(void)
 {
-    s_helppage = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_RIGHT);
+    s_helppage = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
     lv_obj_remove_flag(s_helppage, LV_OBJ_FLAG_SCROLLABLE);
     s_help_title = mk_label(s_helppage, g_fonts.text26, g_theme.accent, "How to use");
     lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -150);
@@ -266,9 +355,9 @@ static void build_help_page(void)
 // screen to itself). It survives dashboard reloads (ui_clear_pages).
 static void build_clock_page(void)
 {
-    s_clockpage = lv_tileview_add_tile(s_tv, 2, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
+    s_clockpage = lv_tileview_add_tile(s_tv, 3, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
     lv_obj_remove_flag(s_clockpage, LV_OBJ_FLAG_SCROLLABLE);
-    s_page_cols = 2;
+    s_page_cols = 3;
     s_clock = mk_label(s_clockpage, g_fonts.clock, g_theme.text, "--:--");
     lv_obj_align(s_clock, LV_ALIGN_CENTER, 0, -70);
     s_date = mk_label(s_clockpage, g_fonts.text26, g_theme.accent, "");
@@ -635,9 +724,9 @@ void ui_clear_pages(void)
     lv_tileview_set_tile(s_tv, s_home, LV_ANIM_OFF);
     for (int i = (int)lv_obj_get_child_count(s_tv) - 1; i >= 0; i--) {
         lv_obj_t *c = lv_obj_get_child(s_tv, i);
-        if (c != s_home && c != s_clockpage && c != s_helppage) lv_obj_delete(c);
+        if (c != s_home && c != s_clockpage && c != s_helppage && c != s_fidgetpage) lv_obj_delete(c);
     }
-    s_page_cols = 2;
+    s_page_cols = 3;
 }
 
 // --- overlays -------------------------------------------------------------------------
@@ -1079,6 +1168,7 @@ void ui_init(void)
     lv_obj_set_style_bg_opa(s_tv, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(s_tv, LV_SCROLLBAR_MODE_OFF);
     make_jumpy(s_tv);
+    build_fidget_page();
     build_help_page();
     build_home();
     build_clock_page();

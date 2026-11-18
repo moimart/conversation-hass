@@ -313,6 +313,36 @@ void audio_beep(int kind)
     enqueue(w, bytes, false);
 }
 
+// A short soft "pop" for the fidget page: a fast downward chirp with a sharp
+// decay (~35 ms). Skipped while the mic or a reply is busy.
+void audio_pop(void)
+{
+    if (s_rec_on || s_play_on) return;
+    int n = PAL_SAMPLE_RATE * 35 / 1000;
+    size_t bytes = 44 + n * 2;
+    uint8_t *w = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM);
+    if (!w) return;
+    memset(w, 0, 44);
+    memcpy(w, "RIFF", 4);
+    memcpy(w + 8, "WAVEfmt ", 8);
+    w[16] = 16; w[20] = 1; w[22] = 1;
+    w[24] = PAL_SAMPLE_RATE & 0xFF; w[25] = PAL_SAMPLE_RATE >> 8;
+    w[34] = 16;
+    memcpy(w + 36, "data", 4);
+    uint32_t dl = n * 2;
+    memcpy(w + 40, &dl, 4);
+    int16_t *s = (int16_t *)(w + 44);
+    float ph = 0;
+    for (int i = 0; i < n; i++) {
+        float t = (float)i / n;
+        float f = 900.0f - 650.0f * t;                 // 900 → 250 Hz
+        ph += 2 * (float)M_PI * f / PAL_SAMPLE_RATE;
+        float env = (i < 40 ? i / 40.0f : 1.0f) * expf(-6.0f * t);
+        s[i] = (int16_t)(sinf(ph) * 11000 * env);
+    }
+    enqueue(w, bytes, false);
+}
+
 void audio_set_volume(int vol)
 {
     s_volume = vol < 0 ? 0 : (vol > 100 ? 100 : vol);
