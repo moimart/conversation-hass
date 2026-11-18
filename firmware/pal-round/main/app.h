@@ -62,6 +62,7 @@ typedef enum {
     EV_TICK,            // 1 Hz housekeeping
     EV_ACTION,          // str: "repair" | "portal" | "ota" | "restart" | "reset"
     EV_NOTE_DONE,       // voice note upload finished (result via note_result())
+    EV_PWR_SINGLE,      // top button: a single press (no second press within the double-press window)
     EV_BTN_LOCKED,      // a physical button was pressed while the buttons are locked
     EV_LINK,            // str: "ble" (Wi-Fi gave up: go relay) | "c<passkey>" | "paired" | "pairend" | "pairfail"
 } app_event_type_t;

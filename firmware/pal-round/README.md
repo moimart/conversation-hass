@@ -16,6 +16,8 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 
 **Buttons:** the bottom one (**BOOT**) is for voice commands, the top one (**PWR**) for
 voice notes. One press starts, the next press stops; touching the orb never records.
+**Double-press the top button** to turn the screen off, or back on (a single top press
+waits ~0.5 s to tell the two apart).
 
 **Talking to PAL:** press the bottom button and speak; press it again to send (it also
 sends by itself when you pause). The audio goes to
@@ -30,7 +32,7 @@ cap); the audio streams to `POST /api/satellite/note` while you speak. Press it 
 more to finish: PAL transcribes it and stores it in the Notes list (the Notes
 view on the hub/phones, and the `list_notes` MCP tool).
 
-**PWR button:** short press = voice note start / save, long press = power off.
+**PWR button:** short press = voice note start / save, double press = screen on / off, long press = power off.
 
 **The orb** shows the hub's orb, or this device's own pick from Settings. The server
 re-renders the theme's clips or a custom orb as `.palm` files: 448 px circular

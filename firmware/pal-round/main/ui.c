@@ -334,9 +334,9 @@ static void build_help_page(void)
     lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -150);
     s_hint = mk_label(s_helppage, g_fonts.text20, g_theme.text,
                       "Bottom button: talk to PAL\n"
-                      "press again to send\n\n"
                       "Top button: voice note\n"
-                      "press again to save\n\n"
+                      "Press again to send / save\n"
+                      "Top twice: screen on / off\n\n"
                       "Hold the orb for settings\n"
                       "Lock: no buttons or touch");
     lv_obj_set_style_text_line_space(s_hint, 4, 0);

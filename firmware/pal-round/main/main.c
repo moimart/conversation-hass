@@ -616,6 +616,30 @@ static void buttons_init(void)
 
 static void tick_cb(void *arg) { app_post(EV_TICK); }
 
+// Top button: a single press waits out the double-press window, so a quick
+// second press can turn it into a double (screen on/off) instead of a note.
+#define PWR_DOUBLE_US 500000
+static esp_timer_handle_t s_pwr_timer;
+static void pwr_single_cb(void *arg) { app_post(EV_PWR_SINGLE); }
+
+static void pwr_press(void)
+{
+    if (!s_pwr_timer) {
+        const esp_timer_create_args_t a = {.callback = pwr_single_cb, .name = "pwr2"};
+        esp_timer_create(&a, &s_pwr_timer);
+    }
+    if (esp_timer_is_active(s_pwr_timer)) {   // second press in time: double → screen on/off
+        esp_timer_stop(s_pwr_timer);
+        if (pal_lock()) {
+            if (ui_screen_on()) ui_screen_sleep();
+            else ui_screen_wake();
+            pal_unlock();
+        }
+        return;
+    }
+    esp_timer_start_once(s_pwr_timer, PWR_DOUBLE_US);
+}
+
 // --- app task --------------------------------------------------------------------------------
 
 // --- voice notes -------------------------------------------------------------------------
@@ -824,9 +848,13 @@ static void app_task(void *arg)
                 break;
             }
             if (ble_pair_cancel()) break;
-            note_press();                  // top button: voice note (wakes the screen itself)
+            pwr_press();                   // single → EV_PWR_SINGLE (note), double → screen on/off
             break;
         }
+        case EV_PWR_SINGLE:
+            if (g_settings.btn_lock) break;
+            note_press();                  // top button: voice note (wakes the screen itself)
+            break;
         case EV_PWR_LONG:
             if (g_settings.btn_lock) {
                 if (ui_screen_on()) toast("Locked - unlock on the page left of the orb");
