@@ -597,7 +597,8 @@ static void buttons_task(void *arg)
         int lvl = gpio_get_level(BOOT_BTN);
         if (lvl == prev && lvl != stable) {   // two equal samples = debounced
             stable = lvl;
-            app_post(lvl == 0 ? EV_PTT_PRESS : EV_PTT_RELEASE);
+            if (!g_settings.btn_lock) app_post(lvl == 0 ? EV_PTT_PRESS : EV_PTT_RELEASE);
+            else if (lvl == 0) app_post(EV_BTN_LOCKED);
         }
         prev = lvl;
         vTaskDelay(pdMS_TO_TICKS(40));
@@ -817,7 +818,15 @@ static void app_task(void *arg)
         case EV_PLAY_DONE:
             if (!audio_playing() && s_state == PAL_SPEAKING) set_state(PAL_IDLE);
             break;
+        case EV_BTN_LOCKED:
+            // only a hint when someone is looking; a pocket press stays silent and dark
+            if (ui_screen_on()) toast("Buttons locked - unlock left of the orb");
+            break;
         case EV_PWR_SHORT: {
+            if (g_settings.btn_lock) {
+                if (ui_screen_on()) toast("Buttons locked - unlock left of the orb");
+                break;
+            }
             if (ble_pair_cancel()) break;
             // either button talks; a press while the screen is off just wakes it
             bool was_on = true;
@@ -831,6 +840,10 @@ static void app_task(void *arg)
             break;
         }
         case EV_PWR_LONG:
+            if (g_settings.btn_lock) {
+                if (ui_screen_on()) toast("Buttons locked - unlock left of the orb");
+                break;
+            }
             setup_screen("Goodbye", "Press the power button to turn PAL Round back on.", NULL);
             vTaskDelay(pdMS_TO_TICKS(1200));
             pmu_power_off();

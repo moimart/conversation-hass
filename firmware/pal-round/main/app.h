@@ -33,6 +33,7 @@ typedef struct {
     uint8_t brightness;    // 5..100
     uint16_t screen_timeout_s; // 0 = never
     uint8_t ble_bond;      // a phone is bonded for the Bluetooth link (BLE_LINK.md)
+    uint8_t btn_lock;      // physical buttons ignored (toggle on the help page; touch still works)
 } pal_settings_t;
 
 extern pal_settings_t g_settings;
@@ -61,6 +62,7 @@ typedef enum {
     EV_TICK,            // 1 Hz housekeeping
     EV_ACTION,          // str: "repair" | "portal" | "ota" | "restart" | "reset"
     EV_NOTE_DONE,       // voice note upload finished (result via note_result())
+    EV_BTN_LOCKED,      // a physical button was pressed while the buttons are locked
     EV_LINK,            // str: "ble" (Wi-Fi gave up: go relay) | "c<passkey>" | "paired" | "pairend" | "pairfail"
 } app_event_type_t;
 

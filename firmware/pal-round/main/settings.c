@@ -54,6 +54,7 @@ void settings_load(void)
     if (nvs_get_u8(h, "bright", &u8) == ESP_OK) g_settings.brightness = u8 < 5 ? 5 : (u8 > 100 ? 100 : u8);
     if (nvs_get_u16(h, "tmo", &u16) == ESP_OK) g_settings.screen_timeout_s = u16;
     if (nvs_get_u8(h, "blebond", &u8) == ESP_OK) g_settings.ble_bond = u8;
+    if (nvs_get_u8(h, "btnlock", &u8) == ESP_OK) g_settings.btn_lock = u8 ? 1 : 0;
     nvs_close(h);
     ESP_LOGI(TAG, "wifi=%s backup=%s server=%s paired=%s dash=%s", g_settings.wifi_ssid, g_settings.wifi2_ssid[0] ? g_settings.wifi2_ssid : "-", g_settings.server,
              g_settings.token[0] ? "yes" : "no", g_settings.dashboard);
@@ -79,6 +80,7 @@ void settings_save(void)
     nvs_set_u8(h, "bright", g_settings.brightness);
     nvs_set_u16(h, "tmo", g_settings.screen_timeout_s);
     nvs_set_u8(h, "blebond", g_settings.ble_bond);
+    nvs_set_u8(h, "btnlock", g_settings.btn_lock);
     nvs_commit(h);
     nvs_close(h);
 }

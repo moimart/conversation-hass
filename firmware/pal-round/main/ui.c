@@ -24,7 +24,7 @@ ui_choices_t g_choices;
 static lv_obj_t *s_tv, *s_home, *s_box, *s_clockpage, *s_weather_lbl;
 static void box_sync(void);
 static void box_style(void);
-static lv_obj_t *s_batt_ic, *s_batt_t, *s_helppage, *s_help_title;
+static lv_obj_t *s_batt_ic, *s_batt_t, *s_helppage, *s_help_title, *s_lock_btn;
 static int s_batt_shown = -2;
 static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
 static lv_obj_t *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_shield;
@@ -212,18 +212,51 @@ static void build_home(void)
 }
 
 // The page left of home: how to use the device (the orb page stays clean).
+static lv_obj_t *round_btn(lv_obj_t *parent, uint32_t icon, int size);
+
+// The lock button mirrors g_settings.btn_lock: icon, caption and colour.
+static void lock_sync(void)
+{
+    if (!s_lock_btn) return;
+    bool on = g_settings.btn_lock;
+    char ic[6];
+    lv_label_set_text(lv_obj_get_child(s_lock_btn, 0), mdi(on ? ICON_LOCK : ICON_LOCK_OPEN_VARIANT, ic));
+    lv_label_set_text(lv_obj_get_child(s_lock_btn, 1), on ? "Locked" : "Buttons");
+    lv_obj_set_style_bg_color(s_lock_btn, on ? g_theme.accent_deep : lv_color_hex(0x26262c), 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(s_lock_btn, 0), on ? lv_color_white() : g_theme.text, 0);
+    if (s_status) ui_set_status();
+}
+
+static void lock_cb(lv_event_t *e)
+{
+    ui_activity();
+    g_settings.btn_lock = !g_settings.btn_lock;
+    lock_sync();
+    ui_toast(g_settings.btn_lock ? "Buttons locked" : "Buttons unlocked");
+    app_post(EV_SETTINGS_CHANGED);
+}
+
+// The page left of home: how to use it, and the button lock (touch keeps
+// working while locked, so this page is always reachable to unlock).
 static void build_help_page(void)
 {
     s_helppage = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_RIGHT);
     lv_obj_remove_flag(s_helppage, LV_OBJ_FLAG_SCROLLABLE);
     s_help_title = mk_label(s_helppage, g_fonts.text26, g_theme.accent, "How to use");
-    lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -120);
+    lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -165);
     s_hint = mk_label(s_helppage, g_fonts.text20, g_theme.text,
                       "Tap the orb or press a\nbutton to talk\n\n"
                       "Double-press the bottom\nbutton for a voice note\n\n"
                       "Hold the orb for settings");
     lv_obj_set_style_text_line_space(s_hint, 4, 0);
-    lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, 20);
+    lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, -38);
+    s_lock_btn = round_btn(s_helppage, ICON_LOCK_OPEN_VARIANT, 100);
+    lv_obj_align(s_lock_btn, LV_ALIGN_CENTER, 0, 138);
+    lv_obj_align(lv_obj_get_child(s_lock_btn, 0), LV_ALIGN_CENTER, 0, -12);
+    lv_obj_t *t = mk_label(s_lock_btn, g_fonts.text16, g_theme.text_dim, "");
+    lv_obj_align(t, LV_ALIGN_CENTER, 0, 26);
+    lv_obj_add_event_cb(s_lock_btn, lock_cb, LV_EVENT_CLICKED, NULL);
+    lock_sync();
 }
 
 // The page right of home: clock, date and the weather (the orb has the home
@@ -811,6 +844,8 @@ void ui_set_status(void)
     char a[6], b[6], txt[24] = "";
     int bat = pmu_battery_pct();
     bool online = ws_connected();
+    char c[6];
+    if (g_settings.btn_lock) strcat(txt, mdi(ICON_LOCK, c));
     if (!online) strcat(txt, mdi(ICON_WIFI_OFF, a));
     if (bat >= 0 && (bat <= 20 || pmu_charging())) {
         strcat(txt, mdi(pmu_charging() ? ICON_BATTERY_CHARGING : ICON_BATTERY_ALERT, b));
@@ -1006,6 +1041,7 @@ void ui_apply_theme(void)
     lv_obj_set_style_text_color(s_reply, g_theme.text, 0);
     lv_obj_set_style_text_color(s_hint, g_theme.text, 0);
     lv_obj_set_style_text_color(s_help_title, g_theme.accent, 0);
+    lock_sync();
     box_style();
     orb_apply_theme();
 }
