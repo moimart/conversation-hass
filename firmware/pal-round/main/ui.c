@@ -338,7 +338,7 @@ static void build_help_page(void)
                       "Press again to send / save\n"
                       "Top twice: screen on / off\n\n"
                       "Hold the orb for settings\n"
-                      "Lock: no buttons or touch");
+                      "Lock: only screen on / off");
     lv_obj_set_style_text_line_space(s_hint, 4, 0);
     lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, -22);
     s_lock_btn = round_btn(s_helppage, ICON_LOCK_OPEN_VARIANT, 88);

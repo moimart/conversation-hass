@@ -10,14 +10,14 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 |---|---|
 | **Home** | The orb (~96% of the screen) with what you said and PAL's reply in a box over it. Talking is buttons-only: touching the orb never listens; holding it opens Settings |
 | **Swipe left** | Clock, date and weather, then Home Assistant pages: the dashboard you pick in Settings, as native round tiles (tap = toggle / run; long-press a light or cover = brightness / position dial) and full-page climate, media and weather controls |
-| **Swipe right** (from the orb) | How-to page: which button does what, the battery level, and the **lock**: while locked, BOOT and PWR do nothing (no talk, no power-off) and touch is limited to the orb, this page and the fidget page — no Settings, no clock/HA pages — so PAL can't listen at all and nothing can be changed. A lock icon shows under the orb; swipe back here to unlock. Saved across reboots |
+| **Swipe right** (from the orb) | How-to page: which button does what, the battery level, and the **lock**: while locked, BOOT and PWR do nothing (no talk, no notes, no power-off) except the top-button double press (screen on / off) and touch is limited to the orb, this page and the fidget page — no Settings, no clock/HA pages — so PAL can't listen at all and nothing can be changed. A lock icon shows under the orb; swipe back here to unlock. Saved across reboots |
 | **Swipe right twice** (from the orb) | Fidget: a round pop-it of rainbow bubbles — press to pop (soft pop sound), they all spring back once every one is popped. Reachable and usable while locked |
 | **Hold the orb** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, phone (Bluetooth), re-pair |
 
 **Buttons:** the bottom one (**BOOT**) is for voice commands, the top one (**PWR**) for
 voice notes. One press starts, the next press stops; touching the orb never records.
 **Double-press the top button** to turn the screen off, or back on (a single top press
-waits ~0.5 s to tell the two apart).
+waits ~0.5 s to tell the two apart). This works even while locked.
 
 **Talking to PAL:** press the bottom button and speak; press it again to send (it also
 sends by itself when you pause). The audio goes to

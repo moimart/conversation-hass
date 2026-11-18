@@ -842,17 +842,16 @@ static void app_task(void *arg)
             // only a hint when someone is looking; a pocket press stays silent and dark
             if (ui_screen_on()) toast("Locked - unlock on the page left of the orb");
             break;
-        case EV_PWR_SHORT: {
+        case EV_PWR_SHORT:
+            // (even while locked: the double press still turns the screen off / on)
+            if (!g_settings.btn_lock && ble_pair_cancel()) break;
+            pwr_press();                   // single → EV_PWR_SINGLE (note), double → screen on/off
+            break;
+        case EV_PWR_SINGLE:
             if (g_settings.btn_lock) {
                 if (ui_screen_on()) toast("Locked - unlock on the page left of the orb");
                 break;
             }
-            if (ble_pair_cancel()) break;
-            pwr_press();                   // single → EV_PWR_SINGLE (note), double → screen on/off
-            break;
-        }
-        case EV_PWR_SINGLE:
-            if (g_settings.btn_lock) break;
             note_press();                  // top button: voice note (wakes the screen itself)
             break;
         case EV_PWR_LONG:
