@@ -425,7 +425,7 @@ static void prune(cJSON *states)
     if (!d) return;
     struct dirent *e;
     while ((e = readdir(d))) {
-        bool keep = false;
+        bool keep = e->d_name[0] == '_';   // _current.json (the boot cache)
         cJSON *s;
         cJSON_ArrayForEach(s, states) {
             const char *k = cJSON_GetStringValue(cJSON_GetObjectItem(s, "key"));
@@ -440,11 +440,51 @@ static void prune(cJSON *states)
     closedir(d);
 }
 
-void orb_load_manifest(cJSON *m)
+// The orb in use is remembered in ORB_DIR/_current.json, so a boot shows it
+// straight from the flash cache instead of waiting for PAL.
+#define ORB_CURRENT ORB_DIR "/_current.json"
+
+static void save_current(cJSON *m)
+{
+    char *txt = cJSON_PrintUnformatted(m);
+    if (!txt) return;
+    FILE *f = fopen(ORB_CURRENT, "w");
+    if (f) {
+        fputs(txt, f);
+        fclose(f);
+    }
+    cJSON_free(txt);
+}
+
+static void load_manifest(cJSON *m, bool allow_download);
+
+void orb_load_cached(void)
+{
+    FILE *f = fopen(ORB_CURRENT, "r");
+    if (!f) return;
+    char *buf = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM);
+    size_t n = buf ? fread(buf, 1, 4095, f) : 0;
+    fclose(f);
+    if (!buf) return;
+    buf[n] = 0;
+    cJSON *m = cJSON_Parse(buf);
+    free(buf);
+    if (m) {
+        ESP_LOGI(TAG, "boot: cached orb");
+        load_manifest(m, false);
+        cJSON_Delete(m);
+    }
+}
+
+void orb_load_manifest(cJSON *m) { load_manifest(m, true); }
+
+static void load_manifest(cJSON *m, bool allow_download)
 {
     cJSON *states = cJSON_GetObjectItem(m, "states");
     if (!cJSON_IsObject(states) || !cJSON_GetObjectItem(states, "idle")) {
+        if (!allow_download) return;
         ESP_LOGI(TAG, "no orb media — native orb");
+        remove(ORB_CURRENT);
         orb_native();
         cJSON *none = cJSON_CreateObject();
         prune(none);
@@ -460,6 +500,7 @@ void orb_load_manifest(cJSON *m)
     }
     if (same) return;
     // download what's missing
+    bool busy_shown = false;
     cJSON *s;
     cJSON_ArrayForEach(s, states) {
         const char *key = cJSON_GetStringValue(cJSON_GetObjectItem(s, "key"));
@@ -469,6 +510,12 @@ void orb_load_manifest(cJSON *m)
         snprintf(path, sizeof(path), ORB_DIR "/%s.palm", key);
         struct stat st;
         if (stat(path, &st) == 0 && st.st_size > 16) continue;
+        if (!allow_download) return;   // cache incomplete: wait for PAL instead
+        if (!busy_shown && pal_lock()) {   // real work ahead: say so
+            ui_orb_busy(true);
+            pal_unlock();
+            busy_shown = true;
+        }
         ESP_LOGI(TAG, "downloading %s", url);
         if (pal_get_to_file(url, path, 60000) != ESP_OK) ESP_LOGW(TAG, "download failed: %s", url);
     }
@@ -490,7 +537,10 @@ void orb_load_manifest(cJSON *m)
     s_reload = true;
     xSemaphoreGive(s_mu);
     set_native_visible(!s_have_clips);
-    prune(states);
+    if (allow_download) {
+        prune(states);
+        if (s_have_clips) save_current(m);
+    }
     if (s_task) xTaskNotifyGive(s_task);
     ESP_LOGI(TAG, "orb %s: %s", cJSON_GetStringValue(cJSON_GetObjectItem(m, "name")),
              s_have_clips ? "clips" : "native");

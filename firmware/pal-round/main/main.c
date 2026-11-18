@@ -121,6 +121,7 @@ static void apply_info(cJSON *info)
 // clips (up to ~90 s) and then they download to flash. The app task stays free
 // (buttons, screen on/off, speech) and the home screen shows "Changing orb…".
 static TaskHandle_t s_orbld_task;
+static volatile bool s_orb_show;           // the user asked for this change: show the pill
 
 static void orb_fetch(void)
 {
@@ -143,10 +144,13 @@ static void orbld_task(void *arg)
     while (true) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   // several requests → one load
         if (!g_settings.token[0]) continue;
-        if (pal_lock()) {
+        // silent for boot / reconnect / theme refreshes (usually nothing to do);
+        // the pill shows for a change picked in Settings, or whenever clips download
+        if (s_orb_show && pal_lock()) {
             ui_orb_busy(true);
             pal_unlock();
         }
+        s_orb_show = false;
         orb_fetch();
         if (pal_lock()) {
             ui_orb_busy(false);
@@ -155,12 +159,15 @@ static void orbld_task(void *arg)
     }
 }
 
-static void load_orb(void)
+static void load_orb_ex(bool show)
 {
+    if (show) s_orb_show = true;
     // internal stack: the download writes the FAT cache (flash)
     if (!s_orbld_task) xTaskCreatePinnedToCore(orbld_task, "orbld", 7168, NULL, 4, &s_orbld_task, 1);
     if (s_orbld_task) xTaskNotifyGive(s_orbld_task);
 }
+
+static void load_orb(void) { load_orb_ex(false); }
 
 static void load_pages(void)
 {
@@ -905,7 +912,7 @@ static void app_task(void *arg)
             break;
         case EV_RELOAD:                // str: "orb" | "pages" | "" (both)
             if (g_settings.token[0]) {
-                if (strcmp(e.str, "pages")) load_orb();
+                if (strcmp(e.str, "pages")) load_orb_ex(!strcmp(e.str, "orb"));   // "orb" = picked in Settings
                 if (strcmp(e.str, "orb")) load_pages();
             }
             break;
@@ -970,6 +977,7 @@ void app_main(void)
         ui_settings_refresh();
         pal_unlock();
     }
+    orb_load_cached();             // the last orb from flash, before PAL is even reachable
     pmu_init();
     audio_init();
     buttons_init();

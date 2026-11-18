@@ -200,6 +200,7 @@ void orb_create(lv_obj_t *parent, int size);
 void orb_set_state(pal_state_t st);
 void orb_set_active(bool on);                     // false = stop animating (screen off)
 void orb_load_manifest(cJSON *manifest);          // downloads missing clips, switches
+void orb_load_cached(void);                      // boot: the last orb straight from the flash cache
 void orb_native(void);                            // drop clips, draw the native orb
 void orb_apply_theme(void);
 lv_obj_t *orb_obj(void);
