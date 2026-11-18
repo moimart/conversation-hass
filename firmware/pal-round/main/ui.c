@@ -1096,9 +1096,20 @@ void ui_tick(void)
 
 // --- screen power ------------------------------------------------------------------------
 
+// Screen turned off with the top-button double press: touch doesn't wake it
+// (only the buttons do). A timeout-off screen still wakes on touch.
+static bool s_touch_wake_off;
+
+void ui_screen_off_by_button(void)
+{
+    ui_screen_sleep();
+    s_touch_wake_off = true;
+}
+
 static void shield_cb(lv_event_t *e)
 {
     lv_event_code_t c = lv_event_get_code(e);
+    if (s_touch_wake_off) return;   // (the shield stays and keeps swallowing touches)
     if (c == LV_EVENT_PRESSED) ui_screen_wake();
     if (c == LV_EVENT_RELEASED && s_shield) {
         lv_obj_delete_async(s_shield);
@@ -1174,6 +1185,7 @@ void ui_screen_sleep(void)
 
 void ui_screen_wake(void)
 {
+    s_touch_wake_off = false;
     ui_activity();
     if (s_screen_on) return;
     s_screen_on = true;

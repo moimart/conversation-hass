@@ -17,7 +17,9 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 **Buttons:** the bottom one (**BOOT**) is for voice commands, the top one (**PWR**) for
 voice notes. One press starts, the next press stops; touching the orb never records.
 **Double-press the top button** to turn the screen off, or back on (a single top press
-waits ~0.5 s to tell the two apart). This works even while locked.
+waits ~0.5 s to tell the two apart). This works even while locked. A screen turned off this way
+ignores touch — only a button press (or PAL speaking) brings it back; a screen that timed out still
+wakes on touch.
 
 **Talking to PAL:** press the bottom button and speak; press it again to send (it also
 sends by itself when you pause). The audio goes to

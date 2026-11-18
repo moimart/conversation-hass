@@ -665,7 +665,7 @@ static void pwr_press(void)
     if (esp_timer_is_active(s_pwr_timer)) {   // second press in time: double → screen on/off
         esp_timer_stop(s_pwr_timer);
         if (pal_lock()) {
-            if (ui_screen_on()) ui_screen_sleep();
+            if (ui_screen_on()) ui_screen_off_by_button();
             else ui_screen_wake();
             pal_unlock();
         }
