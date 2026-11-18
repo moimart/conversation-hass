@@ -106,3 +106,12 @@ echo 0.1.1 > server/runtime/firmware/pal-round/version   # = CONFIG_APP_PROJECT_
   `esp_timer` (no 1 ms tick timer). Light sleep is held off while a USB host is
   attached (so the console works). Console `pm` / `top` show lock and per-task
   CPU time; `beep` / `rec` test the speaker / mic.
+
+## Screenshots
+
+With the Round on USB: `/usr/bin/python3 tools/shot.py out.png ["console cmd" …]` — the
+console `shot` command renders the screen + top layer with LVGL's snapshot and the
+script composites them into a round PNG. Console helpers for scripted views:
+`ui page <n>` (0 fidget, 1 how-to, 2 orb, 3 clock, 4+ HA), `ui settings [n]`, `ui close`,
+`ui lock`, `ui home`, `press`, `note`, `dbl`. The orb's video frames are blitted straight
+to the panel, so they don't appear in shots.

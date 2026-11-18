@@ -234,7 +234,8 @@ void ui_timer_cancel(const char *id);
 void ui_apply_theme(void);
 void ui_screen_wake(void);
 void ui_screen_sleep(void);
-void ui_screen_off_by_button(void);             // like sleep, but touch can't wake it (buttons can)
+void ui_screen_off_by_button(void);
+void ui_debug(const char *what, const char *arg);   // console "ui …" (tests / screenshots)             // like sleep, but touch can't wake it (buttons can)
 bool ui_screen_on(void);
 void ui_activity(void);                            // reset the screen timeout
 void ui_settings_refresh(void);

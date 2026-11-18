@@ -16,6 +16,8 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_pm.h"
+#include "mbedtls/base64.h"
+#include "lvgl.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -38,6 +40,39 @@ static int split(char *s, char *argv[3])
         if (*s) *s++ = 0;
     }
     return n;
+}
+
+// "shot": render the screen and the top layer (settings, toasts, ...) with
+// LVGL's snapshot and print them as base64 ARGB8888 between SHOT/END lines.
+// tools/shot.py composites them into a PNG. (The orb's video frames are blitted
+// straight to the panel, so they don't appear; its LVGL fallback does.)
+static void shot_layer(const char *name, lv_obj_t *obj)
+{
+    uint32_t w = lv_obj_get_width(obj), h = lv_obj_get_height(obj);
+    uint32_t stride = lv_draw_buf_width_to_stride(w, LV_COLOR_FORMAT_ARGB8888);
+    uint32_t size = stride * h;
+    uint8_t *data = heap_caps_malloc(size + 64, MALLOC_CAP_SPIRAM);
+    if (!data) { printf("SHOT-ERR nomem\n"); return; }
+    uint8_t *aligned = (uint8_t *)(((uintptr_t)data + 63) & ~(uintptr_t)63);
+    lv_draw_buf_t db;
+    lv_result_t r = LV_RESULT_INVALID;
+    if (pal_lock()) {
+        if (lv_draw_buf_init(&db, w, h, LV_COLOR_FORMAT_ARGB8888, stride, aligned, size) == LV_RESULT_OK)
+            r = lv_snapshot_take_to_draw_buf(obj, LV_COLOR_FORMAT_ARGB8888, &db);
+        pal_unlock();
+    }
+    if (r != LV_RESULT_OK) { printf("SHOT-ERR snapshot\n"); free(data); return; }
+    printf("SHOT %s %u %u %u\n", name, (unsigned)w, (unsigned)h, (unsigned)stride);
+    unsigned char out[1028];
+    for (uint32_t off = 0; off < size; off += 768) {   // 768 bytes → 1024 base64 chars per line
+        size_t n = size - off < 768 ? size - off : 768, olen = 0;
+        mbedtls_base64_encode(out, sizeof(out), &olen, aligned + off, n);
+        out[olen] = 0;
+        printf("%s\n", out);
+    }
+    printf("END\n");
+    fflush(stdout);
+    free(data);
 }
 
 static void handle(char *line)
@@ -110,10 +145,20 @@ static void handle(char *line)
         printf("OK\n");
     } else if (!strcmp(argv[0], "reset")) {
         app_post_str(EV_ACTION, "reset");
+    } else if (!strcmp(argv[0], "shot")) {
+        shot_layer("screen", lv_screen_active());
+        shot_layer("top", lv_layer_top());
+    } else if (!strcmp(argv[0], "ui") && argc >= 2) {
+        ui_debug(argv[1], argc >= 3 ? argv[2] : "");   // page <n> | settings [n] | close | lock | home
+        printf("OK\n");
+    } else if (!strcmp(argv[0], "dbl")) {
+        app_post(EV_PWR_SHORT);            // a top-button double press
+        vTaskDelay(pdMS_TO_TICKS(150));
+        app_post(EV_PWR_SHORT);
     } else if (!strcmp(argv[0], "reboot")) {
         esp_restart();
     } else {
-        printf("commands: wifi <ssid> [pass] | wifi2 <ssid> [pass] (backup; '-' clears) | net main|backup|check | ble pair|on|off|forget | server <url> | status | pm | top | wake | press | beep | rec | unpair | reset | reboot\n");
+        printf("commands: wifi <ssid> [pass] | wifi2 <ssid> [pass] (backup; '-' clears) | net main|backup|check | ble pair|on|off|forget | server <url> | status | pm | top | wake | press | note | dbl | shot | ui page <n>|settings [n]|close|lock|home | beep | rec | unpair | reset | reboot\n");
     }
     fflush(stdout);
 }

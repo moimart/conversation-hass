@@ -1,10 +1,12 @@
-// Screens. A tileview: home (0,0) — clock, weather, the orb, what you said
-// and PAL's reply; HA pages to the right (1..n,0); settings below (0,1).
+// Screens. A tileview: fidget (0,0), how-to + lock (1,0), home (2,0) — the
+// orb, what you said and PAL's reply; clock/weather (3,0); HA pages to the
+// right (4..n,0). Settings is an overlay (hold the orb).
 // Overlays on the top layer: setup / pairing / toast / timer / OTA / the
 // sleep shield (swallows the touch that wakes the screen).
 //
 // Every ui_* function expects the caller to hold the display lock (LVGL
 // callbacks already do; main.c wraps its calls in pal_lock()).
+#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -1265,4 +1267,30 @@ void ui_init(void)
         s_swipe_timer = lv_timer_create(swipe_poll, 30, NULL);
     }
     ui_activity();
+}
+
+// Console "ui …" for scripted checks and screenshots (tools/shot.py).
+void ui_debug(const char *what, const char *arg)
+{
+    if (!pal_lock()) return;
+    ui_screen_wake();
+    if (!strcmp(what, "page")) {
+        lv_tileview_set_tile_by_index(s_tv, atoi(arg), 0, LV_ANIM_OFF);
+        lv_obj_send_event(s_tv, LV_EVENT_VALUE_CHANGED, NULL);
+    } else if (!strcmp(what, "home")) {
+        ui_settings_close();
+        lv_tileview_set_tile(s_tv, s_home, LV_ANIM_OFF);
+        orb_sync_active();
+    } else if (!strcmp(what, "settings")) {
+        ui_settings_open();
+        if (arg[0]) {
+            lv_tileview_set_tile_by_index(s_set_tv, atoi(arg), 0, LV_ANIM_OFF);
+            dots_cb(NULL);
+        }
+    } else if (!strcmp(what, "close")) {
+        ui_settings_close();
+    } else if (!strcmp(what, "lock")) {
+        lock_cb(NULL);
+    }
+    pal_unlock();
 }
