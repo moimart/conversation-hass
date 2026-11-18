@@ -620,10 +620,10 @@ static void tick_cb(void *arg) { app_post(EV_TICK); }
 
 // --- voice notes -------------------------------------------------------------------------
 //
-// Double-press a button (BOOT, PWR or the orb): the turn that the first press
-// started is dropped and a voice note starts recording. The audio streams to
+// Voice notes: the top button (PWR) starts one (a voice command that was
+// recording is dropped). The audio streams to
 // POST /api/satellite/note (chunked, 16 kHz s16le) while you talk, so notes can
-// be long (10 min cap) without buffering them. Press again to finish: the
+// be long (10 min cap) without buffering them. Press it again to finish: the
 // server transcribes it and stores it in the Notes list.
 
 static StreamBufferHandle_t s_note_sb;

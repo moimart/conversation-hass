@@ -24,7 +24,7 @@ ui_choices_t g_choices;
 static lv_obj_t *s_tv, *s_home, *s_box, *s_clockpage, *s_weather_lbl;
 static void box_sync(void);
 static void box_style(void);
-static lv_obj_t *s_batt_ic, *s_batt_t, *s_helppage, *s_help_title, *s_lock_btn;
+static lv_obj_t *s_batt_ic[2], *s_batt_t[2], *s_helppage, *s_help_title, *s_lock_btn;
 static int s_batt_shown = -2;
 static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
 static lv_obj_t *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_shield;
@@ -211,6 +211,7 @@ static void build_home(void)
 
 // The page left of home: how to use the device (the orb page stays clean).
 static lv_obj_t *round_btn(lv_obj_t *parent, uint32_t icon, int size);
+static void batt_make(int i, lv_obj_t *page);
 
 // The lock button mirrors g_settings.btn_lock: icon, caption and colour.
 static void lock_sync(void)
@@ -241,20 +242,22 @@ static void build_help_page(void)
     s_helppage = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_RIGHT);
     lv_obj_remove_flag(s_helppage, LV_OBJ_FLAG_SCROLLABLE);
     s_help_title = mk_label(s_helppage, g_fonts.text26, g_theme.accent, "How to use");
-    lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -165);
+    lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -150);
     s_hint = mk_label(s_helppage, g_fonts.text20, g_theme.text,
                       "Bottom button: talk to PAL\n"
                       "press again to send\n\n"
                       "Top button: voice note\n"
                       "press again to save\n\n"
-                      "Hold the orb for settings");
+                      "Hold the orb for settings\n"
+                      "Lock: no buttons or touch");
     lv_obj_set_style_text_line_space(s_hint, 4, 0);
-    lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, -38);
-    s_lock_btn = round_btn(s_helppage, ICON_LOCK_OPEN_VARIANT, 100);
-    lv_obj_align(s_lock_btn, LV_ALIGN_CENTER, 0, 138);
-    lv_obj_align(lv_obj_get_child(s_lock_btn, 0), LV_ALIGN_CENTER, 0, -12);
+    lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, -22);
+    s_lock_btn = round_btn(s_helppage, ICON_LOCK_OPEN_VARIANT, 88);
+    lv_obj_align(s_lock_btn, LV_ALIGN_CENTER, 0, 150);
+    batt_make(0, s_helppage);
+    lv_obj_align(lv_obj_get_child(s_lock_btn, 0), LV_ALIGN_CENTER, 0, -10);
     lv_obj_t *t = mk_label(s_lock_btn, g_fonts.text16, g_theme.text_dim, "");
-    lv_obj_align(t, LV_ALIGN_CENTER, 0, 26);
+    lv_obj_align(t, LV_ALIGN_CENTER, 0, 22);
     lv_obj_add_event_cb(s_lock_btn, lock_cb, LV_EVENT_CLICKED, NULL);
     lock_sync();
 }
@@ -277,10 +280,19 @@ static void build_clock_page(void)
     lv_obj_add_flag(s_weather_t, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_weather_lbl, LV_OBJ_FLAG_HIDDEN);
     // battery level, top centre (hidden on USB-only power)
-    s_batt_ic = mk_label(s_clockpage, g_fonts.icon22, g_theme.accent, "");
-    s_batt_t = mk_label(s_clockpage, g_fonts.text20, g_theme.text_dim, "");
-    lv_obj_add_flag(s_batt_ic, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_batt_t, LV_OBJ_FLAG_HIDDEN);
+    batt_make(1, s_clockpage);
+}
+
+// Battery level, top centre of the clock page [1] and the how-to page [0]
+// (hidden on USB-only power).
+static const int s_batt_y[2] = {-190, -150};
+
+static void batt_make(int i, lv_obj_t *page)
+{
+    s_batt_ic[i] = mk_label(page, g_fonts.icon22, g_theme.accent, "");
+    s_batt_t[i] = mk_label(page, g_fonts.text20, g_theme.text_dim, "");
+    lv_obj_add_flag(s_batt_ic[i], LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_batt_t[i], LV_OBJ_FLAG_HIDDEN);
 }
 
 static void batt_sync(void)
@@ -290,11 +302,6 @@ static void batt_sync(void)
     int key = pct < 0 ? -1 : pct * 2 + chg;
     if (key == s_batt_shown) return;
     s_batt_shown = key;
-    if (pct < 0) {
-        lv_obj_add_flag(s_batt_ic, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_batt_t, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
     uint32_t icon = chg ? ICON_BATTERY_CHARGING
                   : pct >= 95 ? ICON_BATTERY
                   : pct >= 80 ? ICON_BATTERY_90
@@ -303,17 +310,26 @@ static void batt_sync(void)
                   : pct >= 25 ? ICON_BATTERY_30
                   : pct >= 15 ? ICON_BATTERY_20
                   : pct >= 8 ? ICON_BATTERY_10 : ICON_BATTERY_ALERT;
-    char ic[6];
-    lv_label_set_text(s_batt_ic, mdi(icon, ic));
-    lv_label_set_text_fmt(s_batt_t, "%d%%", pct);
     lv_color_t c = (pct <= 15 && !chg) ? lv_color_hex(0xFF6B6B) : g_theme.accent;
-    lv_obj_set_style_text_color(s_batt_ic, c, 0);
-    lv_obj_remove_flag(s_batt_ic, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(s_batt_t, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_update_layout(s_clockpage);
-    int w = lv_obj_get_width(s_batt_ic) + 6 + lv_obj_get_width(s_batt_t);
-    lv_obj_align(s_batt_ic, LV_ALIGN_CENTER, -w / 2 + lv_obj_get_width(s_batt_ic) / 2, -150);
-    lv_obj_align_to(s_batt_t, s_batt_ic, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *ico = s_batt_ic[i], *txt = s_batt_t[i];
+        if (!ico) continue;
+        if (pct < 0) {
+            lv_obj_add_flag(ico, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(txt, LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        char ic[6];
+        lv_label_set_text(ico, mdi(icon, ic));
+        lv_label_set_text_fmt(txt, "%d%%", pct);
+        lv_obj_set_style_text_color(ico, c, 0);
+        lv_obj_remove_flag(ico, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(txt, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_update_layout(lv_obj_get_parent(ico));
+        int w = lv_obj_get_width(ico) + 6 + lv_obj_get_width(txt);
+        lv_obj_align(ico, LV_ALIGN_CENTER, -w / 2 + lv_obj_get_width(ico) / 2, s_batt_y[i]);
+        lv_obj_align_to(txt, ico, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    }
 }
 
 // --- settings ----------------------------------------------------------------------
@@ -1039,7 +1055,7 @@ void ui_apply_theme(void)
     lv_obj_set_style_text_color(s_date, g_theme.accent, 0);
     lv_obj_set_style_text_color(s_weather_ic, g_theme.accent, 0);
     lv_obj_set_style_text_color(s_weather_t, g_theme.text, 0);
-    lv_obj_set_style_text_color(s_batt_t, g_theme.text_dim, 0);
+    for (int i = 0; i < 2; i++) if (s_batt_t[i]) lv_obj_set_style_text_color(s_batt_t[i], g_theme.text_dim, 0);
     s_batt_shown = -2;   // re-colour the icon on the next tick
     lv_obj_set_style_text_color(s_said, g_theme.text_dim, 0);
     lv_obj_set_style_text_color(s_reply, g_theme.text, 0);
