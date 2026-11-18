@@ -820,11 +820,11 @@ static void app_task(void *arg)
             break;
         case EV_BTN_LOCKED:
             // only a hint when someone is looking; a pocket press stays silent and dark
-            if (ui_screen_on()) toast("Buttons locked - unlock left of the orb");
+            if (ui_screen_on()) toast("Locked - unlock on the page left of the orb");
             break;
         case EV_PWR_SHORT: {
             if (g_settings.btn_lock) {
-                if (ui_screen_on()) toast("Buttons locked - unlock left of the orb");
+                if (ui_screen_on()) toast("Locked - unlock on the page left of the orb");
                 break;
             }
             if (ble_pair_cancel()) break;
@@ -841,7 +841,7 @@ static void app_task(void *arg)
         }
         case EV_PWR_LONG:
             if (g_settings.btn_lock) {
-                if (ui_screen_on()) toast("Buttons locked - unlock left of the orb");
+                if (ui_screen_on()) toast("Locked - unlock on the page left of the orb");
                 break;
             }
             setup_screen("Goodbye", "Press the power button to turn PAL Round back on.", NULL);

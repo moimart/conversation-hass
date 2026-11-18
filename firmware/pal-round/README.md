@@ -10,7 +10,7 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 |---|---|
 | **Home** | The orb (~96% of the screen) with what you said and PAL's reply in a box over it. Talking is buttons-only: touching the orb never listens; holding it opens Settings |
 | **Swipe left** | Clock, date and weather, then Home Assistant pages: the dashboard you pick in Settings, as native round tiles (tap = toggle / run; long-press a light or cover = brightness / position dial) and full-page climate, media and weather controls |
-| **Swipe right** (from the orb) | How-to page: talk, voice notes, settings — and the **button lock**: while locked, BOOT and PWR do nothing (no talk, no power-off; a lock icon shows under the orb), so PAL can't listen at all. Touch keeps working, so swipe back here to unlock. Saved across reboots |
+| **Swipe right** (from the orb) | How-to page: talk, voice notes, settings — and the **lock**: while locked, BOOT and PWR do nothing (no talk, no power-off) and touch is limited to swiping between the orb and this page — no Settings, no clock/HA pages — so PAL can't listen at all and nothing can be changed. A lock icon shows under the orb; swipe back here to unlock. Saved across reboots |
 | **Swipe up** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, re-pair |
 
 **Talking to PAL:** press **BOOT** (or PWR) and speak — touching the orb never listens. Recording stops by

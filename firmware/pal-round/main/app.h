@@ -33,7 +33,7 @@ typedef struct {
     uint8_t brightness;    // 5..100
     uint16_t screen_timeout_s; // 0 = never
     uint8_t ble_bond;      // a phone is bonded for the Bluetooth link (BLE_LINK.md)
-    uint8_t btn_lock;      // physical buttons ignored (toggle on the help page; touch still works)
+    uint8_t btn_lock;      // device locked: buttons ignored, touch only reaches the help page (toggle there)
 } pal_settings_t;
 
 extern pal_settings_t g_settings;

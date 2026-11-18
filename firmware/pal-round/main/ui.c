@@ -142,7 +142,11 @@ static void swipe_poll(lv_timer_t *t)
     int n;
     if (s_set && !lv_obj_has_flag(s_set, LV_OBJ_FLAG_HIDDEN)) { tv = s_set_tv; n = 5; }
     else if (s_setup || s_pair || s_ota || ha_dial_obj()) return;
-    else { tv = s_tv; n = s_page_cols + 1; }
+    else {
+        tv = s_tv;
+        // locked: only the orb and the page left of it (with the lock) are reachable
+        n = g_settings.btn_lock ? 2 : s_page_cols + 1;
+    }
     ui_activity();
     jump(tv, n, dx < 0 ? LV_DIR_LEFT : LV_DIR_RIGHT);
     if (tv == s_set_tv) dots_cb(NULL);
@@ -215,7 +219,7 @@ static void lock_sync(void)
     bool on = g_settings.btn_lock;
     char ic[6];
     lv_label_set_text(lv_obj_get_child(s_lock_btn, 0), mdi(on ? ICON_LOCK : ICON_LOCK_OPEN_VARIANT, ic));
-    lv_label_set_text(lv_obj_get_child(s_lock_btn, 1), on ? "Locked" : "Buttons");
+    lv_label_set_text(lv_obj_get_child(s_lock_btn, 1), on ? "Locked" : "Lock");
     lv_obj_set_style_bg_color(s_lock_btn, on ? g_theme.accent_deep : lv_color_hex(0x26262c), 0);
     lv_obj_set_style_text_color(lv_obj_get_child(s_lock_btn, 0), on ? lv_color_white() : g_theme.text, 0);
     if (s_status) ui_set_status();
@@ -226,7 +230,7 @@ static void lock_cb(lv_event_t *e)
     ui_activity();
     g_settings.btn_lock = !g_settings.btn_lock;
     lock_sync();
-    ui_toast(g_settings.btn_lock ? "Buttons locked" : "Buttons unlocked");
+    ui_toast(g_settings.btn_lock ? "Locked" : "Unlocked");
     app_post(EV_SETTINGS_CHANGED);
 }
 
@@ -591,6 +595,10 @@ void ui_settings_close(void)
 static void orb_long(lv_event_t *e)
 {
     ui_activity();
+    if (g_settings.btn_lock) {   // locked: the only way out is the lock on the page to the left
+        ui_toast("Locked - unlock on the page left of the orb");
+        return;
+    }
     ui_settings_open();
 }
 
