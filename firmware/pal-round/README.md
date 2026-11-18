@@ -8,19 +8,19 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 
 | Screen | |
 |---|---|
-| **Home** | The orb (~96% of the screen) with what you said and PAL's reply in a box over it |
+| **Home** | The orb (~96% of the screen) with what you said and PAL's reply in a box over it. Talking is buttons-only: touching the orb never listens; holding it opens Settings |
 | **Swipe left** | Clock, date and weather, then Home Assistant pages: the dashboard you pick in Settings, as native round tiles (tap = toggle / run; long-press a light or cover = brightness / position dial) and full-page climate, media and weather controls |
-| **Swipe right** (from the orb) | How-to page: talk, voice notes, settings — and the **button lock**: while locked, BOOT and PWR do nothing (no talk, no power-off; a lock icon shows under the orb). Touch keeps working, so swipe back here to unlock. Saved across reboots |
+| **Swipe right** (from the orb) | How-to page: talk, voice notes, settings — and the **button lock**: while locked, BOOT and PWR do nothing (no talk, no power-off; a lock icon shows under the orb), so PAL can't listen at all. Touch keeps working, so swipe back here to unlock. Saved across reboots |
 | **Swipe up** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, re-pair |
 
-**Talking to PAL:** tap the orb (or press **BOOT**) and speak. Recording stops by
+**Talking to PAL:** press **BOOT** (or PWR) and speak — touching the orb never listens. Recording stops by
 itself when you pause; holding BOOT records until you let go. The audio goes to
 PAL's speech-to-text (`/api/satellite/stt`), the text to `/api/command`, and the
 reply comes back over the device's `/ws/ui` socket: state, text, and the spoken
 reply (`tts_play` → `/api/satellite/tts?rate=16000`). Announcements, finished
 timers and the per-device voice all work as on the phones.
 
-**Voice notes:** double-press a button (BOOT, PWR, or double-tap the orb). Two
+**Voice notes:** double-press a button (BOOT or PWR). Two
 blips, and the box shows "● Recording note 0:12". Talk as long as you like (10 min
 cap); the audio streams to `POST /api/satellite/note` while you speak. Press once
 more to finish: PAL transcribes it and stores it in the Notes list (the Notes

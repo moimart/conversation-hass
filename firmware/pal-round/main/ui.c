@@ -151,12 +151,6 @@ static void swipe_poll(lv_timer_t *t)
 
 // --- home -------------------------------------------------------------------------
 
-static void orb_tap(lv_event_t *e)
-{
-    ui_activity();
-    app_post(EV_PTT_PRESS);
-}
-
 static void build_home(void)
 {
     s_home = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
@@ -165,7 +159,7 @@ static void build_home(void)
     orb_create(s_home, ORB_SIZE);
     lv_obj_align(orb_obj(), LV_ALIGN_CENTER, -1, -1);   // image at (8,8): even window for direct blits
     lv_obj_add_flag(orb_obj(), LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(orb_obj(), orb_tap, LV_EVENT_SHORT_CLICKED, NULL);
+    // touch never talks: only the buttons start listening / voice notes
     lv_obj_add_event_cb(orb_obj(), orb_long, LV_EVENT_LONG_PRESSED, NULL);
 
     s_timer_lbl = mk_label(s_home, g_fonts.clock, lv_color_white(), "");
@@ -245,7 +239,7 @@ static void build_help_page(void)
     s_help_title = mk_label(s_helppage, g_fonts.text26, g_theme.accent, "How to use");
     lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -165);
     s_hint = mk_label(s_helppage, g_fonts.text20, g_theme.text,
-                      "Tap the orb or press a\nbutton to talk\n\n"
+                      "Press a button to talk\n\n"
                       "Double-press the bottom\nbutton for a voice note\n\n"
                       "Hold the orb for settings");
     lv_obj_set_style_text_line_space(s_hint, 4, 0);

@@ -2,7 +2,7 @@
 //
 // Flow: Wi-Fi (or the setup portal) → find PAL (saved / mDNS) → pair (code
 // typed on the round keypad) → load info/orb/pages → /ws/ui. A turn:
-// tap the orb or press BOOT → record (VAD) → /api/satellite/stt → /api/command
+// press BOOT (or PWR) → record (VAD) → /api/satellite/stt → /api/command
 // → the server answers on the socket (state, response, tts_play) → play.
 #include <math.h>
 #include <string.h>

@@ -50,7 +50,7 @@ typedef enum {
     EV_WS_UP,
     EV_WS_DOWN,
     EV_WS_MSG,          // json: owned cJSON (freed by the app task)
-    EV_PTT_PRESS,       // orb tap / BOOT button down
+    EV_PTT_PRESS,       // BOOT button down (touch never talks)
     EV_PTT_RELEASE,     // BOOT button up (hold-to-talk)
     EV_REC_DONE,        // recording finished (VAD or release)
     EV_PLAY_DONE,
