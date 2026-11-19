@@ -139,10 +139,20 @@ static void orb_fetch(void)
     }
 }
 
+static portMUX_TYPE s_orbld_mux = portMUX_INITIALIZER_UNLOCKED;
+
+// Runs only while there's something to load, then exits: its stack has to be
+// internal RAM, which Bluetooth needs too.
 static void orbld_task(void *arg)
 {
     while (true) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   // several requests → one load
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2000)) == 0) {
+            portENTER_CRITICAL(&s_orbld_mux);
+            bool idle = ulTaskNotifyTake(pdTRUE, 0) == 0;
+            if (idle) s_orbld_task = NULL;
+            portEXIT_CRITICAL(&s_orbld_mux);
+            if (idle) vTaskDelete(NULL);
+        }
         if (!g_settings.token[0]) continue;
         // silent for boot / reconnect / theme refreshes (usually nothing to do);
         // the pill shows for a change picked in Settings, or whenever clips download
@@ -159,12 +169,20 @@ static void orbld_task(void *arg)
     }
 }
 
+// (called from the app task only)
 static void load_orb_ex(bool show)
 {
     if (show) s_orb_show = true;
+    portENTER_CRITICAL(&s_orbld_mux);
+    TaskHandle_t t = s_orbld_task;
+    if (t) xTaskNotifyGive(t);
+    portEXIT_CRITICAL(&s_orbld_mux);
+    if (t) return;
     // internal stack: the download writes the FAT cache (flash)
-    if (!s_orbld_task) xTaskCreatePinnedToCore(orbld_task, "orbld", 7168, NULL, 4, &s_orbld_task, 1);
-    if (s_orbld_task) xTaskNotifyGive(s_orbld_task);
+    if (xTaskCreatePinnedToCore(orbld_task, "orbld", 7168, NULL, 4, &t, 1) == pdPASS) {
+        s_orbld_task = t;
+        xTaskNotifyGive(t);
+    }
 }
 
 static void load_orb(void) { load_orb_ex(false); }
@@ -520,7 +538,10 @@ static void ota_progress(int pct)
 static void ble_pair_begin(const char *from)
 {
     if (!link_pair_start()) {
-        toast("Bluetooth unavailable");
+        char t[96];
+        const char *why = link_last_error();
+        snprintf(t, sizeof(t), "Bluetooth unavailable%s%s", why[0] ? "\n" : "", why);
+        toast(t);
         return;
     }
     if (pal_lock()) {

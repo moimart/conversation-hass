@@ -105,6 +105,7 @@ void net_leave_ble(int idx);                     // back to Wi-Fi network idx (0
 
 bool link_start(void);                           // relay mode: advertise for the bonded phone
 void link_stop(void);
+const char *link_last_error(void);               // why Bluetooth last failed to start ("" = unknown)
 bool link_pair_start(void);                      // 2-minute pairing window (shows a passkey)
 void link_pair_finish(void);                     // window over: drop the stack unless relaying
 void link_forget(void);                          // delete bonds

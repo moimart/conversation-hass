@@ -37,6 +37,7 @@
 #include "services/gatt/ble_svc_gatt.h"
 
 static const char *TAG = "link";
+static char s_err[64];   // why the stack last failed to start (shown on screen)
 
 void ble_store_config_init(void);
 
@@ -615,8 +616,10 @@ static bool stack_start(void)
     snprintf(s_name, sizeof(s_name), "%s", pal_device_name());
     esp_err_t err = nimble_port_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "nimble init failed: %s (internal free %u)", esp_err_to_name(err),
-                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+        unsigned fr = (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        unsigned lg = (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+        ESP_LOGE(TAG, "nimble init failed: %s (internal free %u, largest %u)", esp_err_to_name(err), fr, lg);
+        snprintf(s_err, sizeof(s_err), "%s, RAM %u/%u KB", esp_err_to_name(err), fr / 1024, lg / 1024);
         return false;
     }
     ble_hs_cfg.sync_cb = on_sync;
@@ -683,6 +686,7 @@ bool link_start(void)
     parse_gateway_host();
     if (!s_gw_host[0]) {
         ESP_LOGW(TAG, "no gateway configured: nothing to relay to");
+        snprintf(s_err, sizeof(s_err), "no PAL address");
         return false;
     }
     if (!stack_start()) return false;
@@ -710,6 +714,8 @@ void link_stop(void)
     else advertise();
     if (was_up) app_post(EV_WIFI_DOWN);
 }
+
+const char *link_last_error(void) { return s_err; }
 
 bool link_pair_start(void)
 {
