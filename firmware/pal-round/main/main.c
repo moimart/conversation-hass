@@ -558,6 +558,13 @@ static void on_link(const char *ev)
 {
     if (!strcmp(ev, "ble")) {
         net_enter_ble();
+        if (net_ble_mode()) {
+            setup_screen("No Wi-Fi", "Connecting through your phone (Bluetooth).\nOn the phone: PAL app → Settings → PAL Round → sharing on.", NULL);
+        } else if (link_last_error()[0]) {
+            char t[96];
+            snprintf(t, sizeof(t), "Bluetooth unavailable\n%s", link_last_error());
+            toast(t);
+        }
     } else if (ev[0] == 'c') {   // passkey to show
         char code[8];
         snprintf(code, sizeof(code), "%.3s %.3s", ev + 1, ev + 4);
