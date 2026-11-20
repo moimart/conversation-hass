@@ -567,12 +567,12 @@ static void on_link(const char *ev)
         settings_save();
         link_pair_finish();
         setup_screen(NULL, NULL, NULL);
-        toast("Phone paired");
+        toast("Phone paired - restarting");
         audio_beep(1);
     } else if (!strcmp(ev, "pairend") || !strcmp(ev, "pairfail")) {
         link_pair_finish();
         setup_screen(NULL, NULL, NULL);
-        toast(ev[4] == 'f' ? "Pairing failed" : "Pairing timed out");
+        toast(ev[4] == 'f' ? "Pairing failed - restarting" : "Pairing timed out - restarting");
     }
 }
 
@@ -581,7 +581,7 @@ static bool ble_pair_cancel(void)
     if (!link_pairing()) return false;
     link_pair_finish();
     setup_screen(NULL, NULL, NULL);
-    toast("Pairing cancelled");
+    toast("Pairing cancelled - restarting");
     return true;
 }
 
@@ -676,6 +676,7 @@ static void buttons_init(void)
     xTaskCreateWithCaps(buttons_task, "btn", 2560, NULL, 6, NULL, MALLOC_CAP_SPIRAM);
 }
 
+static int s_lock_fails;   // consecutive ticks the display lock wasn't free
 static void tick_cb(void *arg) { app_post(EV_TICK); }
 
 // Top button: a single press waits out the double-press window, so a quick
@@ -942,12 +943,17 @@ static void app_task(void *arg)
             break;
         case EV_TICK:
             s_ticks++;
-            if (s_note_on && audio_recording()) note_show_elapsed();
-            if (s_ticks % 600 == 0) net_check_main();   // on the backup network: is the main one back?
+            // UI watchdog: LVGL stuck (lock not free for 4 ticks x 5 s) → restart
             if (pal_lock()) {
+                s_lock_fails = 0;
                 ui_tick();
                 pal_unlock();
+            } else if (++s_lock_fails >= 4) {
+                ESP_LOGE(TAG, "display stuck for 20 s: restarting");
+                esp_restart();
             }
+            if (s_note_on && audio_recording()) note_show_elapsed();
+            if (s_ticks % 600 == 0) net_check_main();   // on the backup network: is the main one back?
             if (s_ticks % 25 == 0) {
                 char ping[64];
                 snprintf(ping, sizeof(ping), "{\"type\":\"ping\",\"battery\":%d,\"charging\":%s}", pmu_battery_pct(),

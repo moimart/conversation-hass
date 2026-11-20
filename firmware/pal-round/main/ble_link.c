@@ -17,6 +17,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "esp_random.h"
 #include "esp_vfs_eventfd.h"
 #include "freertos/FreeRTOS.h"
@@ -730,10 +731,23 @@ bool link_pair_start(void)
 }
 
 // After a pairing window: drop the stack again unless we're relaying.
+static void restart_cb(void *arg) { esp_restart(); }
+
 void link_pair_finish(void)
 {
     if (s_pairing) pairing_end(false);
-    if (!s_relay) stack_stop();
+    if (s_relay || !s_running) return;
+    // Stopping the Bluetooth controller next to a running Wi-Fi leaves Wi-Fi
+    // deaf (seen on hardware: RSSI -93 next to the router, never reconnected).
+    // Pairing is rare: restart instead, a moment later so the result shows.
+    ESP_LOGW(TAG, "pairing over: restarting to hand the radio back to Wi-Fi");
+    static esp_timer_handle_t t;
+    if (!t) {
+        const esp_timer_create_args_t a = {.callback = restart_cb, .name = "blerst"};
+        esp_timer_create(&a, &t);
+    }
+    esp_timer_stop(t);
+    esp_timer_start_once(t, 2500 * 1000);
 }
 
 void link_forget(void)
