@@ -680,6 +680,17 @@ static void common_init(void)
     esp_timer_create(&ta, &s_pair_timer);
 }
 
+// Relay mode: if advertising ever stops without a phone connected (a failed
+// restart after a drop, a controller hiccup), start it again.
+static esp_timer_handle_t s_adv_timer;
+static void adv_check(void *arg)
+{
+    if (s_running && s_relay && s_conn == BLE_HS_CONN_HANDLE_NONE && !ble_gap_adv_active()) {
+        ESP_LOGW(TAG, "not advertising while waiting for the phone: restarting it");
+        advertise();
+    }
+}
+
 bool link_start(void)
 {
     common_init();
@@ -696,12 +707,19 @@ bool link_start(void)
     s_up = false;
     xTaskCreateWithCaps(bridge_task, "link", 6144, NULL, 5, &s_bridge, MALLOC_CAP_SPIRAM);
     advertise();
+    if (!s_adv_timer) {
+        const esp_timer_create_args_t a = {.callback = adv_check, .name = "bleadv"};
+        esp_timer_create(&a, &s_adv_timer);
+    }
+    esp_timer_stop(s_adv_timer);
+    esp_timer_start_periodic(s_adv_timer, 5 * 1000000);
     ESP_LOGI(TAG, "relay mode: waiting for the phone (gateway %s)", s_gw_host);
     return true;
 }
 
 void link_stop(void)
 {
+    if (s_adv_timer) esp_timer_stop(s_adv_timer);
     if (!s_relay) {
         if (!s_pairing) stack_stop();
         return;

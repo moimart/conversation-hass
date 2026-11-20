@@ -101,6 +101,21 @@ public class PalLinkService extends Service {
     };
     private final Runnable pumpRunnable = this::pump;
 
+    // Reconnecting after a drop: a few quick direct connects first (seconds,
+    // while the Round is most likely right there), then the OS's low-power
+    // autoConnect. Some stacks let a pending autoConnect go stale, so while
+    // still disconnected the client is re-armed every few minutes.
+    private static final int DIRECT_TRIES = 3;
+    private static final long DIRECT_REARM_MS = 35_000;   // Android gives up a direct connect after ~30 s
+    private static final long AUTO_REARM_MS = 180_000;
+    private int directLeft = 0;
+    private final Runnable rearm = () -> {
+        if (destroyed || gattConnected) return;
+        Log.i(TAG, "still disconnected — re-arming the connection");
+        closeGatt();
+        connect();
+    };
+
     // ---- lifecycle -----------------------------------------------------------
 
     @Override
@@ -244,11 +259,15 @@ public class PalLinkService extends Service {
             stopSelf();
             return;
         }
-        Log.i(TAG, "connectGatt(autoConnect) " + address);
+        boolean direct = directLeft > 0;
+        if (direct) directLeft--;
+        Log.i(TAG, "connectGatt(" + (direct ? "direct" : "autoConnect") + ") " + address);
         // autoConnect=true: the controller's low-duty background scan brings the
         // link up whenever the Round advertises — no app-side scanning/polling.
-        gatt = dev.connectGatt(this, true, gattCallback, BluetoothDevice.TRANSPORT_LE);
+        gatt = dev.connectGatt(this, !direct, gattCallback, BluetoothDevice.TRANSPORT_LE);
         if (gatt == null) Log.w(TAG, "connectGatt returned null");
+        h.removeCallbacks(rearm);
+        h.postDelayed(rearm, direct ? DIRECT_REARM_MS : AUTO_REARM_MS);
         publish();
     }
 
@@ -361,6 +380,8 @@ public class PalLinkService extends Service {
         if (g != gatt) return;
         if (newState == BluetoothProfile.STATE_CONNECTED) {
             Log.i(TAG, "GATT connected (status " + status + ")");
+            h.removeCallbacks(rearm);
+            directLeft = 0;
             gattConnected = true;
             linkUp = false;
             mtu = PalLinkProtocol.DEFAULT_MTU;
@@ -383,7 +404,8 @@ public class PalLinkService extends Service {
             });
             publish();
         } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-            Log.i(TAG, "GATT disconnected (status " + status + ") — waiting for autoConnect");
+            Log.i(TAG, "GATT disconnected (status " + status + ") — reconnecting");
+            if (gattConnected) directLeft = DIRECT_TRIES;   // a drop: the Round is probably still near
             // Fresh client every time: some stacks don't re-arm autoConnect after an
             // error status. A pending autoConnect costs nothing (controller filter).
             closeGatt();
