@@ -28,7 +28,7 @@ static void box_sync(void);
 static void box_style(void);
 static lv_obj_t *s_batt_ic[2], *s_batt_t[2], *s_fidgetpage, *s_helppage, *s_help_title, *s_lock_btn;
 static int s_batt_shown = -2;
-static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint;
+static lv_obj_t *s_clock, *s_date, *s_weather_ic, *s_weather_t, *s_said, *s_reply, *s_status, *s_hint, *s_st_state;
 static lv_obj_t *s_pair_digits, *s_pair_msg, *s_toast, *s_timer_lbl, *s_shield;
 static lv_obj_t *s_vol, *s_bright, *s_info, *s_update_btn;
 void ui_settings_open(void);
@@ -326,23 +326,59 @@ static void lock_cb(lv_event_t *e)
     app_post(EV_SETTINGS_CHANGED);
 }
 
+// The status page (left of home): online or not, how it's connected, the way
+// to PAL, the paired phone and the firmware. Refreshed every second (ui_tick).
+static const char *signal_word(int rssi)
+{
+    return rssi >= -60 ? "strong" : rssi >= -70 ? "good" : rssi >= -80 ? "weak" : "very weak";
+}
+
+static void status_sync(void)
+{
+    if (!s_st_state) return;
+    bool ble = net_ble_mode(), online = ws_connected();
+    int rssi = net_rssi();
+    bool wifi = !ble && rssi > -127;
+    const char *state;
+    uint32_t col;
+    if (online) state = "Online", col = 0x4CD964;
+    else if (wifi || (ble && link_up())) state = "Reaching PAL…", col = 0xF5B841;
+    else if (ble || g_settings.wifi_ssid[0]) state = "Offline", col = 0xFF5A52;
+    else state = "No Wi-Fi set up", col = 0xFF5A52;
+    lv_label_set_text(s_st_state, state);
+    lv_obj_set_style_text_color(s_st_state, lv_color_hex(col), 0);
+
+    char conn[80], route[48], phone[40], b[256];
+    if (ble)
+        snprintf(conn, sizeof(conn), "Via phone (Bluetooth)%s", link_up() ? "" : "\nwaiting for the phone");
+    else if (wifi)
+        snprintf(conn, sizeof(conn), "Wi-Fi %.24s · %s", net_ssid(), signal_word(rssi));
+    else if (g_settings.wifi_ssid[0])
+        snprintf(conn, sizeof(conn), "Looking for %.24s", net_ssid());
+    else
+        snprintf(conn, sizeof(conn), "No connection");
+    const char *base = pal_base();
+    bool remote = ble || (base && g_settings.gateway[0] && !strcmp(base, g_settings.gateway));
+    snprintf(route, sizeof(route), "%s", !online ? "PAL not reachable" : remote ? "PAL over the internet" : "PAL at home");
+    snprintf(phone, sizeof(phone), "%s", g_settings.ble_bond ? "Phone paired" : "No phone paired");
+    snprintf(b, sizeof(b), "%s\n%s\n%s\nFirmware %s", conn, route, phone, pal_fw_version());
+    if (strcmp(lv_label_get_text(s_hint), b)) lv_label_set_text(s_hint, b);
+}
+
 // The page left of home: how to use it, and the button lock (touch keeps
 // working while locked, so this page is always reachable to unlock).
 static void build_help_page(void)
 {
     s_helppage = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
     lv_obj_remove_flag(s_helppage, LV_OBJ_FLAG_SCROLLABLE);
-    s_help_title = mk_label(s_helppage, g_fonts.text26, g_theme.accent, "How to use");
+    s_help_title = mk_label(s_helppage, g_fonts.text26, g_theme.text_dim, "Status");
     lv_obj_align(s_help_title, LV_ALIGN_CENTER, 0, -150);
-    s_hint = mk_label(s_helppage, g_fonts.text20, g_theme.text,
-                      "Bottom button: talk to PAL\n"
-                      "Top button: voice note\n"
-                      "Press again to send / save\n"
-                      "Top twice: screen on / off\n\n"
-                      "Hold the orb for settings\n"
-                      "Lock: only screen on / off");
-    lv_obj_set_style_text_line_space(s_hint, 4, 0);
-    lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, -22);
+    s_st_state = mk_label(s_helppage, g_fonts.text26, g_theme.text, "");
+    lv_obj_align(s_st_state, LV_ALIGN_CENTER, 0, -100);
+    s_hint = mk_label(s_helppage, g_fonts.text20, g_theme.text, "");
+    lv_obj_set_style_text_line_space(s_hint, 6, 0);
+    lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, 10);
+    status_sync();
     s_lock_btn = round_btn(s_helppage, ICON_LOCK_OPEN_VARIANT, 88);
     lv_obj_align(s_lock_btn, LV_ALIGN_CENTER, 0, 150);
     batt_make(0, s_helppage);
@@ -1088,7 +1124,10 @@ void ui_tick(void)
         s_text_set_at = 0;
     }
     ui_set_status();
-    if (s_screen_on) batt_sync();
+    if (s_screen_on) {
+        batt_sync();
+        status_sync();
+    }
     // screen timeout (never while something is happening)
     if (s_screen_on && g_settings.screen_timeout_s && s_state == PAL_IDLE && !audio_playing() && !s_pair && !s_setup &&
         !s_ota && esp_timer_get_time() - s_last_activity > (int64_t)g_settings.screen_timeout_s * 1000000LL) {
@@ -1233,7 +1272,7 @@ void ui_apply_theme(void)
     lv_obj_set_style_text_color(s_said, g_theme.text_dim, 0);
     lv_obj_set_style_text_color(s_reply, g_theme.text, 0);
     lv_obj_set_style_text_color(s_hint, g_theme.text, 0);
-    lv_obj_set_style_text_color(s_help_title, g_theme.accent, 0);
+    lv_obj_set_style_text_color(s_help_title, g_theme.text_dim, 0);
     lock_sync();
     box_style();
     orb_apply_theme();

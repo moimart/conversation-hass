@@ -10,7 +10,7 @@ AXP2101 PMU with battery, BOOT + PWR buttons).
 |---|---|
 | **Home** | The orb (~96% of the screen) with what you said and PAL's reply in a box over it. Talking is buttons-only: touching the orb never listens; holding it opens Settings |
 | **Swipe left** | Clock, date and weather, then Home Assistant pages: the dashboard you pick in Settings, as native round tiles (tap = toggle / run; long-press a light or cover = brightness / position dial) and full-page climate, media and weather controls |
-| **Swipe right** (from the orb) | How-to page: which button does what, the battery level, and the **lock**: while locked, BOOT and PWR do nothing (no talk, no notes, no power-off) except the top-button double press (screen on / off) and touch is limited to the orb, this page and the fidget page — no Settings, no clock/HA pages — so PAL can't listen at all and nothing can be changed. A lock icon shows under the orb; swipe back here to unlock. Saved across reboots |
+| **Swipe right** (from the orb) | Status page: **Online / Reaching PAL… / Offline**, the connection in use (Wi-Fi network + signal, or the phone over Bluetooth), whether PAL is reached at home or over the internet, the paired phone, the firmware version, the battery level, and the **lock**: while locked, BOOT and PWR do nothing (no talk, no notes, no power-off) except the top-button double press (screen on / off) and touch is limited to the orb, this page and the fidget page — no Settings, no clock/HA pages — so PAL can't listen at all and nothing can be changed. A lock icon shows under the orb; swipe back here to unlock. Saved across reboots |
 | **Swipe right twice** (from the orb) | Fidget: a round pop-it of rainbow bubbles — press to pop (soft pop sound), they all spring back once every one is popped. Reachable and usable while locked |
 | **Hold the orb** | Settings: volume, brightness, screen timeout, HA dashboard, orb, firmware update, Wi-Fi setup, phone (Bluetooth), re-pair. The dashboard and orb you pick apply when Settings closes; the orb then loads in the background ("Changing orb…" on the home screen) while everything else keeps working |
 
@@ -112,6 +112,6 @@ echo 0.1.1 > server/runtime/firmware/pal-round/version   # = CONFIG_APP_PROJECT_
 With the Round on USB: `/usr/bin/python3 tools/shot.py out.png ["console cmd" …]` — the
 console `shot` command renders the screen + top layer with LVGL's snapshot and the
 script composites them into a round PNG. Console helpers for scripted views:
-`ui page <n>` (0 fidget, 1 how-to, 2 orb, 3 clock, 4+ HA), `ui settings [n]`, `ui close`,
+`ui page <n>` (0 fidget, 1 status, 2 orb, 3 clock, 4+ HA), `ui settings [n]`, `ui close`,
 `ui lock`, `ui home`, `press`, `note`, `dbl`. The orb's video frames are blitted straight
 to the panel, so they don't appear in shots.
