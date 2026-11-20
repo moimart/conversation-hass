@@ -119,39 +119,19 @@ void net_leave_ble(int idx)
     if (started) esp_wifi_connect();
 }
 
-// While relaying: is one of our networks back? Wi-Fi is started just for the scan.
+// While relaying: is one of our networks back? Bluetooth is stopped first and
+// Wi-Fi just tries to connect; after a few failures the relay comes back.
+// (Scanning with Wi-Fi set up and torn down while Bluetooth was running left
+// Bluetooth dead on hardware: the Round stopped advertising for good. Wi-Fi is
+// only ever de-initialised before Bluetooth starts, the path that works.)
+#define PROBE_FAILS 3
+static bool s_probe;
+
 static void ble_scan_networks(void)
 {
-    driver_up();
-    if (esp_wifi_start() != ESP_OK) {
-        driver_down();
-        return;
-    }
-    wifi_scan_config_t sc = {.show_hidden = true};
-    int rssi[2] = {-127, -127};   // best signal of the main / backup network
-    if (esp_wifi_scan_start(&sc, true) == ESP_OK) {
-        uint16_t n = 0;
-        esp_wifi_scan_get_ap_num(&n);
-        if (n > 24) n = 24;
-        wifi_ap_record_t *aps = calloc(n ? n : 1, sizeof(*aps));
-        if (aps && esp_wifi_scan_get_ap_records(&n, aps) == ESP_OK) {
-            for (int i = 0; i < n; i++) {
-                const char *id = (const char *)aps[i].ssid;
-                int w = !strcmp(id, g_settings.wifi_ssid) ? 0 : (has_backup() && !strcmp(id, g_settings.wifi2_ssid)) ? 1 : -1;
-                if (w >= 0 && aps[i].rssi > rssi[w]) rssi[w] = aps[i].rssi;
-            }
-        }
-        free(aps);
-        esp_wifi_clear_ap_list();
-    }
-    int found = rssi[0] > -82 ? 0 : rssi[1] > -82 ? 1 : -1;   // the main network wins
-    int best = found >= 0 ? rssi[found] : -127;
-    if (found >= 0) {
-        ESP_LOGI(TAG, "\"%s\" is back (%d dBm): leaving Bluetooth", found ? g_settings.wifi2_ssid : g_settings.wifi_ssid, best);
-        net_leave_ble(found);
-    } else {
-        driver_down();
-    }
+    ESP_LOGI(TAG, "relay: trying Wi-Fi again");
+    net_leave_ble(0);
+    s_probe = true;
 }
 bool net_on_backup(void) { return s_net == 1; }
 
@@ -191,12 +171,14 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         if (s_ble || s_ble_asked) return;   // relaying through the phone (or about to)
         if (g_settings.wifi_ssid[0] && !portal_active()) {
             wifi_event_sta_disconnected_t *d = data;
-            if (++s_total_fails >= (has_backup() ? 2 : 1) * MAX_FAILS && ble_possible()) {
+            int limit = s_probe ? PROBE_FAILS * (has_backup() ? 2 : 1) : (has_backup() ? 2 : 1) * MAX_FAILS;
+            if (++s_total_fails >= limit && ble_possible()) {
+                s_probe = false;
                 s_ble_asked = true;
                 app_post_str(EV_LINK, "ble");
                 return;
             }
-            if (++s_fails >= MAX_FAILS && has_backup()) {
+            if (++s_fails >= (s_probe ? PROBE_FAILS : MAX_FAILS) && has_backup()) {
                 // reason 201 = not found (out of range / 5 GHz only), 15/204 = wrong password
                 ESP_LOGW(TAG, "\"%s\" unreachable after %d tries (reason %d)", net_ssid(), MAX_FAILS,
                          d ? d->reason : -1);
@@ -209,6 +191,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         ip_event_got_ip_t *e = data;
         ESP_LOGI(TAG, "got ip " IPSTR, IP2STR(&e->ip_info.ip));
         s_up = true;
+        s_probe = false;
         s_fails = 0;
         s_total_fails = 0;
         if (!s_sntp) {
