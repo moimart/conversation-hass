@@ -33,6 +33,36 @@ static bool s_ble_asked;
 
 static bool has_backup(void) { return g_settings.wifi2_ssid[0] != 0; }
 
+// While relaying through the phone the Wi-Fi driver is fully de-initialised, not
+// just stopped: a stopped driver keeps ~30 KB of internal RAM, which Bluetooth,
+// TLS and the display need (seen on hardware: display draws failing, freezes).
+static bool s_driver;
+static void apply_net(int idx);
+
+static void driver_up(void)
+{
+    if (s_driver) return;
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    if (esp_wifi_init(&cfg) != ESP_OK) {
+        ESP_LOGE(TAG, "wifi init failed");
+        return;
+    }
+    esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    s_driver = true;
+    apply_net(s_net);
+}
+
+static void driver_down(void)
+{
+    if (!s_driver) return;
+    esp_wifi_stop();
+    esp_wifi_deinit();
+    s_driver = false;
+}
+
+void net_wifi_ensure(void) { driver_up(); }
+
 static void apply_net(int idx)
 {
     const char *ssid = idx ? g_settings.wifi2_ssid : g_settings.wifi_ssid;
@@ -64,13 +94,14 @@ void net_enter_ble(void)
     if (s_ble || !ble_possible() || portal_active()) return;
     s_ble = true;
     ESP_LOGW(TAG, "no Wi-Fi network reachable: switching to the phone (Bluetooth)");
-    esp_wifi_stop();
+    driver_down();
     if (!link_start()) {
         ESP_LOGE(TAG, "bluetooth relay unavailable: back to Wi-Fi");
         s_ble = false;
         s_ble_asked = false;
         s_total_fails = 0;
-        esp_wifi_start();
+        driver_up();
+        esp_wifi_start();   // STA_START → connect
     }
 }
 
@@ -81,15 +112,21 @@ void net_leave_ble(int idx)
     s_ble = false;
     s_ble_asked = false;
     s_total_fails = 0;
+    bool started = s_driver;   // the scan already started it: no STA_START this time
+    driver_up();
     apply_net(idx);
     esp_wifi_start();
-    esp_wifi_connect();   // already started by the scan: no STA_START this time
+    if (started) esp_wifi_connect();
 }
 
 // While relaying: is one of our networks back? Wi-Fi is started just for the scan.
 static void ble_scan_networks(void)
 {
-    if (esp_wifi_start() != ESP_OK) return;
+    driver_up();
+    if (esp_wifi_start() != ESP_OK) {
+        driver_down();
+        return;
+    }
     wifi_scan_config_t sc = {.show_hidden = true};
     int rssi[2] = {-127, -127};   // best signal of the main / backup network
     if (esp_wifi_scan_start(&sc, true) == ESP_OK) {
@@ -113,7 +150,7 @@ static void ble_scan_networks(void)
         ESP_LOGI(TAG, "\"%s\" is back (%d dBm): leaving Bluetooth", found ? g_settings.wifi2_ssid : g_settings.wifi_ssid, best);
         net_leave_ble(found);
     } else {
-        esp_wifi_stop();
+        driver_down();
     }
 }
 bool net_on_backup(void) { return s_net == 1; }
@@ -190,7 +227,7 @@ void net_start(void)
     s_sta = esp_netif_create_default_wifi_sta();
     esp_netif_create_default_wifi_ap();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_wifi_init(&cfg);
+    s_driver = esp_wifi_init(&cfg) == ESP_OK;
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL);
     esp_wifi_set_storage(WIFI_STORAGE_RAM);
@@ -218,7 +255,7 @@ void net_power_save(bool deep)
 {
     // screen on: wake for every DTIM beacon (snappy); screen off: every 3rd
     // beacon (~300 ms). The socket stays up either way.
-    if (!s_ble) esp_wifi_set_ps(deep ? WIFI_PS_MAX_MODEM : WIFI_PS_MIN_MODEM);
+    if (!s_ble && s_driver) esp_wifi_set_ps(deep ? WIFI_PS_MAX_MODEM : WIFI_PS_MIN_MODEM);
 }
 
 int net_rssi(void)

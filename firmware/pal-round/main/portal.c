@@ -183,6 +183,8 @@ void portal_start(void)
     ap.ap.channel = 1;
     ap.ap.max_connection = 2;
     ap.ap.authmode = WIFI_AUTH_OPEN;
+    if (net_ble_mode()) net_leave_ble(0);
+    net_wifi_ensure();
     esp_wifi_stop();
     esp_wifi_set_mode(WIFI_MODE_APSTA);
     esp_wifi_set_config(WIFI_IF_AP, &ap);

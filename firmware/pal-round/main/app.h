@@ -96,6 +96,7 @@ int net_rssi(void);
 bool net_discover_pal(char *base, size_t len);   // _pal._tcp → http://ip:port
 void net_set_tz(const char *posix_tz);
 bool net_time_valid(void);
+void net_wifi_ensure(void);                      // Wi-Fi driver initialised (it's de-initialised while relaying)
 bool net_ble_mode(void);                         // Wi-Fi off, reaching PAL through the phone
 void net_enter_ble(void);
 void net_leave_ble(int idx);                     // back to Wi-Fi network idx (0 main, 1 backup)
