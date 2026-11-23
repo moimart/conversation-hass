@@ -4,4 +4,14 @@
     <string name="title_activity_main">PAL</string>
     <string name="package_name">sh.martinez.pal.companion</string>
     <string name="custom_url_scheme">sh.martinez.pal.companion</string>
+    <!-- Voice notes home-screen widget -->
+    <string name="widget_notes_title">Voice notes</string>
+    <string name="widget_notes_description">Your latest PAL voice notes</string>
+    <string name="widget_refresh">Refresh</string>
+    <string name="widget_sample_text_0">Buy oat milk and the good coffee on the way home</string>
+    <string name="widget_sample_meta_0">12 min ago · 0:06</string>
+    <string name="widget_sample_text_1">Idea: put the hallway lights on a motion sensor after sunset</string>
+    <string name="widget_sample_meta_1">09:41 · 0:11</string>
+    <string name="widget_sample_text_2">Call the dentist on Monday about the appointment</string>
+    <string name="widget_sample_meta_2">Yesterday 18:20 · 0:04</string>
 </resources>

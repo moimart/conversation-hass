@@ -4,6 +4,7 @@
 // so it never inherits the orb's transform/perspective.
 
 import { clearConfig, type HalConfig } from "../config/hal-config";
+import { clearWidget, refreshWidget } from "../platform/widget";
 import { getLayout, resetLayout } from "../layout/layout";
 import { startLayoutEditor } from "../layout/editor";
 import { mountOrbSection, ORB_SECTION_HTML } from "./orbs";
@@ -305,6 +306,7 @@ export function mountOverlay(cfg: HalConfig): void {
       const words = text.split(/\s+/).slice(0, 8).join(" ");
       showToast(`Note saved: “${words}${text.length > words.length ? "…" : ""}”`, 4500);
       notesApi()?.add?.(result.note);
+      refreshWidget();
     } else if (result.reason === "no_speech") {
       showToast("Nothing heard — note not saved");
     } else if (result.reason === "empty") {
@@ -456,6 +458,7 @@ ${ORB_SECTION_HTML}
   back.querySelector("#hal-cancel")!.addEventListener("click", close);
   back.querySelector("#hal-repair")!.addEventListener("click", async () => {
     await clearConfig();
+    clearWidget();
     location.reload();   // boot.ts re-runs with no config → onboarding (code entry)
   });
   void mountDeviceRename(cfg, back);

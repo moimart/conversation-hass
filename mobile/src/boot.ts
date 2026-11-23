@@ -12,6 +12,7 @@ import { mountSatelliteAudio } from "./overlay/satellite-audio";
 import { startPhotoFrameIdle } from "./overlay/photo-frame-idle";
 import { configurePlatform, hideSplash, onResume } from "./platform/platform";
 import { registerPush } from "./platform/push";
+import { configureWidget, onWidgetLaunch } from "./platform/widget";
 import { configureHaApi } from "./ha/api";
 import { mountLayout } from "./layout/layout";
 
@@ -48,6 +49,15 @@ async function main(): Promise<void> {
   // closed (speak / timer / orb image). Best-effort, non-blocking; uses the
   // active base + paired token. Covers cold-launch; token refreshes re-fire.
   void registerPush(active.serverBaseUrl, cfg.token);
+
+  // Home-screen notes widget: give it the stored HOME + gateway bases (it picks
+  // the reachable one itself) and open the Notes view when launched from it.
+  configureWidget(cfg);
+  onWidgetLaunch((action) => {
+    if (action !== "notes") return;
+    const api = (window as unknown as { HALNotes?: { open: () => void; isShown?: () => boolean } }).HALNotes;
+    if (api && !(api.isShown && api.isShown())) api.open();
+  });
 
   // On foreground resume, re-resolve: if home↔gateway reachability flipped
   // (left the house / came back), reload so every surface re-targets the now-

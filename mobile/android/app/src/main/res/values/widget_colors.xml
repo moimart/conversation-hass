@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notes widget, Material 3 baseline colours (devices without dynamic colour,
+     Android < 12). values-v31 maps the same names onto the wallpaper palette. -->
+<resources>
+    <color name="widget_bg">#F3EDF7</color>
+    <color name="widget_row">#FFFBFE</color>
+    <color name="widget_title">#6750A4</color>
+    <color name="widget_text">#1D1B20</color>
+    <color name="widget_meta">#49454F</color>
+    <color name="widget_button">#EADDFF</color>
+    <color name="widget_on_button">#21005D</color>
+    <dimen name="widget_radius">24dp</dimen>
+    <dimen name="widget_inner_radius">16dp</dimen>
+</resources>

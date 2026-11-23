@@ -34,6 +34,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PalAppsPlugin.class);
         // PalLink: the PAL Round BLE internet relay (pairing + foreground service).
         registerPlugin(PalLinkPlugin.class);
+        // PalWidget: hands the voice-notes widget its server + token; widget taps.
+        registerPlugin(PalWidgetPlugin.class);
         super.onCreate(savedInstanceState);
         // Draw edge-to-edge, including INTO the camera cutout (must call
         // setAttributes() to actually apply the layout mode, not just mutate

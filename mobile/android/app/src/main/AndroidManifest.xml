@@ -48,6 +48,19 @@
             </intent-filter>
         </receiver>
 
+        <!-- Home-screen widget: the latest voice notes (NotesWidgetProvider). -->
+        <receiver
+            android:name=".NotesWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_notes_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_notes_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
